@@ -1,0 +1,60 @@
+name: Build BitChord H9 Arabic V10
+
+on:
+  push:
+    branches: [bitchord-h9-v9-build]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout helper branch
+        uses: actions/checkout@v4
+        with:
+          ref: bitchord-h9-v9-build
+
+      - name: Checkout BitChord v1.4.1
+        uses: actions/checkout@v4
+        with:
+          repository: kushagrasinghx/BitChord
+          ref: v1.4.1
+          path: bitchord
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Apply H9 V10 patches
+        run: python3 scripts/prepare_bitchord_v10.py
+
+      - name: Verify V10
+        run: |
+          grep -q '1.4.1-H9-ar10' bitchord/app/build.gradle.kts
+          grep -q 'screenHeightDp.dp \* 0.31f, 340.dp' bitchord/app/src/main/java/com/music/bitchord/ui/screens/DetailScreen.kt
+          grep -q 'تداخل الصوت' bitchord/app/src/main/java/com/music/bitchord/ui/screens/SettingsSheet.kt
+          grep -q 'إظهار معلومات الصوت التقنية' bitchord/app/src/main/java/com/music/bitchord/ui/screens/SettingsSheet.kt
+
+      - name: Build prodDebug
+        working-directory: bitchord
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleProdDebug --stacktrace
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+          cp bitchord/app/build/outputs/apk/prod/debug/app-prod-debug.apk dist/BitChord-H9-v1.4.1-Arabic-v10.apk
+          sha256sum dist/BitChord-H9-v1.4.1-Arabic-v10.apk
+
+      - name: Publish APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=bitchord-h9-v1.4.1-ar-v10
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" dist/BitChord-H9-v1.4.1-Arabic-v10.apk --target "$GITHUB_SHA" --title "BitChord H9 v1.4.1 Arabic V10" --notes "Haval H9 V10: restores full Arabic settings/descriptions, reduces album/detail hero height to 31% of H9 screen capped at 340dp, preserves V9 player sizing and physical-left X."
