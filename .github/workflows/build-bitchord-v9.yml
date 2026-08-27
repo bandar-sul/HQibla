@@ -1,0 +1,60 @@
+name: Build BitChord H9 Arabic V9
+
+on:
+  push:
+    branches: [bitchord-h9-v9-build]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout helper branch
+        uses: actions/checkout@v4
+        with:
+          ref: bitchord-h9-v9-build
+
+      - name: Checkout BitChord v1.4.1
+        uses: actions/checkout@v4
+        with:
+          repository: kushagrasinghx/BitChord
+          ref: v1.4.1
+          path: bitchord
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Apply H9 V9 patches
+        run: python3 scripts/prepare_bitchord_v9.py
+
+      - name: Verify V9
+        run: |
+          grep -q '1.4.1-H9-ar9' bitchord/app/build.gradle.kts
+          grep -q 'maxWidth \* 0.72f, 1180.dp' bitchord/app/src/main/java/com/music/bitchord/ui/player/NowPlayingScreen.kt
+          grep -q '1420.dp else PLAYER_MAX_WIDTH' bitchord/app/src/main/java/com/music/bitchord/ui/player/NowPlayingScreen.kt
+          grep -q 'absoluteOffset' bitchord/app/src/main/java/com/music/bitchord/ui/player/NowPlayingScreen.kt
+
+      - name: Build prodDebug
+        working-directory: bitchord
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleProdDebug --stacktrace
+
+      - name: Prepare APK
+        run: |
+          mkdir -p dist
+          cp bitchord/app/build/outputs/apk/prod/debug/app-prod-debug.apk dist/BitChord-H9-v1.4.1-Arabic-v9.apk
+          sha256sum dist/BitChord-H9-v1.4.1-Arabic-v9.apk
+
+      - name: Publish APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=bitchord-h9-v1.4.1-ar-v9
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" dist/BitChord-H9-v1.4.1-Arabic-v9.apk --target "$GITHUB_SHA" --title "BitChord H9 v1.4.1 Arabic V9" --notes "Haval H9 V9: larger 16:9 Now Playing artwork up to 1180dp, player width up to 1420dp, physical-left close X independent of RTL, preserves Arabic/H9 fullscreen/volume/startup improvements."
