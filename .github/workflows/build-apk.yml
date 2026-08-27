@@ -1,4 +1,4 @@
-name: Build H9 Qibla 0.4 APK
+name: Build H9 Qibla 0.5 Stable APK
 
 on:
   push:
@@ -27,28 +27,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore stable signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: h9qibla-stable-signing-v1
+
+      - name: Ensure stable signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=H9 Qibla Stable, OU=Haval H9, O=HQibla, C=SA"
+          fi
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | grep 'SHA256:'
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - name: Build stable debug APK
         run: gradle clean assembleDebug --stacktrace
 
-      - name: Publish APK to repository
+      - name: Publish stable APK to repository
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-0.4-Haval-H9.apk
-          sha256sum dist/H9-Qibla-0.4-Haval-H9.apk > dist/H9-Qibla-0.4-Haval-H9.sha256
+          cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-0.5-Stable-Haval-H9.apk
+          sha256sum dist/H9-Qibla-0.5-Stable-Haval-H9.apk > dist/H9-Qibla-0.5-Stable-Haval-H9.sha256
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
-          git add dist/H9-Qibla-0.4-Haval-H9.apk dist/H9-Qibla-0.4-Haval-H9.sha256
-          git commit -m "Publish H9 Qibla 0.4 APK" || true
+          git add dist/H9-Qibla-0.5-Stable-Haval-H9.apk dist/H9-Qibla-0.5-Stable-Haval-H9.sha256
+          git commit -m "Publish H9 Qibla 0.5 Stable APK" || true
           git push
 
-      - name: Upload APK artifact
+      - name: Upload stable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-0.4-Haval-H9
-          path: dist/H9-Qibla-0.4-Haval-H9.apk
+          name: H9-Qibla-0.5-Stable-Haval-H9
+          path: dist/H9-Qibla-0.5-Stable-Haval-H9.apk
