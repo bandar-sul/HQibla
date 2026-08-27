@@ -23,9 +23,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final int REQ_LOCATION = 1001;
     private static final float AUTO_CAL_MIN_SPEED_MPS = 2.5f;
     private static final float AUTO_CAL_MAX_ACCURACY_M = 25f;
+    private static final float GPS_HEADING_MIN_SPEED_MPS = 1.0f;
     private static final String PREFS = "h9_qibla_calibration";
     private static final String KEY_OFFSET = "sensor_offset_deg";
     private static final String KEY_CALIBRATED = "sensor_calibrated";
+    private static final String KEY_LAST_GPS_HEADING = "last_gps_heading";
+    private static final String KEY_HAS_GPS_HEADING = "has_last_gps_heading";
 
     private LocationManager locationManager;
     private SensorManager sensorManager;
@@ -43,6 +46,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private float magneticAzimuth;
     private float calibrationOffset;
     private boolean calibrated;
+    private float lastGpsHeading;
+    private boolean hasLastGpsHeading;
     private SharedPreferences prefs;
 
     @Override
@@ -65,12 +70,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         calibrationOffset = prefs.getFloat(KEY_OFFSET, 0f);
         calibrated = prefs.getBoolean(KEY_CALIBRATED, false);
+        lastGpsHeading = prefs.getFloat(KEY_LAST_GPS_HEADING, 0f);
+        hasLastGpsHeading = prefs.getBoolean(KEY_HAS_GPS_HEADING, false);
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
         sensorHeadingAvailable = rotationSensor != null || (accelerometer != null && magnetometer != null);
+
+        if (!sensorHeadingAvailable && hasLastGpsHeading) {
+            qiblaView.setHeading(lastGpsHeading, "آخر اتجاه محفوظ للسيارة");
+        } else if (!sensorHeadingAvailable) {
+            qiblaView.clearHeading("تحرك قليلًا لحفظ اتجاه السيارة");
+        }
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         ensureLocationPermission();
@@ -136,7 +149,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             float[] raw = new float[9];
             SensorManager.getRotationMatrixFromVector(raw, event.values);
             magneticAzimuth = azimuthForDisplay(raw);
-            publishSensorHeading();
+            publishBestHeading();
         } else if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
             System.arraycopy(event.values, 0, accel, 0, 3);
             haveAccel = true;
@@ -154,7 +167,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         float[] inclination = new float[9];
         if (SensorManager.getRotationMatrix(raw, inclination, accel, mag)) {
             magneticAzimuth = azimuthForDisplay(raw);
-            publishSensorHeading();
+            publishBestHeading();
         }
     }
 
@@ -192,19 +205,28 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         return heading;
     }
 
-    private void publishSensorHeading() {
-        if (!sensorHeadingAvailable) {
-            qiblaView.clearHeading("لا توجد بوصلة في الشاشة");
-            return;
+    private void publishBestHeading() {
+        if (sensorHeadingAvailable) {
+            float corrected = normalize(trueSensorHeading() + calibrationOffset);
+            String source = calibrated ? "بوصلة H9 المعايرة" : "بوصلة H9 • معايرة تلقائية";
+            qiblaView.setHeading(corrected, source);
+        } else if (hasLastGpsHeading) {
+            qiblaView.setHeading(lastGpsHeading, "آخر اتجاه محفوظ للسيارة");
+        } else {
+            qiblaView.clearHeading("تحرك قليلًا لحفظ اتجاه السيارة");
         }
-        float corrected = normalize(trueSensorHeading() + calibrationOffset);
-        String source = calibrated ? "بوصلة H9 المعايرة" : "بوصلة H9 • معايرة تلقائية";
-        qiblaView.setHeading(corrected, source);
     }
 
     private void updateLocation(Location location) {
         lastLocation = location;
         qiblaView.setLocation(location);
+
+        if (LocationManager.GPS_PROVIDER.equals(location.getProvider()) &&
+                location.hasBearing() && location.hasSpeed() &&
+                location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS &&
+                (!location.hasAccuracy() || location.getAccuracy() <= AUTO_CAL_MAX_ACCURACY_M)) {
+            saveGpsHeading(location.getBearing());
+        }
 
         if (LocationManager.GPS_PROVIDER.equals(location.getProvider()) &&
                 location.hasBearing() && location.hasSpeed() &&
@@ -214,7 +236,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             autoCalibrate(location.getBearing());
         }
 
-        publishSensorHeading();
+        publishBestHeading();
+    }
+
+    private void saveGpsHeading(float gpsBearing) {
+        lastGpsHeading = normalize(gpsBearing);
+        hasLastGpsHeading = true;
+        prefs.edit()
+                .putFloat(KEY_LAST_GPS_HEADING, lastGpsHeading)
+                .putBoolean(KEY_HAS_GPS_HEADING, true)
+                .apply();
+        if (!sensorHeadingAvailable) {
+            qiblaView.setHeading(lastGpsHeading, "اتجاه السيارة عبر GPS • محفوظ");
+        }
     }
 
     private void autoCalibrate(float gpsBearing) {
