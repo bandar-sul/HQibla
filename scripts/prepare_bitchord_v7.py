@@ -28,10 +28,13 @@ try:
  old='''        applyH9Immersive()\n        enableEdgeToEdge()'''; new='''        applyH9Immersive()\n        window.decorView.setOnSystemUiVisibilityChangeListener { if (resources.configuration.screenWidthDp >= 900) window.decorView.postDelayed({ applyH9Immersive() }, 120L) }\n        enableEdgeToEdge()'''
  if old not in s: raise RuntimeError('V7 immersive pattern not found')
  s=s.replace(old,new,1)
- resume='''    override fun onResume() {\n        super.onResume()\n        applyH9Immersive()\n    }\n'''
  dispatch='''    override fun onResume() {\n        super.onResume()\n        applyH9Immersive()\n    }\n\n    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {\n        val code = event.keyCode\n        if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP || code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {\n            if (event.action == android.view.KeyEvent.ACTION_DOWN) {\n                val audio = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager\n                audio.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI or android.media.AudioManager.FLAG_PLAY_SOUND)\n                applyH9Immersive()\n            }\n            return true\n        }\n        return super.dispatchKeyEvent(event)\n    }\n'''
- if resume not in s: raise RuntimeError('V7 onResume pattern not found')
- s=s.replace(resume,dispatch,1); p.write_text(s)
+ resume_multi='''    override fun onResume() {\n        super.onResume()\n        applyH9Immersive()\n    }\n'''
+ resume_single='''    override fun onResume() { super.onResume(); applyH9Immersive() }\n'''
+ if resume_multi in s: s=s.replace(resume_multi,dispatch,1)
+ elif resume_single in s: s=s.replace(resume_single,dispatch,1)
+ else: raise RuntimeError('V7 onResume pattern not found')
+ p.write_text(s)
  p=Path('app/src/main/java/com/music/bitchord/ui/components/MiniPlayer.kt'); s=p.read_text().replace('private val ROW_PADDING = 5.dp','private val ROW_PADDING = 4.dp').replace('private val GLYPH_SLOT = 40.dp','private val GLYPH_SLOT = 36.dp'); p.write_text(s)
  p=Path('app/src/main/java/com/music/bitchord/ui/MainViewModel.kt'); s=p.read_text().replace('delay(450)','delay(1200)',1).replace('delay(250)','delay(600)',1).replace('delay(1800); AppUpdateChecker.check()','delay(5000); AppUpdateChecker.check()',1); p.write_text(s)
 finally: os.chdir(old_cwd)
