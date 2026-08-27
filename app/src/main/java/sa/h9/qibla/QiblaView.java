@@ -23,7 +23,7 @@ public class QiblaView extends View {
     private float relative = 0f;
     private float distanceKm = 0f;
     private String status = "بانتظار GPS…";
-    private String headingSource = "بانتظار البوصلة";
+    private String headingSource = "بانتظار اتجاه السيارة";
     private boolean hasLocation = false;
     private boolean hasHeading = false;
 
@@ -176,7 +176,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         String msg;
         if (!hasLocation) msg = "بانتظار تحديد الموقع";
-        else if (!hasHeading) msg = "بانتظار قراءة البوصلة";
+        else if (!hasHeading) msg = "تحرك قليلًا لحفظ اتجاه السيارة";
         else if (aligned) msg = "تم توجيه السيارة نحو القبلة";
         else msg = String.format(Locale.US, "%.0f° إلى القبلة", diff);
         c.drawText(msg, cx, cy+r*.67f, p);
@@ -232,7 +232,7 @@ public class QiblaView extends View {
         stroke.setColor(0x224F6972);
         c.drawLine(w*.045f, h*.91f, w*.955f, h*.91f, stroke);
         p.setTextSize(h*.019f); p.setColor(0xFF50666E); p.setTextAlign(Paint.Align.CENTER);
-        c.drawText("H9 Qibla 0.4   •   بوصلة فورية + تصحيح GPS", w*.5f, h*.958f, p);
+        c.drawText("H9 Qibla 0.6 Stable   •   اتجاه GPS محفوظ", w*.5f, h*.958f, p);
     }
 
     private static float calculateBearing(double lat, double lon) {
