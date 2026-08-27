@@ -1,8 +1,8 @@
-name: Build BitChord H9 Arabic V10
+name: Build BitChord H9 Arabic V11
 
 on:
   push:
-    branches: [bitchord-h9-v9-build]
+    branches: [bitchord-h9-v11-build]
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout helper branch
         uses: actions/checkout@v4
         with:
-          ref: bitchord-h9-v9-build
+          ref: bitchord-h9-v11-build
 
       - name: Checkout BitChord v1.4.1
         uses: actions/checkout@v4
@@ -31,15 +31,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Apply H9 V10 patches
-        run: python3 scripts/prepare_bitchord_v10.py
+      - name: Apply H9 V11 patches
+        run: python3 scripts/prepare_bitchord_v11.py
 
-      - name: Verify V10
+      - name: Verify V11
         run: |
-          grep -q '1.4.1-H9-ar10' bitchord/app/build.gradle.kts
-          grep -q 'screenHeightDp.dp \* 0.31f, 340.dp' bitchord/app/src/main/java/com/music/bitchord/ui/screens/DetailScreen.kt
-          grep -q 'تداخل الصوت' bitchord/app/src/main/java/com/music/bitchord/ui/screens/SettingsSheet.kt
-          grep -q 'إظهار معلومات الصوت التقنية' bitchord/app/src/main/java/com/music/bitchord/ui/screens/SettingsSheet.kt
+          grep -q '1.4.1-H9-ar11' bitchord/app/build.gradle.kts
+          grep -q '0.27f, 300.dp' bitchord/app/src/main/java/com/music/bitchord/ui/screens/DetailScreen.kt
+          grep -q 'maxWidth \* 0.60f, 980.dp' bitchord/app/src/main/java/com/music/bitchord/ui/player/NowPlayingScreen.kt
+          grep -q '1540.dp else PLAYER_MAX_WIDTH' bitchord/app/src/main/java/com/music/bitchord/ui/player/NowPlayingScreen.kt
+          grep -q '0.58f else 1f' bitchord/app/src/main/java/com/music/bitchord/MainActivity.kt
 
       - name: Build prodDebug
         working-directory: bitchord
@@ -48,13 +49,13 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp bitchord/app/build/outputs/apk/prod/debug/app-prod-debug.apk dist/BitChord-H9-v1.4.1-Arabic-v10.apk
-          sha256sum dist/BitChord-H9-v1.4.1-Arabic-v10.apk
+          cp bitchord/app/build/outputs/apk/prod/debug/app-prod-debug.apk dist/BitChord-H9-v1.4.1-Arabic-v11.apk
+          sha256sum dist/BitChord-H9-v1.4.1-Arabic-v11.apk
 
       - name: Publish APK release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=bitchord-h9-v1.4.1-ar-v10
+          TAG=bitchord-h9-v1.4.1-ar-v11
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" dist/BitChord-H9-v1.4.1-Arabic-v10.apk --target "$GITHUB_SHA" --title "BitChord H9 v1.4.1 Arabic V10" --notes "Haval H9 V10: restores full Arabic settings/descriptions, reduces album/detail hero height to 31% of H9 screen capped at 340dp, preserves V9 player sizing and physical-left X."
+          gh release create "$TAG" dist/BitChord-H9-v1.4.1-Arabic-v11.apk --target "$GITHUB_SHA" --title "BitChord H9 v1.4.1 Arabic V11" --notes "Haval H9 V11 landscape layout tuning, compact album hero, balanced Now Playing, compact mini player, persistent Arabic resources, safe area, faster first paint."
