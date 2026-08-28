@@ -20,10 +20,10 @@ public class QiblaView extends View {
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float heading = 0f;
     private float qiblaBearing = 0f;
-    private float relative = 0f;
     private float distanceKm = 0f;
-    private String status = "بانتظار GPS…";
-    private String headingSource = "بانتظار اتجاه السيارة";
+    private String status = "بانتظار الموقع…";
+    private String networkStatus = "فحص الإنترنت…";
+    private String headingSource = "اتجاه السيارة اختياري";
     private boolean hasLocation = false;
     private boolean hasHeading = false;
 
@@ -39,7 +39,6 @@ public class QiblaView extends View {
         this.heading = normalize(heading);
         this.headingSource = source;
         this.hasHeading = true;
-        if (hasLocation) this.relative = normalize(qiblaBearing - this.heading);
         invalidate();
     }
 
@@ -55,12 +54,12 @@ public class QiblaView extends View {
         float[] out = new float[1];
         Location.distanceBetween(location.getLatitude(), location.getLongitude(), KAABA_LAT, KAABA_LON, out);
         distanceKm = out[0] / 1000f;
-        if (hasHeading) relative = normalize(qiblaBearing - heading);
-        status = location.getAccuracy() <= 20 ? "GPS دقيق" : "GPS متصل";
+        status = location.getAccuracy() <= 20 ? "GPS دقيق" : "الموقع متصل";
         invalidate();
     }
 
     public void setStatus(String text) { status = text; invalidate(); }
+    public void setNetworkStatus(String text) { networkStatus = text; invalidate(); }
 
     @Override
     protected void onDraw(Canvas c) {
@@ -68,7 +67,7 @@ public class QiblaView extends View {
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
         drawHeader(c, w, h);
-        drawCompass(c, w * 0.52f, h * 0.54f, Math.min(h * 0.39f, w * 0.24f));
+        drawCompass(c, w * 0.52f, h * 0.50f, Math.min(h * 0.36f, w * 0.22f));
         drawLeftInfo(c, w, h);
         drawRightInfo(c, w, h);
         drawFooter(c, w, h);
@@ -80,7 +79,7 @@ public class QiblaView extends View {
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
         p.setColor(0x1100D9C6);
-        c.drawCircle(w * .50f, h * .52f, h * .42f, p);
+        c.drawCircle(w * .50f, h * .50f, h * .40f, p);
         p.setColor(0x0C58A6FF);
         c.drawCircle(w * .86f, h * .15f, h * .32f, p);
     }
@@ -94,9 +93,12 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
 
         p.setTextAlign(Paint.Align.RIGHT);
-        p.setTextSize(h * .026f);
+        p.setTextSize(h * .024f);
         p.setColor(hasLocation ? 0xFF5CE1C6 : 0xFFFFC857);
-        c.drawText(status, w * .955f, h * .068f, p);
+        c.drawText(status, w * .955f, h * .058f, p);
+        p.setTextSize(h * .019f);
+        p.setColor(networkStatus.contains("متصل") ? 0xFF5CE1C6 : 0xFFFFC857);
+        c.drawText(networkStatus, w * .955f, h * .092f, p);
     }
 
     private void drawCompass(Canvas c, float cx, float cy, float r) {
@@ -122,31 +124,23 @@ public class QiblaView extends View {
             c.drawLine(x1, y1, x2, y2, stroke);
         }
 
-        float displayHeading = hasHeading ? heading : 0f;
-        drawCardinal(c, "N", cx, cy, r * .70f, -displayHeading, 0xFFFFFFFF);
-        drawCardinal(c, "E", cx, cy, r * .70f, 90 - displayHeading, 0xFF8BA0A8);
-        drawCardinal(c, "S", cx, cy, r * .70f, 180 - displayHeading, 0xFF8BA0A8);
-        drawCardinal(c, "W", cx, cy, r * .70f, 270 - displayHeading, 0xFF8BA0A8);
+        drawCardinal(c, "N", cx, cy, r * .70f, 0, 0xFFFFFFFF);
+        drawCardinal(c, "E", cx, cy, r * .70f, 90, 0xFF8BA0A8);
+        drawCardinal(c, "S", cx, cy, r * .70f, 180, 0xFF8BA0A8);
+        drawCardinal(c, "W", cx, cy, r * .70f, 270, 0xFF8BA0A8);
 
-        Path vehicle = new Path();
-        vehicle.moveTo(cx, cy - r * .96f);
-        vehicle.lineTo(cx - r * .045f, cy - r * .82f);
-        vehicle.lineTo(cx + r * .045f, cy - r * .82f);
-        vehicle.close();
-        p.setColor(0xFFEDF8F7);
-        c.drawPath(vehicle, p);
-
-        if (hasLocation && hasHeading) {
-            float angle = relative > 180 ? relative - 360 : relative;
+        if (hasLocation) {
+            float angle = qiblaBearing > 180 ? qiblaBearing - 360 : qiblaBearing;
             c.save();
             c.rotate(angle, cx, cy);
-            stroke.setStrokeWidth(r * .035f);
+            stroke.setStrokeWidth(r * .034f);
             stroke.setColor(0xFF35E6C7);
-            c.drawLine(cx, cy + r * .09f, cx, cy - r * .56f, stroke);
+            c.drawLine(cx, cy + r * .06f, cx, cy - r * .49f, stroke);
+
             Path arrow = new Path();
-            arrow.moveTo(cx, cy - r * .77f);
-            arrow.lineTo(cx - r * .11f, cy - r * .53f);
-            arrow.lineTo(cx + r * .11f, cy - r * .53f);
+            arrow.moveTo(cx, cy - r * .70f);
+            arrow.lineTo(cx - r * .105f, cy - r * .48f);
+            arrow.lineTo(cx + r * .105f, cy - r * .48f);
             arrow.close();
             p.setColor(0xFF35E6C7);
             p.setShadowLayer(18f, 0, 0, 0xAA35E6C7);
@@ -167,19 +161,15 @@ public class QiblaView extends View {
         p.setColor(0xFFE9D18B);
         c.drawText("الكعبة", cx, cy+r*.085f, p);
 
-        float diff = (hasLocation && hasHeading) ? Math.min(relative, 360-relative) : 0f;
-        boolean aligned = hasLocation && hasHeading && diff <= 4f;
-        p.setColor(aligned ? 0xFF35E6C7 : 0xFF10222B);
-        c.drawRoundRect(new RectF(cx-r*.37f, cy+r*.55f, cx+r*.37f, cy+r*.73f), r*.08f, r*.08f, p);
-        p.setColor(aligned ? 0xFF04100D : 0xFFEAF5F4);
-        p.setTextSize(r*.070f);
+        p.setColor(0xFF10222B);
+        c.drawRoundRect(new RectF(cx-r*.48f, cy+r*.77f, cx+r*.48f, cy+r*.94f), r*.075f, r*.075f, p);
+        p.setColor(0xFFEAF5F4);
+        p.setTextSize(r*.064f);
         p.setTextAlign(Paint.Align.CENTER);
-        String msg;
-        if (!hasLocation) msg = "بانتظار تحديد الموقع";
-        else if (!hasHeading) msg = "تحرك قليلًا لحفظ اتجاه السيارة";
-        else if (aligned) msg = "تم توجيه السيارة نحو القبلة";
-        else msg = String.format(Locale.US, "%.0f° إلى القبلة", diff);
-        c.drawText(msg, cx, cy+r*.67f, p);
+        String msg = !hasLocation
+                ? "بانتظار تحديد الموقع"
+                : String.format(Locale.US, "اتجاه القبلة %.0f° من الشمال", qiblaBearing);
+        c.drawText(msg, cx, cy+r*.885f, p);
     }
 
     private void drawCardinal(Canvas c, String text, float cx, float cy, float rr, float deg, int color) {
@@ -199,15 +189,16 @@ public class QiblaView extends View {
         float x = w*.055f;
         p.setTextAlign(Paint.Align.LEFT);
         p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("زاوية القبلة", x, h*.29f, p);
+        c.drawText("زاوية القبلة من الشمال", x, h*.29f, p);
         p.setColor(0xFFF4FAFA); p.setTextSize(h*.070f); p.setFakeBoldText(true);
         c.drawText(hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—", x, h*.37f, p);
         p.setFakeBoldText(false);
+
         p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
         c.drawText("اتجاه المركبة", x, h*.52f, p);
-        p.setColor(0xFFF4FAFA); p.setTextSize(h*.056f);
+        p.setColor(0xFFF4FAFA); p.setTextSize(h*.052f);
         c.drawText(hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—", x, h*.59f, p);
-        p.setColor(hasHeading ? 0xFF35E6C7 : 0xFFFFC857); p.setTextSize(h*.021f);
+        p.setColor(hasHeading ? 0xFF35E6C7 : 0xFF8BA0A8); p.setTextSize(h*.020f);
         c.drawText(headingSource, x, h*.635f, p);
     }
 
@@ -220,11 +211,11 @@ public class QiblaView extends View {
         c.drawText(hasLocation ? String.format(Locale.US, "%,.0f كم", distanceKm) : "—", x, h*.37f, p);
         p.setFakeBoldText(false);
         p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("الوجهة", x, h*.52f, p);
-        p.setColor(0xFFE8CE81); p.setTextSize(h*.050f);
-        c.drawText("مكة المكرمة", x, h*.585f, p);
-        p.setColor(0xFF6F8992); p.setTextSize(h*.021f);
-        c.drawText("المسجد الحرام · الكعبة", x, h*.63f, p);
+        c.drawText("طريقة التحديد", x, h*.52f, p);
+        p.setColor(0xFFE8CE81); p.setTextSize(h*.038f);
+        c.drawText("GPS + الشبكة", x, h*.585f, p);
+        p.setColor(0xFF6F8992); p.setTextSize(h*.020f);
+        c.drawText("الاتجاه مستقل عن حركة السيارة", x, h*.63f, p);
     }
 
     private void drawFooter(Canvas c, float w, float h) {
@@ -232,7 +223,7 @@ public class QiblaView extends View {
         stroke.setColor(0x224F6972);
         c.drawLine(w*.045f, h*.91f, w*.955f, h*.91f, stroke);
         p.setTextSize(h*.019f); p.setColor(0xFF50666E); p.setTextAlign(Paint.Align.CENTER);
-        c.drawText("H9 Qibla 0.6 Stable   •   اتجاه GPS محفوظ", w*.5f, h*.958f, p);
+        c.drawText("H9 Qibla 0.7 Stable   •   اتجاه مطلق من الشمال", w*.5f, h*.958f, p);
     }
 
     private static float calculateBearing(double lat, double lon) {
