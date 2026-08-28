@@ -3,6 +3,7 @@ package sa.h9.qibla;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
@@ -16,12 +17,20 @@ import android.view.WindowManager;
 
 public class MainActivity extends Activity implements LocationListener {
     private static final int REQ_LOCATION = 1001;
-    private static final float GPS_HEADING_MIN_SPEED_MPS = 1.0f;
+    private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
+    private static final float COURSE_MIN_DISTANCE_M = 3.0f;
+    private static final String PREFS = "h9_qibla_live_heading";
+    private static final String KEY_HEADING = "last_heading";
+    private static final String KEY_HAS_HEADING = "has_heading";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
     private QiblaView qiblaView;
     private Location lastLocation;
+    private Location courseAnchor;
+    private SharedPreferences prefs;
+    private float lastHeading;
+    private boolean hasLastHeading;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,6 +48,13 @@ public class MainActivity extends Activity implements LocationListener {
 
         qiblaView = new QiblaView(this);
         setContentView(qiblaView);
+
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        lastHeading = prefs.getFloat(KEY_HEADING, 0f);
+        hasLastHeading = prefs.getBoolean(KEY_HAS_HEADING, false);
+        if (hasLastHeading) {
+            qiblaView.setHeading(lastHeading, "آخر اتجاه GPS محفوظ");
+        }
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -58,13 +74,13 @@ public class MainActivity extends Activity implements LocationListener {
         updateNetworkStatus();
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 700L, 0.5f, this);
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 400L, 0.2f, this);
                 Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                 if (gps != null) updateLocation(gps);
             }
 
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1500L, 2f, this);
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1200L, 1f, this);
                 Location network = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
                 if (network != null && isBetterLocation(network, lastLocation)) updateLocation(network);
             }
@@ -121,13 +137,59 @@ public class MainActivity extends Activity implements LocationListener {
         qiblaView.setLocation(location);
         updateNetworkStatus();
 
-        if (LocationManager.GPS_PROVIDER.equals(location.getProvider()) &&
-                location.hasBearing() && location.hasSpeed() &&
-                location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS) {
-            qiblaView.setHeading(normalize(location.getBearing()), "اتجاه حركة السيارة عبر GPS");
-        } else {
-            qiblaView.clearHeading("اتجاه السيارة اختياري");
+        if (LocationManager.GPS_PROVIDER.equals(location.getProvider())) {
+            updateLiveCourse(location);
         }
+    }
+
+    private void updateLiveCourse(Location location) {
+        Float newHeading = null;
+
+        if (location.hasBearing() &&
+                (!location.hasSpeed() || location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS)) {
+            newHeading = normalize(location.getBearing());
+        }
+
+        if (courseAnchor == null) {
+            courseAnchor = new Location(location);
+        } else {
+            float moved = courseAnchor.distanceTo(location);
+            if (moved >= COURSE_MIN_DISTANCE_M) {
+                float positionCourse = normalize(courseAnchor.bearingTo(location));
+                if (newHeading == null) {
+                    newHeading = positionCourse;
+                } else {
+                    newHeading = circularBlend(newHeading, positionCourse, 0.30f);
+                }
+                courseAnchor = new Location(location);
+            }
+        }
+
+        if (newHeading != null) {
+            lastHeading = newHeading;
+            hasLastHeading = true;
+            prefs.edit()
+                    .putFloat(KEY_HEADING, lastHeading)
+                    .putBoolean(KEY_HAS_HEADING, true)
+                    .apply();
+            qiblaView.setHeading(lastHeading, "اتجاه حي عبر GPS");
+        } else if (hasLastHeading) {
+            qiblaView.setHeading(lastHeading, "آخر اتجاه GPS محفوظ");
+        } else {
+            qiblaView.clearHeading("تحرك عدة أمتار لتفعيل الاتجاه الحي");
+        }
+    }
+
+    private static float circularBlend(float a, float b, float weightB) {
+        float delta = signedAngle(b - a);
+        return normalize(a + delta * weightB);
+    }
+
+    private static float signedAngle(float value) {
+        value %= 360f;
+        if (value > 180f) value -= 360f;
+        if (value < -180f) value += 360f;
+        return value;
     }
 
     private static float normalize(float value) {
