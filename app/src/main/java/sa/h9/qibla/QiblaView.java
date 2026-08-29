@@ -10,6 +10,9 @@ import android.graphics.Shader;
 import android.location.Location;
 import android.view.View;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.Locale;
 
 public class QiblaView extends View {
@@ -18,14 +21,23 @@ public class QiblaView extends View {
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private float heading = 0f;
-    private float qiblaBearing = 0f;
-    private float distanceKm = 0f;
+    private final Locale ar = new Locale("ar");
+
+    private float heading;
+    private float qiblaBearing;
+    private float distanceKm;
+    private float gpsAccuracy = -1f;
     private String status = "بانتظار الموقع…";
     private String networkStatus = "فحص الإنترنت…";
-    private String headingSource = "تحرك عدة أمتار لتفعيل الاتجاه الحي";
-    private boolean hasLocation = false;
-    private boolean hasHeading = false;
+    private String headingSource = "بانتظار اتجاه GPS حي";
+    private String prayerStatus = "بانتظار مواقيت الصلاة…";
+    private String hijriDate = "";
+    private String locationName = "الموقع الحالي";
+    private String[] prayerNames = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
+    private String[] prayerTimes = {"--:--", "--:--", "--:--", "--:--", "--:--", "--:--"};
+    private boolean hasLocation;
+    private boolean hasHeading;
+    private boolean hasPrayerTimes;
 
     public QiblaView(Context context) {
         super(context);
@@ -35,16 +47,18 @@ public class QiblaView extends View {
         setLayerType(LAYER_TYPE_SOFTWARE, null);
     }
 
-    public void setHeading(float heading, String source) {
-        this.heading = normalize(heading);
-        this.headingSource = source;
-        this.hasHeading = true;
+    public void tick() { invalidate(); }
+
+    public void setHeading(float value, String source) {
+        heading = normalize(value);
+        headingSource = source;
+        hasHeading = true;
         invalidate();
     }
 
     public void clearHeading(String source) {
-        this.hasHeading = false;
-        this.headingSource = source;
+        hasHeading = false;
+        headingSource = source;
         invalidate();
     }
 
@@ -54,199 +68,323 @@ public class QiblaView extends View {
         float[] out = new float[1];
         Location.distanceBetween(location.getLatitude(), location.getLongitude(), KAABA_LAT, KAABA_LON, out);
         distanceKm = out[0] / 1000f;
-        status = location.hasAccuracy() && location.getAccuracy() <= 20 ? "GPS دقيق" : "الموقع متصل";
+        gpsAccuracy = location.hasAccuracy() ? location.getAccuracy() : -1f;
+        status = gpsAccuracy > 0 && gpsAccuracy <= 20 ? "GPS دقيق" : "الموقع متصل";
         invalidate();
     }
 
     public void setStatus(String text) { status = text; invalidate(); }
     public void setNetworkStatus(String text) { networkStatus = text; invalidate(); }
+    public void setPrayerStatus(String text) { prayerStatus = text; invalidate(); }
+    public void setLocationName(String text) { locationName = text; invalidate(); }
+
+    public void setPrayerTimes(String[] names, String[] times, String hijri) {
+        if (names != null && names.length == 6) prayerNames = names;
+        if (times != null && times.length == 6) prayerTimes = times;
+        hijriDate = hijri == null ? "" : hijri;
+        hasPrayerTimes = true;
+        prayerStatus = "طريقة الحساب: أم القرى";
+        invalidate();
+    }
 
     @Override
     protected void onDraw(Canvas c) {
         super.onDraw(c);
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
-        drawHeader(c, w, h);
-        drawCompass(c, w * 0.52f, h * 0.50f, Math.min(h * 0.36f, w * 0.22f));
-        drawLeftInfo(c, w, h);
-        drawRightInfo(c, w, h);
+        drawTopBar(c, w, h);
+        drawCompass(c, w * .50f, h * .53f, Math.min(h * .34f, w * .205f));
+        drawLeftCards(c, w, h);
+        drawPrayerPanel(c, w, h);
         drawFooter(c, w, h);
     }
 
     private void drawBackground(Canvas c, float w, float h) {
         p.setStyle(Paint.Style.FILL);
-        p.setShader(new LinearGradient(0, 0, w, h, 0xFF071019, 0xFF020508, Shader.TileMode.CLAMP));
+        p.setShader(new LinearGradient(0, 0, w, h, 0xFF04101B, 0xFF01060B, Shader.TileMode.CLAMP));
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
-        p.setColor(0x1100D9C6);
-        c.drawCircle(w * .50f, h * .50f, h * .40f, p);
-        p.setColor(0x0C58A6FF);
-        c.drawCircle(w * .86f, h * .15f, h * .32f, p);
+        p.setColor(0x1500E4D0);
+        c.drawCircle(w * .50f, h * .52f, h * .39f, p);
+        p.setColor(0x0D3E8CFF);
+        c.drawCircle(w * .88f, h * .15f, h * .34f, p);
     }
 
-    private void drawHeader(Canvas c, float w, float h) {
+    private void drawTopBar(Canvas c, float w, float h) {
+        drawLogo(c, w * .045f, h * .072f, h * .046f);
         p.setTextAlign(Paint.Align.LEFT);
-        p.setColor(0xFFF1F7FA);
-        p.setTextSize(h * .044f);
+        p.setColor(0xFFF2F7F9);
+        p.setTextSize(h * .046f);
         p.setFakeBoldText(true);
-        c.drawText("H9 QIBLA", w * .045f, h * .075f, p);
+        c.drawText("H9 ", w * .083f, h * .082f, p);
+        p.setColor(0xFFE5B64A);
+        c.drawText("Qibla", w * .126f, h * .082f, p);
         p.setFakeBoldText(false);
+        p.setTextSize(h * .020f);
+        p.setColor(0xFFE5B64A);
+        c.drawText("0.9", w * .114f, h * .116f, p);
 
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setColor(0xFFF4F7F8);
+        p.setTextSize(h * .031f);
+        String qibla = hasLocation ? String.format(Locale.US, "اتجاه القبلة: %.0f° من الشمال", qiblaBearing) : "اتجاه القبلة: بانتظار الموقع";
+        c.drawText(qibla, w * .50f, h * .064f, p);
+        p.setTextSize(h * .023f);
+        p.setColor(0xFFB8C4C9);
+        String deviation;
+        if (hasLocation && hasHeading) {
+            float rel = normalize(qiblaBearing - heading);
+            float signed = rel > 180 ? rel - 360 : rel;
+            deviation = String.format(Locale.US, "الانحراف عن اتجاه المركبة: %.0f° %s", Math.abs(signed), signed >= 0 ? "يمينًا" : "يسارًا");
+        } else {
+            deviation = "تحرك قليلًا لتحديث اتجاه السهم الحي";
+        }
+        c.drawText(deviation, w * .50f, h * .105f, p);
+
+        Date now = new Date();
         p.setTextAlign(Paint.Align.RIGHT);
-        p.setTextSize(h * .024f);
-        p.setColor(hasLocation ? 0xFF5CE1C6 : 0xFFFFC857);
-        c.drawText(status, w * .955f, h * .058f, p);
-        p.setTextSize(h * .019f);
-        p.setColor(networkStatus.contains("متصل") ? 0xFF5CE1C6 : 0xFFFFC857);
-        c.drawText(networkStatus, w * .955f, h * .092f, p);
+        p.setColor(0xFFF4F7F8);
+        p.setTextSize(h * .052f);
+        p.setFakeBoldText(true);
+        c.drawText(new SimpleDateFormat("HH:mm", Locale.US).format(now), w * .955f, h * .070f, p);
+        p.setFakeBoldText(false);
+        p.setTextSize(h * .020f);
+        p.setColor(0xFFC7D1D5);
+        c.drawText(new SimpleDateFormat("EEEE d MMMM", ar).format(now), w * .955f, h * .105f, p);
+        p.setColor(0xFF7E909A);
+        c.drawText(hijriDate.isEmpty() ? "التاريخ الهجري بعد تحديث الصلاة" : hijriDate, w * .955f, h * .136f, p);
+    }
+
+    private void drawLogo(Canvas c, float cx, float cy, float r) {
+        stroke.setStrokeWidth(r * .055f);
+        stroke.setColor(0xFFE5B64A);
+        c.drawCircle(cx, cy, r, stroke);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFF11181D);
+        c.drawRect(cx-r*.34f, cy-r*.23f, cx+r*.34f, cy+r*.28f, p);
+        p.setColor(0xFFE5B64A);
+        c.drawRect(cx-r*.34f, cy-r*.05f, cx+r*.34f, cy+r*.03f, p);
+        Path a = new Path();
+        a.moveTo(cx+r*.22f, cy+r*.10f);
+        a.lineTo(cx+r*.62f, cy+r*.48f);
+        a.lineTo(cx+r*.36f, cy+r*.53f);
+        a.close();
+        p.setColor(0xFF2FE0C7);
+        c.drawPath(a, p);
+    }
+
+    private void drawLeftCards(Canvas c, float w, float h) {
+        float x = w * .032f, cardW = w * .22f, cardH = h * .145f;
+        drawInfoCard(c, x, h*.205f, cardW, cardH, "زاوية القبلة", hasLocation ? String.format(Locale.US,"%.0f°", qiblaBearing) : "—", "◈", 0xFF2FE0C7);
+        drawInfoCard(c, x, h*.370f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
+        String accuracy = gpsAccuracy < 0 ? "—" : gpsAccuracy <= 12 ? "ممتازة" : gpsAccuracy <= 25 ? "جيدة" : String.format(Locale.US,"%.0f م", gpsAccuracy);
+        drawInfoCard(c, x, h*.535f, cardW, cardH, "دقة GPS", accuracy, "◎", 0xFF2FE0C7);
+
+        roundCard(c, new RectF(x, h*.710f, x+cardW, h*.785f));
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(h*.020f);
+        p.setColor(0xFF9FB0B7);
+        c.drawText(hasHeading ? headingSource : "تحرك قليلًا لتحديث السهم", x+cardW*.5f, h*.757f, p);
+    }
+
+    private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
+        roundCard(c, new RectF(x, y, x+cw, y+ch));
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(ch*.22f);
+        p.setColor(accent);
+        c.drawText(icon, x+cw*.09f, y+ch*.53f, p);
+        p.setColor(0xFF82949C);
+        p.setTextSize(ch*.17f);
+        c.drawText(label, x+cw*.45f, y+ch*.31f, p);
+        p.setColor(0xFFF2F6F7);
+        p.setTextSize(ch*.31f);
+        p.setFakeBoldText(true);
+        c.drawText(value, x+cw*.45f, y+ch*.72f, p);
+        p.setFakeBoldText(false);
+    }
+
+    private void roundCard(Canvas c, RectF r) {
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xA80A1822);
+        c.drawRoundRect(r, 24f, 24f, p);
+        stroke.setStrokeWidth(1.5f);
+        stroke.setColor(0x334B7180);
+        c.drawRoundRect(r, 24f, 24f, stroke);
     }
 
     private void drawCompass(Canvas c, float cx, float cy, float r) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0x0F00E8D0);
-        c.drawCircle(cx, cy, r * 1.12f, p);
-        stroke.setStrokeWidth(r * .006f);
-        stroke.setColor(0x5538F0D1);
+        p.setColor(0x1200E8D0);
+        c.drawCircle(cx, cy, r*1.12f, p);
+        stroke.setStrokeWidth(r*.010f);
+        stroke.setColor(0xAA25D9C4);
+        p.setShadowLayer(24f, 0, 0, 0x9925D9C4);
         c.drawCircle(cx, cy, r, stroke);
-        stroke.setColor(0x2238F0D1);
-        c.drawCircle(cx, cy, r * .84f, stroke);
+        p.clearShadowLayer();
+        stroke.setStrokeWidth(r*.004f);
+        stroke.setColor(0x4430BFAF);
+        c.drawCircle(cx, cy, r*.83f, stroke);
 
-        for (int deg = 0; deg < 360; deg += 5) {
-            double a = Math.toRadians(deg - 90);
-            boolean major = deg % 30 == 0;
-            float len = major ? r * .075f : r * .035f;
-            stroke.setStrokeWidth(major ? r * .009f : r * .004f);
-            stroke.setColor(major ? 0x99D8F4EF : 0x335F7E86);
-            float x1 = cx + (float)Math.cos(a) * (r - len);
-            float y1 = cy + (float)Math.sin(a) * (r - len);
-            float x2 = cx + (float)Math.cos(a) * r;
-            float y2 = cy + (float)Math.sin(a) * r;
-            c.drawLine(x1, y1, x2, y2, stroke);
+        for (int deg=0; deg<360; deg+=5) {
+            double a = Math.toRadians(deg-90);
+            boolean major = deg%30==0;
+            float len = major ? r*.075f : r*.025f;
+            stroke.setStrokeWidth(major ? r*.010f : r*.0035f);
+            stroke.setColor(major ? 0xCCD9F6F2 : 0x304E7680);
+            c.drawLine(cx+(float)Math.cos(a)*(r-len), cy+(float)Math.sin(a)*(r-len), cx+(float)Math.cos(a)*r, cy+(float)Math.sin(a)*r, stroke);
         }
 
-        float compassRotation = hasHeading ? -heading : 0f;
-        drawCardinal(c, "N", cx, cy, r * .70f, compassRotation, 0xFFFFFFFF);
-        drawCardinal(c, "E", cx, cy, r * .70f, 90f + compassRotation, 0xFF8BA0A8);
-        drawCardinal(c, "S", cx, cy, r * .70f, 180f + compassRotation, 0xFF8BA0A8);
-        drawCardinal(c, "W", cx, cy, r * .70f, 270f + compassRotation, 0xFF8BA0A8);
+        float rot = hasHeading ? -heading : 0f;
+        drawCardinal(c,"N",cx,cy,r*.72f,rot,0xFFF3F8F8);
+        drawCardinal(c,"E",cx,cy,r*.72f,90+rot,0xFFE6F0F1);
+        drawCardinal(c,"S",cx,cy,r*.72f,180+rot,0xFFE6F0F1);
+        drawCardinal(c,"W",cx,cy,r*.72f,270+rot,0xFFE6F0F1);
 
         if (hasLocation) {
-            float arrowBearing = hasHeading ? normalize(qiblaBearing - heading) : qiblaBearing;
-            float angle = arrowBearing > 180 ? arrowBearing - 360 : arrowBearing;
+            float arrow = hasHeading ? normalize(qiblaBearing-heading) : qiblaBearing;
+            float angle = arrow > 180 ? arrow-360 : arrow;
             c.save();
-            c.rotate(angle, cx, cy);
-            stroke.setStrokeWidth(r * .034f);
-            stroke.setColor(0xFF35E6C7);
-            c.drawLine(cx, cy + r * .03f, cx, cy - r * .47f, stroke);
-
-            Path arrow = new Path();
-            arrow.moveTo(cx, cy - r * .69f);
-            arrow.lineTo(cx - r * .105f, cy - r * .47f);
-            arrow.lineTo(cx + r * .105f, cy - r * .47f);
-            arrow.close();
-            p.setColor(0xFF35E6C7);
-            p.setShadowLayer(18f, 0, 0, 0xAA35E6C7);
-            c.drawPath(arrow, p);
+            c.rotate(angle,cx,cy);
+            stroke.setStrokeWidth(r*.035f);
+            stroke.setColor(0xFF29E3C7);
+            c.drawLine(cx,cy+r*.02f,cx,cy-r*.49f,stroke);
+            Path head = new Path();
+            head.moveTo(cx,cy-r*.71f);
+            head.lineTo(cx-r*.115f,cy-r*.47f);
+            head.lineTo(cx+r*.115f,cy-r*.47f);
+            head.close();
+            p.setColor(0xFF29E3C7);
+            p.setShadowLayer(20f,0,0,0xCC29E3C7);
+            c.drawPath(head,p);
             p.clearShadowLayer();
             c.restore();
         }
 
-        p.setColor(0xFF0B151B);
-        c.drawRoundRect(new RectF(cx-r*.18f, cy-r*.18f, cx+r*.18f, cy+r*.18f), r*.055f, r*.055f, p);
-        stroke.setStrokeWidth(r*.008f);
-        stroke.setColor(0xFFCCA84A);
-        c.drawRoundRect(new RectF(cx-r*.18f, cy-r*.18f, cx+r*.18f, cy+r*.18f), r*.055f, r*.055f, stroke);
-        p.setColor(0xFFCCA84A);
-        c.drawRect(cx-r*.18f, cy-r*.035f, cx+r*.18f, cy+r*.01f, p);
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(r*.09f);
-        p.setColor(0xFFE9D18B);
-        c.drawText("الكعبة", cx, cy+r*.085f, p);
-
-        p.setColor(0xFF10222B);
-        c.drawRoundRect(new RectF(cx-r*.50f, cy+r*.76f, cx+r*.50f, cy+r*.94f), r*.075f, r*.075f, p);
-        p.setColor(0xFFEAF5F4);
-        p.setTextSize(r*.061f);
-        p.setTextAlign(Paint.Align.CENTER);
-        String msg;
-        if (!hasLocation) {
-            msg = "بانتظار تحديد الموقع";
-        } else if (hasHeading) {
-            float relative = normalize(qiblaBearing - heading);
-            float signed = relative > 180 ? relative - 360 : relative;
-            String side = signed >= 0 ? "يمين" : "يسار";
-            msg = String.format(Locale.US, "القبلة %.0f° %s • %.0f° من الشمال", Math.abs(signed), side, qiblaBearing);
-        } else {
-            msg = String.format(Locale.US, "القبلة %.0f° من الشمال • بانتظار الاتجاه الحي", qiblaBearing);
-        }
-        c.drawText(msg, cx, cy+r*.875f, p);
+        drawKaaba(c,cx,cy,r);
     }
 
-    private void drawCardinal(Canvas c, String text, float cx, float cy, float rr, float deg, int color) {
-        double a = Math.toRadians(deg - 90);
-        float x = cx + (float)Math.cos(a) * rr;
-        float y = cy + (float)Math.sin(a) * rr;
+    private void drawKaaba(Canvas c, float cx, float cy, float r) {
+        RectF body = new RectF(cx-r*.18f,cy-r*.18f,cx+r*.18f,cy+r*.21f);
+        p.setColor(0xFF10181E);
+        c.drawRoundRect(body,r*.04f,r*.04f,p);
+        stroke.setStrokeWidth(r*.007f);
+        stroke.setColor(0xFFE4B64D);
+        c.drawRoundRect(body,r*.04f,r*.04f,stroke);
+        p.setColor(0xFFE4B64D);
+        c.drawRect(cx-r*.18f,cy-r*.045f,cx+r*.18f,cy+r*.015f,p);
         p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(rr*.11f);
+        p.setColor(0xFFFFE4A2);
+        p.setTextSize(r*.075f);
+        c.drawText("الكعبة",cx,cy+r*.105f,p);
+    }
+
+    private void drawCardinal(Canvas c,String t,float cx,float cy,float rr,float deg,int color) {
+        double a=Math.toRadians(deg-90);
+        float x=cx+(float)Math.cos(a)*rr, y=cy+(float)Math.sin(a)*rr;
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(rr*.105f);
         p.setColor(color);
-        p.setFakeBoldText(text.equals("N"));
-        Paint.FontMetrics fm = p.getFontMetrics();
-        c.drawText(text, x, y - (fm.ascent+fm.descent)/2, p);
+        p.setFakeBoldText(true);
+        Paint.FontMetrics fm=p.getFontMetrics();
+        c.drawText(t,x,y-(fm.ascent+fm.descent)/2,p);
         p.setFakeBoldText(false);
     }
 
-    private void drawLeftInfo(Canvas c, float w, float h) {
-        float x = w*.055f;
-        p.setTextAlign(Paint.Align.LEFT);
-        p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("زاوية القبلة من الشمال", x, h*.29f, p);
-        p.setColor(0xFFF4FAFA); p.setTextSize(h*.070f); p.setFakeBoldText(true);
-        c.drawText(hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—", x, h*.37f, p);
-        p.setFakeBoldText(false);
-
-        p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("اتجاه الحركة", x, h*.52f, p);
-        p.setColor(0xFFF4FAFA); p.setTextSize(h*.052f);
-        c.drawText(hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—", x, h*.59f, p);
-        p.setColor(hasHeading ? 0xFF35E6C7 : 0xFFFFC857); p.setTextSize(h*.020f);
-        c.drawText(headingSource, x, h*.635f, p);
-    }
-
-    private void drawRightInfo(Canvas c, float w, float h) {
-        float x = w*.945f;
+    private void drawPrayerPanel(Canvas c, float w, float h) {
+        float x=w*.755f, y=h*.195f, cw=w*.215f, ch=h*.365f;
+        roundCard(c,new RectF(x,y,x+cw,y+ch));
         p.setTextAlign(Paint.Align.RIGHT);
-        p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("المسافة إلى مكة", x, h*.29f, p);
-        p.setColor(0xFFF4FAFA); p.setTextSize(h*.064f); p.setFakeBoldText(true);
-        c.drawText(hasLocation ? String.format(Locale.US, "%,.0f كم", distanceKm) : "—", x, h*.37f, p);
+        p.setColor(0xFFE5B64A);
+        p.setTextSize(h*.025f);
+        p.setFakeBoldText(true);
+        c.drawText("مواقيت الصلاة",x+cw*.90f,y+ch*.12f,p);
         p.setFakeBoldText(false);
-        p.setColor(0xFF6F8992); p.setTextSize(h*.025f);
-        c.drawText("طريقة التحديد", x, h*.52f, p);
-        p.setColor(0xFFE8CE81); p.setTextSize(h*.038f);
-        c.drawText("GPS حي + الشبكة", x, h*.585f, p);
-        p.setColor(0xFF6F8992); p.setTextSize(h*.020f);
-        c.drawText("السهم يتغير مع اتجاه الحركة", x, h*.63f, p);
+
+        int next = getNextPrayerIndex();
+        float rowStart=y+ch*.22f, rowH=ch*.105f;
+        for(int i=0;i<6;i++) {
+            float ry=rowStart+i*rowH;
+            if(i==next) {
+                p.setColor(0x16E5B64A);
+                c.drawRoundRect(new RectF(x+cw*.04f,ry-rowH*.72f,x+cw*.96f,ry+rowH*.25f),14f,14f,p);
+                stroke.setStrokeWidth(1.2f); stroke.setColor(0x88E5B64A);
+                c.drawRoundRect(new RectF(x+cw*.04f,ry-rowH*.72f,x+cw*.96f,ry+rowH*.25f),14f,14f,stroke);
+            }
+            p.setTextSize(h*.020f);
+            p.setTextAlign(Paint.Align.LEFT);
+            p.setColor(i==next?0xFFE5B64A:0xFFE4EBED);
+            c.drawText(prayerNames[i],x+cw*.13f,ry,p);
+            p.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(prayerTimes[i],x+cw*.88f,ry,p);
+        }
+
+        float ny=h*.585f;
+        roundCard(c,new RectF(x,ny,x+cw,ny+h*.075f));
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(h*.019f);
+        p.setColor(0xFFE5B64A);
+        c.drawText(nextPrayerText(),x+cw*.5f,ny+h*.046f,p);
+
+        float ly=h*.685f;
+        roundCard(c,new RectF(x,ly,x+cw,ly+h*.105f));
+        p.setTextAlign(Paint.Align.RIGHT);
+        p.setTextSize(h*.019f);
+        p.setColor(0xFF2FE0C7);
+        c.drawText("الموقع: "+locationName,x+cw*.90f,ly+h*.041f,p);
+        p.setColor(0xFF6DB4C7);
+        c.drawText((hasLocation?"GPS + الشبكة":"بانتظار GPS")+"  •  "+networkStatus,x+cw*.90f,ly+h*.075f,p);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setColor(0xFF87979E);
+        p.setTextSize(h*.015f);
+        c.drawText(prayerStatus,x+cw*.08f,ly+h*.092f,p);
     }
 
-    private void drawFooter(Canvas c, float w, float h) {
-        stroke.setStrokeWidth(1f);
-        stroke.setColor(0x224F6972);
-        c.drawLine(w*.045f, h*.91f, w*.955f, h*.91f, stroke);
-        p.setTextSize(h*.019f); p.setColor(0xFF50666E); p.setTextAlign(Paint.Align.CENTER);
-        c.drawText("H9 Qibla 0.8 Stable   •   سهم حي عبر GPS", w*.5f, h*.958f, p);
+    private int getNextPrayerIndex() {
+        if(!hasPrayerTimes) return -1;
+        Calendar now=Calendar.getInstance();
+        int current=now.get(Calendar.HOUR_OF_DAY)*60+now.get(Calendar.MINUTE);
+        for(int i=0;i<prayerTimes.length;i++) {
+            int m=parseMinutes(prayerTimes[i]);
+            if(m>=0 && m>current) return i;
+        }
+        return 0;
     }
 
-    private static float calculateBearing(double lat, double lon) {
-        double phi1 = Math.toRadians(lat), phi2 = Math.toRadians(KAABA_LAT);
-        double dl = Math.toRadians(KAABA_LON - lon);
-        double y = Math.sin(dl) * Math.cos(phi2);
-        double x = Math.cos(phi1)*Math.sin(phi2) - Math.sin(phi1)*Math.cos(phi2)*Math.cos(dl);
-        return normalize((float)Math.toDegrees(Math.atan2(y, x)));
+    private String nextPrayerText() {
+        int idx=getNextPrayerIndex();
+        if(idx<0) return "الصلاة القادمة: بانتظار التحديث";
+        int target=parseMinutes(prayerTimes[idx]);
+        Calendar now=Calendar.getInstance();
+        int current=now.get(Calendar.HOUR_OF_DAY)*60+now.get(Calendar.MINUTE);
+        int diff=target-current;
+        if(diff<=0) diff+=24*60;
+        return String.format(Locale.US,"الصلاة القادمة: %s بعد %02d:%02d",prayerNames[idx],diff/60,diff%60);
+    }
+
+    private int parseMinutes(String s) {
+        try {
+            String[] p=s.split(":");
+            return Integer.parseInt(p[0])*60+Integer.parseInt(p[1]);
+        } catch(Exception e) { return -1; }
+    }
+
+    private void drawFooter(Canvas c,float w,float h) {
+        stroke.setStrokeWidth(1f); stroke.setColor(0x334A6B75);
+        c.drawLine(w*.025f,h*.91f,w*.975f,h*.91f,stroke);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(h*.018f);
+        p.setColor(0xFF6F858E);
+        c.drawText("H 9   Q i b l a   0.9   •   GPS حي + مواقيت الصلاة",w*.5f,h*.958f,p);
+    }
+
+    private static float calculateBearing(double lat,double lon) {
+        double phi1=Math.toRadians(lat),phi2=Math.toRadians(KAABA_LAT),dl=Math.toRadians(KAABA_LON-lon);
+        double y=Math.sin(dl)*Math.cos(phi2);
+        double x=Math.cos(phi1)*Math.sin(phi2)-Math.sin(phi1)*Math.cos(phi2)*Math.cos(dl);
+        return normalize((float)Math.toDegrees(Math.atan2(y,x)));
     }
 
     private static float normalize(float v) {
-        v %= 360f;
-        if (v < 0) v += 360f;
-        return v;
+        v%=360f; if(v<0)v+=360f; return v;
     }
 }
