@@ -3,34 +3,58 @@ package sa.h9.qibla;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends Activity implements LocationListener {
     private static final int REQ_LOCATION = 1001;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 3.0f;
-    private static final String PREFS = "h9_qibla_live_heading";
-    private static final String KEY_HEADING = "last_heading";
-    private static final String KEY_HAS_HEADING = "has_heading";
+    private static final long HEADING_STALE_MS = 7000L;
+    private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
     private QiblaView qiblaView;
     private Location lastLocation;
     private Location courseAnchor;
-    private SharedPreferences prefs;
-    private float lastHeading;
-    private boolean hasLastHeading;
+    private long lastHeadingAt;
+    private long lastPrayerFetchAt;
+    private Location lastPrayerLocation;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable uiTick = new Runnable() {
+        @Override public void run() {
+            qiblaView.tick();
+            if (lastHeadingAt > 0 && System.currentTimeMillis() - lastHeadingAt > HEADING_STALE_MS) {
+                qiblaView.clearHeading("بانتظار اتجاه GPS حي");
+                lastHeadingAt = 0;
+                courseAnchor = null;
+            }
+            handler.postDelayed(this, 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,13 +72,6 @@ public class MainActivity extends Activity implements LocationListener {
 
         qiblaView = new QiblaView(this);
         setContentView(qiblaView);
-
-        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        lastHeading = prefs.getFloat(KEY_HEADING, 0f);
-        hasLastHeading = prefs.getBoolean(KEY_HAS_HEADING, false);
-        if (hasLastHeading) {
-            qiblaView.setHeading(lastHeading, "آخر اتجاه GPS محفوظ");
-        }
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -78,7 +95,6 @@ public class MainActivity extends Activity implements LocationListener {
                 Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                 if (gps != null) updateLocation(gps);
             }
-
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1200L, 1f, this);
                 Location network = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
@@ -94,28 +110,36 @@ public class MainActivity extends Activity implements LocationListener {
         long dt = candidate.getTime() - current.getTime();
         if (dt > 30000L) return true;
         if (dt < -30000L) return false;
-        return candidate.getAccuracy() < current.getAccuracy();
+        if (!candidate.hasAccuracy()) return false;
+        return !current.hasAccuracy() || candidate.getAccuracy() < current.getAccuracy();
+    }
+
+    private boolean isNetworkConnected() {
+        try {
+            NetworkInfo info = connectivityManager != null ? connectivityManager.getActiveNetworkInfo() : null;
+            return info != null && info.isConnected();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void updateNetworkStatus() {
-        boolean connected = false;
-        try {
-            NetworkInfo info = connectivityManager != null ? connectivityManager.getActiveNetworkInfo() : null;
-            connected = info != null && info.isConnected();
-        } catch (Exception ignored) { }
-        qiblaView.setNetworkStatus(connected ? "الإنترنت متصل" : "بدون إنترنت");
+        qiblaView.setNetworkStatus(isNetworkConnected() ? "الإنترنت متصل" : "بدون إنترنت");
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         updateNetworkStatus();
+        handler.removeCallbacks(uiTick);
+        handler.post(uiTick);
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        handler.removeCallbacks(uiTick);
         try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
     }
 
@@ -140,13 +164,13 @@ public class MainActivity extends Activity implements LocationListener {
         if (LocationManager.GPS_PROVIDER.equals(location.getProvider())) {
             updateLiveCourse(location);
         }
+        maybeRefreshPrayerTimes(location);
     }
 
     private void updateLiveCourse(Location location) {
         Float newHeading = null;
 
-        if (location.hasBearing() &&
-                (!location.hasSpeed() || location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS)) {
+        if (location.hasBearing() && (!location.hasSpeed() || location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS)) {
             newHeading = normalize(location.getBearing());
         }
 
@@ -156,28 +180,95 @@ public class MainActivity extends Activity implements LocationListener {
             float moved = courseAnchor.distanceTo(location);
             if (moved >= COURSE_MIN_DISTANCE_M) {
                 float positionCourse = normalize(courseAnchor.bearingTo(location));
-                if (newHeading == null) {
-                    newHeading = positionCourse;
-                } else {
-                    newHeading = circularBlend(newHeading, positionCourse, 0.30f);
-                }
+                newHeading = newHeading == null ? positionCourse : circularBlend(newHeading, positionCourse, 0.30f);
                 courseAnchor = new Location(location);
             }
         }
 
         if (newHeading != null) {
-            lastHeading = newHeading;
-            hasLastHeading = true;
-            prefs.edit()
-                    .putFloat(KEY_HEADING, lastHeading)
-                    .putBoolean(KEY_HAS_HEADING, true)
-                    .apply();
-            qiblaView.setHeading(lastHeading, "اتجاه حي عبر GPS");
-        } else if (hasLastHeading) {
-            qiblaView.setHeading(lastHeading, "آخر اتجاه GPS محفوظ");
-        } else {
-            qiblaView.clearHeading("تحرك عدة أمتار لتفعيل الاتجاه الحي");
+            lastHeadingAt = System.currentTimeMillis();
+            qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");
         }
+    }
+
+    private void maybeRefreshPrayerTimes(Location location) {
+        long now = System.currentTimeMillis();
+        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 10000f;
+        if (!movedFar && now - lastPrayerFetchAt < PRAYER_REFRESH_MS) return;
+        if (!isNetworkConnected()) {
+            qiblaView.setPrayerStatus("مواقيت الصلاة تحتاج اتصالاً بالإنترنت");
+            return;
+        }
+        lastPrayerFetchAt = now;
+        lastPrayerLocation = new Location(location);
+        qiblaView.setPrayerStatus("جاري تحديث مواقيت الصلاة…");
+        final double lat = location.getLatitude();
+        final double lon = location.getLongitude();
+        new Thread(() -> fetchPrayerTimes(lat, lon)).start();
+        new Thread(() -> resolveLocationName(lat, lon)).start();
+    }
+
+    private void fetchPrayerTimes(double lat, double lon) {
+        HttpURLConnection connection = null;
+        try {
+            long timestamp = System.currentTimeMillis() / 1000L;
+            String endpoint = String.format(Locale.US,
+                    "https://api.aladhan.com/v1/timings/%d?latitude=%.6f&longitude=%.6f&method=4",
+                    timestamp, lat, lon);
+            connection = (HttpURLConnection) new URL(endpoint).openConnection();
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Accept", "application/json");
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+            reader.close();
+
+            JSONObject root = new JSONObject(sb.toString());
+            JSONObject data = root.getJSONObject("data");
+            JSONObject timings = data.getJSONObject("timings");
+            JSONObject date = data.getJSONObject("date");
+            JSONObject hijri = date.getJSONObject("hijri");
+            String[] names = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
+            String[] keys = {"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"};
+            String[] values = new String[keys.length];
+            for (int i = 0; i < keys.length; i++) values[i] = cleanTime(timings.optString(keys[i], "--:--"));
+            String hijriText = hijri.optString("day", "") + " " +
+                    hijri.optJSONObject("month").optString("ar", "") + " " + hijri.optString("year", "");
+
+            runOnUiThread(() -> qiblaView.setPrayerTimes(names, values, hijriText));
+        } catch (Exception e) {
+            runOnUiThread(() -> qiblaView.setPrayerStatus("تعذر تحديث مواقيت الصلاة"));
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private String cleanTime(String value) {
+        if (value == null) return "--:--";
+        int space = value.indexOf(' ');
+        if (space > 0) value = value.substring(0, space);
+        return value.length() >= 5 ? value.substring(0, 5) : value;
+    }
+
+    private void resolveLocationName(double lat, double lon) {
+        try {
+            Geocoder geocoder = new Geocoder(this, new Locale("ar"));
+            List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
+            if (results != null && !results.isEmpty()) {
+                android.location.Address a = results.get(0);
+                String name = a.getLocality();
+                if (name == null || name.trim().isEmpty()) name = a.getSubAdminArea();
+                if (name == null || name.trim().isEmpty()) name = a.getAdminArea();
+                if (name != null && !name.trim().isEmpty()) {
+                    final String finalName = name;
+                    runOnUiThread(() -> qiblaView.setLocationName(finalName));
+                }
+            }
+        } catch (Exception ignored) { }
     }
 
     private static float circularBlend(float a, float b, float weightB) {
