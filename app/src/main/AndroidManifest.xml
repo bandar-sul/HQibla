@@ -9,7 +9,9 @@
 
     <application
         android:allowBackup="false"
-        android:label="H9 Qibla Stable"
+        android:icon="@drawable/ic_h9_qibla"
+        android:roundIcon="@drawable/ic_h9_qibla"
+        android:label="H9 Qibla"
         android:theme="@style/Theme.H9Qibla"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true">
