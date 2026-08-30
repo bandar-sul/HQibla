@@ -2,7 +2,9 @@ package sa.h9.qibla;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Geocoder;
 import android.location.Location;
@@ -13,17 +15,13 @@ import android.net.NetworkInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.method.LinkMovementMethod;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.TextView;
 
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 
@@ -33,6 +31,8 @@ public class MainActivity extends Activity implements LocationListener {
     private static final float COURSE_MIN_DISTANCE_M = 3.0f;
     private static final long HEADING_STALE_MS = 7000L;
     private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
+    private static final String NOTICE_PREFS = "h9_qibla_notice";
+    private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v1";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -40,7 +40,7 @@ public class MainActivity extends Activity implements LocationListener {
     private Location lastLocation;
     private Location courseAnchor;
     private long lastHeadingAt;
-    private long lastPrayerFetchAt;
+    private long lastPrayerCalcAt;
     private Location lastPrayerLocation;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -76,7 +76,40 @@ public class MainActivity extends Activity implements LocationListener {
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         updateNetworkStatus();
+        showDeveloperNoticeOnce();
         ensureLocationPermission();
+    }
+
+    private void showDeveloperNoticeOnce() {
+        SharedPreferences prefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_NOTICE_SHOWN, false)) return;
+
+        final String text = "ملاحظة :\n\n" +
+                "تم تطوير هذا البرنامج بواسطة / بندر بن سليمان\n" +
+                "هذا العمل أجر عني وعنك وعن كل مسلم\n\n" +
+                "حساب تيك توك و سناب شات : h9_haval\n\n" +
+                "لا تنسون زيارة متجرنا\nhttps://h9-story.com";
+
+        TextView message = new TextView(this);
+        message.setText(text);
+        message.setTextSize(20f);
+        message.setTextColor(0xFFF1F7FA);
+        message.setPadding(42, 30, 42, 12);
+        message.setTextDirection(View.TEXT_DIRECTION_RTL);
+        message.setMovementMethod(LinkMovementMethod.getInstance());
+        message.setAutoLinkMask(android.text.util.Linkify.WEB_URLS);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("H9 Qibla")
+                .setView(message)
+                .setCancelable(false)
+                .setPositiveButton("متابعة", (d, which) ->
+                        prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply())
+                .create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(0xFF2FE0C7);
+        });
+        dialog.show();
     }
 
     private void ensureLocationPermission() {
@@ -165,6 +198,7 @@ public class MainActivity extends Activity implements LocationListener {
             updateLiveCourse(location);
         }
         maybeRefreshPrayerTimes(location);
+        if (isNetworkConnected()) maybeResolveLocationName(location);
     }
 
     private void updateLiveCourse(Location location) {
@@ -194,64 +228,24 @@ public class MainActivity extends Activity implements LocationListener {
     private void maybeRefreshPrayerTimes(Location location) {
         long now = System.currentTimeMillis();
         boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 10000f;
-        if (!movedFar && now - lastPrayerFetchAt < PRAYER_REFRESH_MS) return;
-        if (!isNetworkConnected()) {
-            qiblaView.setPrayerStatus("مواقيت الصلاة تحتاج اتصالاً بالإنترنت");
-            return;
-        }
-        lastPrayerFetchAt = now;
+        if (!movedFar && now - lastPrayerCalcAt < PRAYER_REFRESH_MS) return;
+
+        lastPrayerCalcAt = now;
         lastPrayerLocation = new Location(location);
-        qiblaView.setPrayerStatus("جاري تحديث مواقيت الصلاة…");
+        qiblaView.setPrayerStatus("حساب مواقيت الصلاة محليًا…");
+
+        Calendar calendar = Calendar.getInstance();
+        PrayerTimesCalculator.Result result = PrayerTimesCalculator.calculate(
+                location.getLatitude(), location.getLongitude(), calendar);
+        String[] names = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
+        qiblaView.setPrayerTimes(names, result.times24, result.hijriDate);
+        qiblaView.setPrayerStatus("أم القرى • حساب محلي بدون إنترنت");
+    }
+
+    private void maybeResolveLocationName(Location location) {
         final double lat = location.getLatitude();
         final double lon = location.getLongitude();
-        new Thread(() -> fetchPrayerTimes(lat, lon)).start();
         new Thread(() -> resolveLocationName(lat, lon)).start();
-    }
-
-    private void fetchPrayerTimes(double lat, double lon) {
-        HttpURLConnection connection = null;
-        try {
-            long timestamp = System.currentTimeMillis() / 1000L;
-            String endpoint = String.format(Locale.US,
-                    "https://api.aladhan.com/v1/timings/%d?latitude=%.6f&longitude=%.6f&method=4",
-                    timestamp, lat, lon);
-            connection = (HttpURLConnection) new URL(endpoint).openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept", "application/json");
-
-            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line);
-            reader.close();
-
-            JSONObject root = new JSONObject(sb.toString());
-            JSONObject data = root.getJSONObject("data");
-            JSONObject timings = data.getJSONObject("timings");
-            JSONObject date = data.getJSONObject("date");
-            JSONObject hijri = date.getJSONObject("hijri");
-            String[] names = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
-            String[] keys = {"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"};
-            String[] values = new String[keys.length];
-            for (int i = 0; i < keys.length; i++) values[i] = cleanTime(timings.optString(keys[i], "--:--"));
-            String hijriText = hijri.optString("day", "") + " " +
-                    hijri.optJSONObject("month").optString("ar", "") + " " + hijri.optString("year", "");
-
-            runOnUiThread(() -> qiblaView.setPrayerTimes(names, values, hijriText));
-        } catch (Exception e) {
-            runOnUiThread(() -> qiblaView.setPrayerStatus("تعذر تحديث مواقيت الصلاة"));
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
-
-    private String cleanTime(String value) {
-        if (value == null) return "--:--";
-        int space = value.indexOf(' ');
-        if (space > 0) value = value.substring(0, space);
-        return value.length() >= 5 ? value.substring(0, 5) : value;
     }
 
     private void resolveLocationName(double lat, double lon) {
