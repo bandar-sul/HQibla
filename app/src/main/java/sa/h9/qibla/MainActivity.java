@@ -2,23 +2,31 @@ package sa.h9.qibla;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.method.LinkMovementMethod;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.Calendar;
@@ -32,7 +40,7 @@ public class MainActivity extends Activity implements LocationListener {
     private static final long HEADING_STALE_MS = 7000L;
     private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
     private static final String NOTICE_PREFS = "h9_qibla_notice";
-    private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v1";
+    private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v2";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -81,35 +89,116 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     private void showDeveloperNoticeOnce() {
-        SharedPreferences prefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
+        final SharedPreferences prefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
         if (prefs.getBoolean(KEY_NOTICE_SHOWN, false)) return;
 
-        final String text = "ملاحظة :\n\n" +
-                "تم تطوير هذا البرنامج بواسطة / بندر بن سليمان\n" +
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(false);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(0xF2171D23);
+        cardBg.setCornerRadius(dp(28));
+        cardBg.setStroke(dp(2), 0xFFE5B64A);
+        card.setBackground(cardBg);
+
+        TextView appTitle = noteText("H9 Qibla", 20f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(dp(46)));
+
+        View divider = new View(this);
+        GradientDrawable dividerBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0x001E4F54, 0xFFE5B64A, 0x001E4F54});
+        divider.setBackground(dividerBg);
+        LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(dp(320), dp(1));
+        dividerLp.bottomMargin = dp(14);
+        card.addView(divider, dividerLp);
+
+        TextView title = noteText("ملاحظة", 30f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams titleLp = matchWrap(dp(58));
+        titleLp.bottomMargin = dp(8);
+        card.addView(title, titleLp);
+
+        TextView body = noteText(
+                "تم تطوير هذا البرنامج بواسطة / بندر بن سليمان\n\n" +
                 "هذا العمل أجر عني وعنك وعن كل مسلم\n\n" +
                 "حساب تيك توك و سناب شات : h9_haval\n\n" +
-                "لا تنسون زيارة متجرنا\nhttps://h9-story.com";
+                "لا تنسون زيارة متجرنا",
+                20f, 0xFFF1F5F6, false);
+        body.setLineSpacing(dp(2), 1.08f);
+        LinearLayout.LayoutParams bodyLp = matchWrap(WindowManager.LayoutParams.WRAP_CONTENT);
+        bodyLp.bottomMargin = dp(10);
+        card.addView(body, bodyLp);
 
-        TextView message = new TextView(this);
-        message.setText(text);
-        message.setTextSize(20f);
-        message.setTextColor(0xFFF1F7FA);
-        message.setPadding(42, 30, 42, 12);
-        message.setTextDirection(View.TEXT_DIRECTION_RTL);
-        message.setMovementMethod(LinkMovementMethod.getInstance());
-        message.setAutoLinkMask(android.text.util.Linkify.WEB_URLS);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("H9 Qibla")
-                .setView(message)
-                .setCancelable(false)
-                .setPositiveButton("متابعة", (d, which) ->
-                        prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply())
-                .create();
-        dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(0xFF2FE0C7);
+        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
+        store.setPadding(dp(12), dp(8), dp(12), dp(12));
+        store.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com")));
+            } catch (Exception ignored) { }
         });
+        LinearLayout.LayoutParams storeLp = matchWrap(dp(52));
+        storeLp.bottomMargin = dp(14);
+        card.addView(store, storeLp);
+
+        Button continueButton = new Button(this);
+        continueButton.setText("متابعة");
+        continueButton.setTextSize(21f);
+        continueButton.setTextColor(Color.WHITE);
+        continueButton.setAllCaps(false);
+        continueButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        continueButton.setGravity(Gravity.CENTER);
+        continueButton.setPadding(0, 0, 0, 0);
+        GradientDrawable buttonBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFF0B5960, 0xFF117A7C, 0xFF0B5960});
+        buttonBg.setCornerRadius(dp(24));
+        buttonBg.setStroke(dp(1), 0xFF2FE0C7);
+        continueButton.setBackground(buttonBg);
+        continueButton.setOnClickListener(v -> {
+            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
+            dialog.dismiss();
+        });
+        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(230), dp(58));
+        card.addView(continueButton, buttonLp);
+
+        dialog.setContentView(card);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.72f;
+            window.setAttributes(attrs);
+        }
         dialog.show();
+        if (window != null) {
+            window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT);
+            window.setGravity(Gravity.CENTER);
+        }
+    }
+
+    private TextView noteText(String text, float sizeSp, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(sizeSp);
+        view.setTextColor(color);
+        view.setGravity(Gravity.CENTER);
+        view.setTextDirection(View.TEXT_DIRECTION_RTL);
+        view.setTypeface(Typeface.create("sans", bold ? Typeface.BOLD : Typeface.NORMAL));
+        return view;
+    }
+
+    private LinearLayout.LayoutParams matchWrap(int height) {
+        return new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, height);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void ensureLocationPermission() {
