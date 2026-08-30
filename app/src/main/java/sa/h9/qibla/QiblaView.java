@@ -27,6 +27,8 @@ public class QiblaView extends View {
     private float qiblaBearing;
     private float distanceKm;
     private float gpsAccuracy = -1f;
+    private double latitude;
+    private double longitude;
     private String status = "بانتظار الموقع…";
     private String networkStatus = "فحص الإنترنت…";
     private String headingSource = "بانتظار اتجاه GPS حي";
@@ -64,9 +66,11 @@ public class QiblaView extends View {
 
     public void setLocation(Location location) {
         hasLocation = true;
-        qiblaBearing = calculateBearing(location.getLatitude(), location.getLongitude());
+        latitude = location.getLatitude();
+        longitude = location.getLongitude();
+        qiblaBearing = calculateBearing(latitude, longitude);
         float[] out = new float[1];
-        Location.distanceBetween(location.getLatitude(), location.getLongitude(), KAABA_LAT, KAABA_LON, out);
+        Location.distanceBetween(latitude, longitude, KAABA_LAT, KAABA_LON, out);
         distanceKm = out[0] / 1000f;
         gpsAccuracy = location.hasAccuracy() ? location.getAccuracy() : -1f;
         status = gpsAccuracy > 0 && gpsAccuracy <= 20 ? "GPS دقيق" : "الموقع متصل";
@@ -122,7 +126,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("0.9", w * .114f, h * .116f, p);
+        c.drawText("1.0", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -144,9 +148,9 @@ public class QiblaView extends View {
         Date now = new Date();
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(0xFFF4F7F8);
-        p.setTextSize(h * .052f);
+        p.setTextSize(h * .048f);
         p.setFakeBoldText(true);
-        c.drawText(new SimpleDateFormat("HH:mm", Locale.US).format(now), w * .955f, h * .070f, p);
+        c.drawText(new SimpleDateFormat("hh:mm a", Locale.US).format(now), w * .955f, h * .070f, p);
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFC7D1D5);
@@ -310,12 +314,12 @@ public class QiblaView extends View {
                 stroke.setStrokeWidth(1.2f); stroke.setColor(0x88E5B64A);
                 c.drawRoundRect(new RectF(x+cw*.04f,ry-rowH*.72f,x+cw*.96f,ry+rowH*.25f),14f,14f,stroke);
             }
-            p.setTextSize(h*.020f);
+            p.setTextSize(h*.019f);
             p.setTextAlign(Paint.Align.LEFT);
             p.setColor(i==next?0xFFE5B64A:0xFFE4EBED);
-            c.drawText(prayerNames[i],x+cw*.13f,ry,p);
+            c.drawText(prayerNames[i],x+cw*.10f,ry,p);
             p.setTextAlign(Paint.Align.RIGHT);
-            c.drawText(prayerTimes[i],x+cw*.88f,ry,p);
+            c.drawText(format12Hour(prayerTimes[i]),x+cw*.91f,ry,p);
         }
 
         float ny=h*.585f;
@@ -325,18 +329,22 @@ public class QiblaView extends View {
         p.setColor(0xFFE5B64A);
         c.drawText(nextPrayerText(),x+cw*.5f,ny+h*.046f,p);
 
-        float ly=h*.685f;
-        roundCard(c,new RectF(x,ly,x+cw,ly+h*.105f));
+        float ly=h*.675f;
+        roundCard(c,new RectF(x,ly,x+cw,ly+h*.125f));
         p.setTextAlign(Paint.Align.RIGHT);
-        p.setTextSize(h*.019f);
+        p.setTextSize(h*.018f);
         p.setColor(0xFF2FE0C7);
-        c.drawText("الموقع: "+locationName,x+cw*.90f,ly+h*.041f,p);
+        c.drawText("الموقع: "+locationName,x+cw*.90f,ly+h*.035f,p);
+        p.setColor(0xFFB6C4CA);
+        p.setTextSize(h*.016f);
+        String coords = hasLocation ? String.format(Locale.US,"%.5f, %.5f",latitude,longitude) : "بانتظار الإحداثيات";
+        c.drawText(coords,x+cw*.90f,ly+h*.063f,p);
         p.setColor(0xFF6DB4C7);
-        c.drawText((hasLocation?"GPS + الشبكة":"بانتظار GPS")+"  •  "+networkStatus,x+cw*.90f,ly+h*.075f,p);
+        c.drawText((hasLocation?"GPS + الشبكة":"بانتظار GPS")+"  •  "+networkStatus,x+cw*.90f,ly+h*.090f,p);
         p.setTextAlign(Paint.Align.LEFT);
         p.setColor(0xFF87979E);
-        p.setTextSize(h*.015f);
-        c.drawText(prayerStatus,x+cw*.08f,ly+h*.092f,p);
+        p.setTextSize(h*.014f);
+        c.drawText(prayerStatus,x+cw*.07f,ly+h*.111f,p);
     }
 
     private int getNextPrayerIndex() {
@@ -363,9 +371,20 @@ public class QiblaView extends View {
 
     private int parseMinutes(String s) {
         try {
-            String[] p=s.split(":");
-            return Integer.parseInt(p[0])*60+Integer.parseInt(p[1]);
+            String[] parts=s.split(":");
+            return Integer.parseInt(parts[0])*60+Integer.parseInt(parts[1]);
         } catch(Exception e) { return -1; }
+    }
+
+    private String format12Hour(String value) {
+        int minutes = parseMinutes(value);
+        if (minutes < 0) return value;
+        int hour24 = minutes / 60;
+        int minute = minutes % 60;
+        String ampm = hour24 >= 12 ? "PM" : "AM";
+        int hour12 = hour24 % 12;
+        if (hour12 == 0) hour12 = 12;
+        return String.format(Locale.US, "%02d:%02d %s", hour12, minute, ampm);
     }
 
     private void drawFooter(Canvas c,float w,float h) {
@@ -374,7 +393,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("H 9   Q i b l a   0.9   •   GPS حي + مواقيت الصلاة",w*.5f,h*.958f,p);
+        c.drawText("H 9   Q i b l a   1.0   •   12H AM/PM + تحديد الموقع",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {
