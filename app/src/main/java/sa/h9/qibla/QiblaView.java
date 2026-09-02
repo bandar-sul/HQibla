@@ -126,7 +126,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("1.2", w * .114f, h * .116f, p);
+        c.drawText("1.3", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -393,7 +393,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("H 9   Q i b l a   1.2   •   12H AM/PM + تحديد الموقع",w*.5f,h*.958f,p);
+        c.drawText("H 9   Q i b l a   1.3   •   12H AM/PM + تحديد الموقع",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {

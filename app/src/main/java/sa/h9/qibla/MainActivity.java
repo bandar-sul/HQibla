@@ -26,6 +26,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -78,14 +79,90 @@ public class MainActivity extends Activity implements LocationListener {
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
 
+        FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
-        setContentView(qiblaView);
+        root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        Button aboutButton = new Button(this);
+        aboutButton.setText("حول");
+        aboutButton.setTextSize(18f);
+        aboutButton.setTextColor(0xFFF1F7FA);
+        aboutButton.setAllCaps(false);
+        aboutButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        GradientDrawable aboutBg = new GradientDrawable();
+        aboutBg.setColor(0xCC0B1B24);
+        aboutBg.setCornerRadius(dp(18));
+        aboutBg.setStroke(dp(1), 0xFF2FE0C7);
+        aboutButton.setBackground(aboutBg);
+        aboutButton.setOnClickListener(v -> showAboutDialog());
+        FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(130), dp(52));
+        aboutLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+        aboutLp.leftMargin = dp(24);
+        aboutLp.bottomMargin = dp(24);
+        root.addView(aboutButton, aboutLp);
+        setContentView(root);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
+    }
+
+    private void showAboutDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(0xF2171D23);
+        cardBg.setCornerRadius(dp(28));
+        cardBg.setStroke(dp(2), 0xFFE5B64A);
+        card.setBackground(cardBg);
+
+        TextView appTitle = noteText("H9 Qibla", 20f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(dp(44)));
+        TextView title = noteText("حول", 30f, 0xFFFFC857, true);
+        card.addView(title, matchWrap(dp(58)));
+        TextView body = noteText("تم تطوير البرنامج بواسطة هافال H9 صدقة جارية\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
+        body.setLineSpacing(dp(2), 1.08f);
+        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
+        store.setPadding(dp(8), dp(12), dp(8), dp(12));
+        store.setOnClickListener(v -> {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
+        });
+        card.addView(store, matchWrap(dp(58)));
+
+        Button close = new Button(this);
+        close.setText("إغلاق");
+        close.setTextSize(20f);
+        close.setTextColor(Color.WHITE);
+        close.setAllCaps(false);
+        GradientDrawable closeBg = new GradientDrawable();
+        closeBg.setColor(0xFF117A7C);
+        closeBg.setCornerRadius(dp(24));
+        closeBg.setStroke(dp(1), 0xFF2FE0C7);
+        close.setBackground(closeBg);
+        close.setOnClickListener(v -> dialog.dismiss());
+        card.addView(close, new LinearLayout.LayoutParams(dp(220), dp(56)));
+
+        dialog.setContentView(card);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.72f;
+            window.setAttributes(attrs);
+        }
+        dialog.show();
+        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
     }
 
     private void showDeveloperNoticeOnce() {
