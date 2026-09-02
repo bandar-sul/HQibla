@@ -1,0 +1,75 @@
+name: Patch H9 Qibla 1.4
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/patch-v14.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch fullscreen and parking behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/sa/h9/qibla/MainActivity.java')
+          s = p.read_text(encoding='utf-8')
+
+          old = '''        getWindow().getDecorView().setSystemUiVisibility(\n                View.SYSTEM_UI_FLAG_FULLSCREEN |\n                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |\n                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |\n                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |\n                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |\n                View.SYSTEM_UI_FLAG_LAYOUT_STABLE);'''
+          s = s.replace(old, '        applyImmersiveMode();', 1)
+
+          marker = '''    private void showAboutDialog() {'''
+          immersive = '''    private void applyImmersiveMode() {\n        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);\n        getWindow().getDecorView().setSystemUiVisibility(\n                View.SYSTEM_UI_FLAG_FULLSCREEN |\n                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |\n                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |\n                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |\n                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |\n                View.SYSTEM_UI_FLAG_LAYOUT_STABLE);\n    }\n\n    @Override\n    public void onWindowFocusChanged(boolean hasFocus) {\n        super.onWindowFocusChanged(hasFocus);\n        if (hasFocus) applyImmersiveMode();\n    }\n\n'''
+          if 'private void applyImmersiveMode()' not in s:
+              s = s.replace(marker, immersive + marker, 1)
+
+          about_show = '''        dialog.show();\n        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }\n    }'''
+          about_new = '''        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));\n        dialog.show();\n        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }\n    }'''
+          s = s.replace(about_show, about_new, 1)
+
+          resume_old = '''    protected void onResume() {\n        super.onResume();\n        updateNetworkStatus();'''
+          resume_new = '''    protected void onResume() {\n        super.onResume();\n        applyImmersiveMode();\n        updateNetworkStatus();'''
+          s = s.replace(resume_old, resume_new, 1)
+
+          live_marker = '''    private void updateLiveCourse(Location location) {\n        Float newHeading = null;'''
+          live_new = '''    private void updateLiveCourse(Location location) {\n        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {\n            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");\n            lastHeadingAt = 0L;\n            courseAnchor = null;\n            return;\n        }\n\n        Float newHeading = null;'''
+          s = s.replace(live_marker, live_new, 1)
+
+          # Re-enter immersive mode after the first-run notice too.
+          notice_close = '''            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();\n            dialog.dismiss();'''
+          notice_new = '''            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();\n            dialog.dismiss();\n            handler.postDelayed(this::applyImmersiveMode, 120L);'''
+          s = s.replace(notice_close, notice_new, 1)
+
+          p.write_text(s, encoding='utf-8')
+
+          q = Path('app/src/main/java/sa/h9/qibla/QiblaView.java')
+          t = q.read_text(encoding='utf-8')
+          t = t.replace('c.drawText("1.3", w * .114f, h * .116f, p);', 'c.drawText("1.4", w * .114f, h * .116f, p);')
+          t = t.replace('"H 9   Q i b l a   1.3   •   12H AM/PM + تحديد الموقع"', '"H 9   Q i b l a   1.4   •   قيادة حيّة + قبلة ثابتة عند الوقوف"')
+          t = t.replace('c.drawText(hasHeading ? headingSource : "تحرك قليلًا لتحديث السهم", x+cardW*.5f, h*.757f, p);', 'c.drawText(hasHeading ? headingSource : (hasLocation ? "وضع الوقوف: اتجاه القبلة من الشمال" : "بانتظار GPS"), x+cardW*.5f, h*.757f, p);')
+          q.write_text(t, encoding='utf-8')
+
+          g = Path('app/build.gradle')
+          u = g.read_text(encoding='utf-8').replace("versionCode 13", "versionCode 14").replace("versionName '1.3'", "versionName '1.4'")
+          g.write_text(u, encoding='utf-8')
+
+          w = Path('.github/workflows/build-apk.yml')
+          x = w.read_text(encoding='utf-8').replace('1.3', '1.4')
+          w.write_text(x, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle .github/workflows/build-apk.yml
+          git commit -m "H9 Qibla 1.4 fullscreen and parking mode" || true
+          git push
