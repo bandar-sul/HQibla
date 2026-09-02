@@ -35,19 +35,13 @@ jobs:
           about_new = '''        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));\n        dialog.show();\n        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }\n    }'''
           s = s.replace(about_show, about_new, 1)
 
-          resume_old = '''    protected void onResume() {\n        super.onResume();\n        updateNetworkStatus();'''
-          resume_new = '''    protected void onResume() {\n        super.onResume();\n        applyImmersiveMode();\n        updateNetworkStatus();'''
-          s = s.replace(resume_old, resume_new, 1)
+          s = s.replace('''    protected void onResume() {\n        super.onResume();\n        updateNetworkStatus();''', '''    protected void onResume() {\n        super.onResume();\n        applyImmersiveMode();\n        updateNetworkStatus();''', 1)
 
-          live_marker = '''    private void updateLiveCourse(Location location) {\n        Float newHeading = null;'''
-          live_new = '''    private void updateLiveCourse(Location location) {\n        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {\n            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");\n            lastHeadingAt = 0L;\n            courseAnchor = null;\n            return;\n        }\n\n        Float newHeading = null;'''
-          s = s.replace(live_marker, live_new, 1)
+          s = s.replace('''    private void updateLiveCourse(Location location) {\n        Float newHeading = null;''', '''    private void updateLiveCourse(Location location) {\n        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {\n            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");\n            lastHeadingAt = 0L;\n            courseAnchor = null;\n            return;\n        }\n\n        Float newHeading = null;''', 1)
 
-          # Re-enter immersive mode after the first-run notice too.
           notice_close = '''            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();\n            dialog.dismiss();'''
           notice_new = '''            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();\n            dialog.dismiss();\n            handler.postDelayed(this::applyImmersiveMode, 120L);'''
           s = s.replace(notice_close, notice_new, 1)
-
           p.write_text(s, encoding='utf-8')
 
           q = Path('app/src/main/java/sa/h9/qibla/QiblaView.java')
@@ -60,16 +54,12 @@ jobs:
           g = Path('app/build.gradle')
           u = g.read_text(encoding='utf-8').replace("versionCode 13", "versionCode 14").replace("versionName '1.3'", "versionName '1.4'")
           g.write_text(u, encoding='utf-8')
-
-          w = Path('.github/workflows/build-apk.yml')
-          x = w.read_text(encoding='utf-8').replace('1.3', '1.4')
-          w.write_text(x, encoding='utf-8')
           PY
 
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle .github/workflows/build-apk.yml
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
           git commit -m "H9 Qibla 1.4 fullscreen and parking mode" || true
           git push
