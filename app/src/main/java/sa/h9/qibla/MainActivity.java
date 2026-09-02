@@ -71,13 +71,7 @@ public class MainActivity extends Activity implements LocationListener {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        applyImmersiveMode();
 
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
@@ -107,6 +101,23 @@ public class MainActivity extends Activity implements LocationListener {
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
+    }
+
+    private void applyImmersiveMode() {
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyImmersiveMode();
     }
 
     private void showAboutDialog() {
@@ -161,6 +172,7 @@ public class MainActivity extends Activity implements LocationListener {
             attrs.dimAmount = 0.72f;
             window.setAttributes(attrs);
         }
+        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
         if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
     }
@@ -239,6 +251,7 @@ public class MainActivity extends Activity implements LocationListener {
         continueButton.setOnClickListener(v -> {
             prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
             dialog.dismiss();
+            handler.postDelayed(this::applyImmersiveMode, 120L);
         });
         LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(230), dp(58));
         card.addView(continueButton, buttonLp);
@@ -329,6 +342,7 @@ public class MainActivity extends Activity implements LocationListener {
     @Override
     protected void onResume() {
         super.onResume();
+        applyImmersiveMode();
         updateNetworkStatus();
         handler.removeCallbacks(uiTick);
         handler.post(uiTick);
@@ -368,6 +382,13 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     private void updateLiveCourse(Location location) {
+        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {
+            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");
+            lastHeadingAt = 0L;
+            courseAnchor = null;
+            return;
+        }
+
         Float newHeading = null;
 
         if (location.hasBearing() && (!location.hasSpeed() || location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS)) {
