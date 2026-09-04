@@ -1,0 +1,140 @@
+name: Patch H9 Qibla 1.5
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/patch-v15.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch session heading and Android sensors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path('app/src/main/java/sa/h9/qibla/MainActivity.java')
+          s=p.read_text(encoding='utf-8')
+
+          s=s.replace('import android.location.LocationManager;\n', 'import android.location.LocationManager;\nimport android.hardware.Sensor;\nimport android.hardware.SensorEvent;\nimport android.hardware.SensorEventListener;\nimport android.hardware.SensorManager;\nimport android.view.Surface;\n')
+          s=s.replace('public class MainActivity extends Activity implements LocationListener {', 'public class MainActivity extends Activity implements LocationListener, SensorEventListener {')
+
+          anchor='''    private LocationManager locationManager;\n    private ConnectivityManager connectivityManager;'''
+          fields='''    private LocationManager locationManager;\n    private ConnectivityManager connectivityManager;\n    private SensorManager sensorManager;\n    private Sensor rotationVectorSensor;\n    private Sensor accelerometerSensor;\n    private Sensor magneticSensor;\n    private final float[] accelValues = new float[3];\n    private final float[] magneticValues = new float[3];\n    private boolean haveAccel;\n    private boolean haveMagnetic;\n    private float lastSpeedMps;\n    private long lastGpsHeadingAt;'''
+          s=s.replace(anchor, fields, 1)
+
+          init='''        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);\n        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);'''
+          init_new='''        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);\n        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);\n        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);\n        if (sensorManager != null) {\n            rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);\n            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);\n            magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);\n        }'''
+          s=s.replace(init, init_new, 1)
+
+          resume='''        handler.removeCallbacks(uiTick);\n        handler.post(uiTick);\n        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();'''
+          resume_new='''        handler.removeCallbacks(uiTick);\n        handler.post(uiTick);\n        registerHeadingSensors();\n        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();'''
+          s=s.replace(resume, resume_new, 1)
+
+          pause='''        handler.removeCallbacks(uiTick);\n        try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }'''
+          pause_new='''        handler.removeCallbacks(uiTick);\n        if (sensorManager != null) sensorManager.unregisterListener(this);\n        try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }'''
+          s=s.replace(pause, pause_new, 1)
+
+          # Keep last heading in-memory when parked rather than clearing it.
+          old='''    private void updateLiveCourse(Location location) {\n        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {\n            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");\n            lastHeadingAt = 0L;\n            courseAnchor = null;\n            return;\n        }\n\n        Float newHeading = null;'''
+          new='''    private void updateLiveCourse(Location location) {\n        if (location.hasSpeed()) lastSpeedMps = location.getSpeed();\n        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {\n            courseAnchor = null;\n            return;\n        }\n\n        Float newHeading = null;'''
+          s=s.replace(old,new,1)
+
+          s=s.replace('''            lastHeadingAt = System.currentTimeMillis();\n            qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");''','''            lastHeadingAt = System.currentTimeMillis();\n            lastGpsHeadingAt = lastHeadingAt;\n            qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");''',1)
+
+          # Do not erase a valid session heading when GPS bearing becomes stale.
+          stale='''            if (lastHeadingAt > 0 && System.currentTimeMillis() - lastHeadingAt > HEADING_STALE_MS) {\n                qiblaView.clearHeading("بانتظار اتجاه GPS حي");\n                lastHeadingAt = 0;\n                courseAnchor = null;\n            }'''
+          stale_new='''            if (lastHeadingAt > 0 && System.currentTimeMillis() - lastHeadingAt > HEADING_STALE_MS) {\n                courseAnchor = null;\n            }'''
+          s=s.replace(stale,stale_new,1)
+
+          marker='''    private static float circularBlend(float a, float b, float weightB) {'''
+          sensor_methods=r'''    private void registerHeadingSensors() {
+        if (sensorManager == null) return;
+        sensorManager.unregisterListener(this);
+        if (rotationVectorSensor != null) {
+            sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI);
+        } else {
+            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_UI);
+            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    private float azimuthForDisplay(float[] matrix) {
+        float[] remapped = new float[9];
+        int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        int x = SensorManager.AXIS_X, y = SensorManager.AXIS_Y;
+        if (rotation == Surface.ROTATION_90) { x = SensorManager.AXIS_Y; y = SensorManager.AXIS_MINUS_X; }
+        else if (rotation == Surface.ROTATION_180) { x = SensorManager.AXIS_MINUS_X; y = SensorManager.AXIS_MINUS_Y; }
+        else if (rotation == Surface.ROTATION_270) { x = SensorManager.AXIS_MINUS_Y; y = SensorManager.AXIS_X; }
+        if (!SensorManager.remapCoordinateSystem(matrix, x, y, remapped)) return Float.NaN;
+        float[] orientation = new float[3];
+        SensorManager.getOrientation(remapped, orientation);
+        return normalize((float) Math.toDegrees(orientation[0]));
+    }
+
+    private void applySensorHeading(float headingValue) {
+        if (Float.isNaN(headingValue)) return;
+        long now = System.currentTimeMillis();
+        boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
+        if (!gpsFreshAndMoving) {
+            lastHeadingAt = now;
+            qiblaView.setHeading(headingValue, "بوصلة الشاشة / الحساس");
+        }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
+            float[] matrix = new float[9];
+            SensorManager.getRotationMatrixFromVector(matrix, event.values);
+            applySensorHeading(azimuthForDisplay(matrix));
+            return;
+        }
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, accelValues, 0, 3);
+            haveAccel = true;
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, magneticValues, 0, 3);
+            haveMagnetic = true;
+        }
+        if (haveAccel && haveMagnetic) {
+            float[] matrix = new float[9];
+            float[] inclination = new float[9];
+            if (SensorManager.getRotationMatrix(matrix, inclination, accelValues, magneticValues)) {
+                applySensorHeading(azimuthForDisplay(matrix));
+            }
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) { }
+
+'''
+          if 'private void registerHeadingSensors()' not in s:
+              s=s.replace(marker,sensor_methods+marker,1)
+
+          p.write_text(s,encoding='utf-8')
+
+          q=Path('app/src/main/java/sa/h9/qibla/QiblaView.java')
+          t=q.read_text(encoding='utf-8')
+          t=t.replace('c.drawText("1.4", w * .114f, h * .116f, p);','c.drawText("1.5", w * .114f, h * .116f, p);')
+          t=t.replace('"H 9   Q i b l a   1.4   •   قيادة حيّة + قبلة ثابتة عند الوقوف"','"H 9   Q i b l a   1.5   •   GPS + حساسات + اتجاه جلسة عند الوقوف"')
+          t=t.replace('(hasLocation ? "وضع الوقوف: اتجاه القبلة من الشمال" : "بانتظار GPS")','(hasLocation ? "ثابت من الشمال • تحرك قليلًا إذا لم تتوفر بوصلة" : "بانتظار GPS")')
+          q.write_text(t,encoding='utf-8')
+
+          g=Path('app/build.gradle')
+          u=g.read_text(encoding='utf-8').replace('versionCode 14','versionCode 15').replace("versionName '1.4'","versionName '1.5'")
+          g.write_text(u,encoding='utf-8')
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
+          git commit -m "H9 Qibla 1.5 session heading and sensor fallback" || true
+          git push
