@@ -15,6 +15,11 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.view.Surface;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
@@ -34,7 +39,7 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 
-public class MainActivity extends Activity implements LocationListener {
+public class MainActivity extends Activity implements LocationListener, SensorEventListener {
     private static final int REQ_LOCATION = 1001;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 3.0f;
@@ -45,6 +50,16 @@ public class MainActivity extends Activity implements LocationListener {
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
+    private SensorManager sensorManager;
+    private Sensor rotationVectorSensor;
+    private Sensor accelerometerSensor;
+    private Sensor magneticSensor;
+    private final float[] accelValues = new float[3];
+    private final float[] magneticValues = new float[3];
+    private boolean haveAccel;
+    private boolean haveMagnetic;
+    private float lastSpeedMps;
+    private long lastGpsHeadingAt;
     private QiblaView qiblaView;
     private Location lastLocation;
     private Location courseAnchor;
@@ -57,8 +72,6 @@ public class MainActivity extends Activity implements LocationListener {
         @Override public void run() {
             qiblaView.tick();
             if (lastHeadingAt > 0 && System.currentTimeMillis() - lastHeadingAt > HEADING_STALE_MS) {
-                qiblaView.clearHeading("بانتظار اتجاه GPS حي");
-                lastHeadingAt = 0;
                 courseAnchor = null;
             }
             handler.postDelayed(this, 1000L);
@@ -98,6 +111,12 @@ public class MainActivity extends Activity implements LocationListener {
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        }
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
@@ -346,6 +365,7 @@ public class MainActivity extends Activity implements LocationListener {
         updateNetworkStatus();
         handler.removeCallbacks(uiTick);
         handler.post(uiTick);
+        registerHeadingSensors();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();
     }
 
@@ -353,6 +373,7 @@ public class MainActivity extends Activity implements LocationListener {
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(uiTick);
+        if (sensorManager != null) sensorManager.unregisterListener(this);
         try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
     }
 
@@ -382,9 +403,8 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     private void updateLiveCourse(Location location) {
+        if (location.hasSpeed()) lastSpeedMps = location.getSpeed();
         if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {
-            qiblaView.clearHeading("وضع الوقوف: اتجاه القبلة من الشمال");
-            lastHeadingAt = 0L;
             courseAnchor = null;
             return;
         }
@@ -408,6 +428,7 @@ public class MainActivity extends Activity implements LocationListener {
 
         if (newHeading != null) {
             lastHeadingAt = System.currentTimeMillis();
+            lastGpsHeadingAt = lastHeadingAt;
             qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");
         }
     }
@@ -451,6 +472,66 @@ public class MainActivity extends Activity implements LocationListener {
             }
         } catch (Exception ignored) { }
     }
+
+    private void registerHeadingSensors() {
+        if (sensorManager == null) return;
+        sensorManager.unregisterListener(this);
+        if (rotationVectorSensor != null) {
+            sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI);
+        } else {
+            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_UI);
+            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    private float azimuthForDisplay(float[] matrix) {
+        float[] remapped = new float[9];
+        int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        int x = SensorManager.AXIS_X, y = SensorManager.AXIS_Y;
+        if (rotation == Surface.ROTATION_90) { x = SensorManager.AXIS_Y; y = SensorManager.AXIS_MINUS_X; }
+        else if (rotation == Surface.ROTATION_180) { x = SensorManager.AXIS_MINUS_X; y = SensorManager.AXIS_MINUS_Y; }
+        else if (rotation == Surface.ROTATION_270) { x = SensorManager.AXIS_MINUS_Y; y = SensorManager.AXIS_X; }
+        if (!SensorManager.remapCoordinateSystem(matrix, x, y, remapped)) return Float.NaN;
+        float[] orientation = new float[3];
+        SensorManager.getOrientation(remapped, orientation);
+        return normalize((float) Math.toDegrees(orientation[0]));
+    }
+
+    private void applySensorHeading(float headingValue) {
+        if (Float.isNaN(headingValue)) return;
+        long now = System.currentTimeMillis();
+        boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
+        if (!gpsFreshAndMoving) {
+            lastHeadingAt = now;
+            qiblaView.setHeading(headingValue, "بوصلة الشاشة / الحساس");
+        }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
+            float[] matrix = new float[9];
+            SensorManager.getRotationMatrixFromVector(matrix, event.values);
+            applySensorHeading(azimuthForDisplay(matrix));
+            return;
+        }
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, accelValues, 0, 3);
+            haveAccel = true;
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, magneticValues, 0, 3);
+            haveMagnetic = true;
+        }
+        if (haveAccel && haveMagnetic) {
+            float[] matrix = new float[9];
+            float[] inclination = new float[9];
+            if (SensorManager.getRotationMatrix(matrix, inclination, accelValues, magneticValues)) {
+                applySensorHeading(azimuthForDisplay(matrix));
+            }
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) { }
 
     private static float circularBlend(float a, float b, float weightB) {
         float delta = signedAngle(b - a);

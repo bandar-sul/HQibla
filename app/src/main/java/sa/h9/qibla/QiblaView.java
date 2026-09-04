@@ -126,7 +126,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("1.4", w * .114f, h * .116f, p);
+        c.drawText("1.5", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -188,7 +188,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.020f);
         p.setColor(0xFF9FB0B7);
-        c.drawText(hasHeading ? headingSource : (hasLocation ? "وضع الوقوف: اتجاه القبلة من الشمال" : "بانتظار GPS"), x+cardW*.5f, h*.757f, p);
+        c.drawText(hasHeading ? headingSource : (hasLocation ? "ثابت من الشمال • تحرك قليلًا إذا لم تتوفر بوصلة" : "بانتظار GPS"), x+cardW*.5f, h*.757f, p);
     }
 
     private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
@@ -393,7 +393,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("H 9   Q i b l a   1.4   •   قيادة حيّة + قبلة ثابتة عند الوقوف",w*.5f,h*.958f,p);
+        c.drawText("H 9   Q i b l a   1.5   •   GPS + حساسات + اتجاه جلسة عند الوقوف",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {
