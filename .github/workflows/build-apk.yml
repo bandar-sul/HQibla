@@ -1,4 +1,4 @@
-name: Build H9 Qibla 1.5 Stable APK
+name: Build H9 Qibla 1.6 Stable APK
 
 on:
   push:
@@ -60,17 +60,17 @@ jobs:
       - name: Publish stable APK to repository
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-1.5-Stable-Haval-H9.apk
-          sha256sum dist/H9-Qibla-1.5-Stable-Haval-H9.apk > dist/H9-Qibla-1.5-Stable-Haval-H9.sha256
+          cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-1.6-Stable-Haval-H9.apk
+          sha256sum dist/H9-Qibla-1.6-Stable-Haval-H9.apk > dist/H9-Qibla-1.6-Stable-Haval-H9.sha256
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
-          git add dist/H9-Qibla-1.5-Stable-Haval-H9.apk dist/H9-Qibla-1.5-Stable-Haval-H9.sha256
-          git commit -m "Publish H9 Qibla 1.5 Stable APK" || true
+          git add dist/H9-Qibla-1.6-Stable-Haval-H9.apk dist/H9-Qibla-1.6-Stable-Haval-H9.sha256
+          git commit -m "Publish H9 Qibla 1.6 Stable APK" || true
           git push
 
       - name: Upload stable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-1.5-Stable-Haval-H9
-          path: dist/H9-Qibla-1.5-Stable-Haval-H9.apk
+          name: H9-Qibla-1.6-Stable-Haval-H9
+          path: dist/H9-Qibla-1.6-Stable-Haval-H9.apk
