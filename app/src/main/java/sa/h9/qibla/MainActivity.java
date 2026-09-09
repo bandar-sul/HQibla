@@ -158,7 +158,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         card.addView(appTitle, matchWrap(dp(44)));
         TextView title = noteText("حول", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
-        TextView body = noteText("تم تطوير البرنامج بواسطة هافال H9 صدقة جارية\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
+        TextView body = noteText("تم تطوير البرنامج بواسطة بندر بن سليمان حساب هافال H9 صدقة جارية عني وعنك وعن كل مسلم\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
         body.setLineSpacing(dp(2), 1.08f);
         card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
