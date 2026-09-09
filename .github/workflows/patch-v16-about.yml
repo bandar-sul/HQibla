@@ -1,0 +1,25 @@
+name: Apply H9 Qibla 1.6 About Patch
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/patch-v16-about.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply About text patch
+        run: python3 tools/patch_v16_about.py
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
+          git commit -m "H9 Qibla 1.6 update About text" || true
+          git push
