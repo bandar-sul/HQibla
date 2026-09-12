@@ -61,6 +61,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private float lastSpeedMps;
     private long lastGpsHeadingAt;
     private QiblaView qiblaView;
+    private TextView diagnosticText;
     private Location lastLocation;
     private Location courseAnchor;
     private long lastHeadingAt;
@@ -89,6 +90,23 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        diagnosticText = new TextView(this);
+        diagnosticText.setText("1.7 TEST • fused: بانتظار البيانات");
+        diagnosticText.setTextSize(15f);
+        diagnosticText.setTextColor(0xFFF1F7FA);
+        diagnosticText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        diagnosticText.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable diagnosticBg = new GradientDrawable();
+        diagnosticBg.setColor(0xCC07151C);
+        diagnosticBg.setCornerRadius(dp(12));
+        diagnosticBg.setStroke(dp(1), 0xFF2FE0C7);
+        diagnosticText.setBackground(diagnosticBg);
+        FrameLayout.LayoutParams diagnosticLp = new FrameLayout.LayoutParams(dp(560), dp(58));
+        diagnosticLp.gravity = Gravity.TOP | Gravity.LEFT;
+        diagnosticLp.leftMargin = dp(24);
+        diagnosticLp.topMargin = dp(150);
+        root.addView(diagnosticText, diagnosticLp);
 
         Button aboutButton = new Button(this);
         aboutButton.setText("حول");
@@ -321,18 +339,35 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void startLocation() {
         updateNetworkStatus();
         try {
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 400L, 0.2f, this);
-                Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                if (gps != null) updateLocation(gps);
+            // HAVAL/GWM exposes its own fused provider through com.gwm.navi.app.
+            // Request it first so we can test the factory Dead-Reckoning output directly.
+            if (locationManager.getProvider("fused") != null && locationManager.isProviderEnabled("fused")) {
+                locationManager.requestLocationUpdates("fused", 300L, 0f, this);
+                Location fused = locationManager.getLastKnownLocation("fused");
+                if (fused != null) updateLocation(fused);
+                else updateDiagnosticText("fused متاح • بانتظار أول موقع");
+            } else {
+                updateDiagnosticText("fused غير متاح للنظام");
             }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1200L, 1f, this);
+
+            // With internet, network location can give a fast position without waiting for GNSS.
+            if (isNetworkConnected() && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0f, this);
                 Location network = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
                 if (network != null && isBetterLocation(network, lastLocation)) updateLocation(network);
             }
+
+            // GNSS remains the fallback and the reference source while moving.
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 400L, 0.2f, this);
+                Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (gps != null && lastLocation == null) updateLocation(gps);
+            }
         } catch (SecurityException ignored) {
             qiblaView.setStatus("تعذر الوصول إلى الموقع");
+            updateDiagnosticText("لا توجد صلاحية موقع");
+        } catch (IllegalArgumentException ignored) {
+            updateDiagnosticText("fused رفض الطلب • GPS احتياط");
         }
     }
 
@@ -388,18 +423,44 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateLocation(Location location) {
-        if (!isBetterLocation(location, lastLocation) && lastLocation != null &&
-                !LocationManager.GPS_PROVIDER.equals(location.getProvider())) return;
+        String provider = location.getProvider() == null ? "unknown" : location.getProvider();
+        boolean isFused = "fused".equals(provider);
+
+        // Never discard factory fused samples merely because the previous GPS fix is more accurate.
+        if (!isFused && !isBetterLocation(location, lastLocation) && lastLocation != null &&
+                !LocationManager.GPS_PROVIDER.equals(provider)) return;
 
         lastLocation = location;
         qiblaView.setLocation(location);
         updateNetworkStatus();
 
-        if (LocationManager.GPS_PROVIDER.equals(location.getProvider())) {
+        if (isFused) {
+            updateFusedCourse(location);
+        } else if (LocationManager.GPS_PROVIDER.equals(provider)) {
             updateLiveCourse(location);
         }
         maybeRefreshPrayerTimes(location);
         if (isNetworkConnected()) maybeResolveLocationName(location);
+    }
+
+    private void updateFusedCourse(Location location) {
+        float speed = location.hasSpeed() ? location.getSpeed() : -1f;
+        String bearingText = location.hasBearing() ? String.format(Locale.US, "%.1f°", location.getBearing()) : "--";
+        String speedText = speed >= 0f ? String.format(Locale.US, "%.2f m/s", speed) : "--";
+        String accuracyText = location.hasAccuracy() ? String.format(Locale.US, "%.1f m", location.getAccuracy()) : "--";
+        updateDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText);
+
+        // For this test build we intentionally accept a fused bearing even at standstill.
+        // This will tell us whether GWM's DR service preserves a real vehicle heading.
+        if (location.hasBearing() && !Float.isNaN(location.getBearing())) {
+            float fusedHeading = normalize(location.getBearing());
+            lastHeadingAt = System.currentTimeMillis();
+            qiblaView.setHeading(fusedHeading, "اتجاه fused من نظام هافال");
+        }
+    }
+
+    private void updateDiagnosticText(String text) {
+        if (diagnosticText != null) diagnosticText.setText("1.7 TEST • " + text);
     }
 
     private void updateLiveCourse(Location location) {
