@@ -62,7 +62,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private float lastSpeedMps;
     private long lastGpsHeadingAt;
     private QiblaView qiblaView;
-    private TextView diagnosticText;
+    private TextView middlewareDiagnosticText;
+    private TextView locationDiagnosticText;
     private Location lastLocation;
     private Location courseAnchor;
     private long lastHeadingAt;
@@ -92,22 +93,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        diagnosticText = new TextView(this);
-        diagnosticText.setText("1.9 TEST • GWM middleware: جاري الاختبار");
-        diagnosticText.setTextSize(15f);
-        diagnosticText.setTextColor(0xFFF1F7FA);
-        diagnosticText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        diagnosticText.setPadding(dp(14), 0, dp(14), 0);
-        GradientDrawable diagnosticBg = new GradientDrawable();
-        diagnosticBg.setColor(0xCC07151C);
-        diagnosticBg.setCornerRadius(dp(12));
-        diagnosticBg.setStroke(dp(1), 0xFF2FE0C7);
-        diagnosticText.setBackground(diagnosticBg);
-        FrameLayout.LayoutParams diagnosticLp = new FrameLayout.LayoutParams(dp(560), dp(58));
-        diagnosticLp.gravity = Gravity.TOP | Gravity.LEFT;
-        diagnosticLp.leftMargin = dp(24);
-        diagnosticLp.topMargin = dp(150);
-        root.addView(diagnosticText, diagnosticLp);
+        middlewareDiagnosticText = createDiagnosticText("2.0 TEST • GWM middleware: جاري الاختبار");
+        FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(700), dp(58));
+        middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
+        middlewareLp.leftMargin = dp(24);
+        middlewareLp.topMargin = dp(142);
+        root.addView(middlewareDiagnosticText, middlewareLp);
+
+        locationDiagnosticText = createDiagnosticText("2.0 TEST • الموقع: جاري فحص fused/GPS");
+        FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
+        locationLp.gravity = Gravity.TOP | Gravity.LEFT;
+        locationLp.leftMargin = dp(24);
+        locationLp.topMargin = dp(207);
+        root.addView(locationDiagnosticText, locationLp);
 
         Button aboutButton = new Button(this);
         aboutButton.setText("حول");
@@ -140,6 +138,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         showDeveloperNoticeOnce();
         ensureLocationPermission();
         testGwmMiddleware();
+    }
+
+    private TextView createDiagnosticText(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(14f);
+        view.setTextColor(0xFFF1F7FA);
+        view.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xCC07151C);
+        bg.setCornerRadius(dp(12));
+        bg.setStroke(dp(1), 0xFF2FE0C7);
+        view.setBackground(bg);
+        return view;
     }
 
     private void applyImmersiveMode() {
@@ -347,9 +360,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 locationManager.requestLocationUpdates("fused", 300L, 0f, this);
                 Location fused = locationManager.getLastKnownLocation("fused");
                 if (fused != null) updateLocation(fused);
-                else updateDiagnosticText("fused متاح • بانتظار أول موقع");
+                else updateLocationDiagnosticText("fused متاح • بانتظار أول موقع");
             } else {
-                updateDiagnosticText("fused غير متاح للنظام");
+                updateLocationDiagnosticText("fused غير متاح للنظام");
             }
 
             // With internet, network location can give a fast position without waiting for GNSS.
@@ -367,9 +380,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         } catch (SecurityException ignored) {
             qiblaView.setStatus("تعذر الوصول إلى الموقع");
-            updateDiagnosticText("لا توجد صلاحية موقع");
+            updateLocationDiagnosticText("لا توجد صلاحية موقع");
         } catch (IllegalArgumentException ignored) {
-            updateDiagnosticText("fused رفض الطلب • GPS احتياط");
+            updateLocationDiagnosticText("fused رفض الطلب • GPS احتياط");
         }
     }
 
@@ -450,7 +463,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         String bearingText = location.hasBearing() ? String.format(Locale.US, "%.1f°", location.getBearing()) : "--";
         String speedText = speed >= 0f ? String.format(Locale.US, "%.2f m/s", speed) : "--";
         String accuracyText = location.hasAccuracy() ? String.format(Locale.US, "%.1f m", location.getAccuracy()) : "--";
-        updateDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText);
+        updateLocationDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText);
 
         // For this test build we intentionally accept a fused bearing even at standstill.
         // This will tell us whether GWM's DR service preserves a real vehicle heading.
@@ -462,10 +475,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void testGwmMiddleware() {
-        updateDiagnosticText("middleware: فحص المسارات الداخلية...");
+        updateMiddlewareDiagnosticText("فحص المسارات الداخلية...");
         new Thread(() -> {
             if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
-                runOnUiThread(() -> updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
+                runOnUiThread(() -> updateMiddlewareDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
                 return;
             }
             String[] paths = new String[]{
@@ -497,7 +510,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             }
                         }
                         String out=b.toString();
-                        runOnUiThread(() -> updateDiagnosticText(out));
+                        runOnUiThread(() -> updateMiddlewareDiagnosticText(out));
                         return;
                     } else {
                         if (report.length()>0) report.append(" • ");
@@ -505,7 +518,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     }
                 } catch (SecurityException e) {
                     String x=e.getMessage();
-                    runOnUiThread(() -> updateDiagnosticText("SecurityException • "+x));
+                    runOnUiThread(() -> updateMiddlewareDiagnosticText("SecurityException • "+x));
                     return;
                 } catch (IllegalArgumentException e) {
                     if (report.length()>0) report.append(" • ");
@@ -518,12 +531,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             String out = "لا Cursor • " + report.toString();
             if (out.length() > 180) out = out.substring(0,180) + "…";
             String finalOut=out;
-            runOnUiThread(() -> updateDiagnosticText(finalOut));
+            runOnUiThread(() -> updateMiddlewareDiagnosticText(finalOut));
         }, "H9-GwmMiddleware-Probe").start();
     }
 
-    private void updateDiagnosticText(String text) {
-        if (diagnosticText != null) diagnosticText.setText("1.9 TEST • " + text);
+    private void updateMiddlewareDiagnosticText(String text) {
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.0 TEST • GWM: " + text);
+    }
+
+    private void updateLocationDiagnosticText(String text) {
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.0 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
