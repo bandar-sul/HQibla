@@ -49,10 +49,10 @@ jobs:
           s = s.replace('updateDiagnosticText("fused رفض الطلب • GPS احتياط")', 'updateLocationDiagnosticText("fused رفض الطلب • GPS احتياط")')
           s = s.replace('updateDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText)', 'updateLocationDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText)')
 
-          # Everything inside middleware probe keeps its own independent line.
           s = s.replace('updateDiagnosticText("middleware: فحص المسارات الداخلية...")', 'updateMiddlewareDiagnosticText("فحص المسارات الداخلية...")')
           s = s.replace('updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق")', 'updateMiddlewareDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق")')
           s = s.replace('updateDiagnosticText(out)', 'updateMiddlewareDiagnosticText(out)')
+          s = s.replace('updateDiagnosticText(finalOut)', 'updateMiddlewareDiagnosticText(finalOut)')
           s = s.replace('updateDiagnosticText("SecurityException • "+x)', 'updateMiddlewareDiagnosticText("SecurityException • "+x)')
 
           old_method = '''    private void updateDiagnosticText(String text) {\n        if (diagnosticText != null) diagnosticText.setText("1.9 TEST • " + text);\n    }\n'''
