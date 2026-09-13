@@ -26,3 +26,5 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 }
+
+// trigger 1.8 build
