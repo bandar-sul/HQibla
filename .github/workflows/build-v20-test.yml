@@ -1,0 +1,88 @@
+name: Build H9 Qibla 2.0 Test APK
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-v20-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: h9qibla-stable-signing-v1
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Patch 2.0 diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/sa/h9/qibla/MainActivity.java')
+          s = p.read_text()
+          s = s.replace('    private TextView diagnosticText;\n', '    private TextView middlewareDiagnosticText;\n    private TextView locationDiagnosticText;\n')
+
+          old = '''        diagnosticText = new TextView(this);\n        diagnosticText.setText("1.9 TEST • GWM middleware: جاري الاختبار");\n        diagnosticText.setTextSize(15f);\n        diagnosticText.setTextColor(0xFFF1F7FA);\n        diagnosticText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);\n        diagnosticText.setPadding(dp(14), 0, dp(14), 0);\n        GradientDrawable diagnosticBg = new GradientDrawable();\n        diagnosticBg.setColor(0xCC07151C);\n        diagnosticBg.setCornerRadius(dp(12));\n        diagnosticBg.setStroke(dp(1), 0xFF2FE0C7);\n        diagnosticText.setBackground(diagnosticBg);\n        FrameLayout.LayoutParams diagnosticLp = new FrameLayout.LayoutParams(dp(560), dp(58));\n        diagnosticLp.gravity = Gravity.TOP | Gravity.LEFT;\n        diagnosticLp.leftMargin = dp(24);\n        diagnosticLp.topMargin = dp(150);\n        root.addView(diagnosticText, diagnosticLp);\n'''
+          new = '''        middlewareDiagnosticText = createDiagnosticText("2.0 TEST • GWM middleware: جاري الاختبار");\n        FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(700), dp(58));\n        middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;\n        middlewareLp.leftMargin = dp(24);\n        middlewareLp.topMargin = dp(142);\n        root.addView(middlewareDiagnosticText, middlewareLp);\n\n        locationDiagnosticText = createDiagnosticText("2.0 TEST • الموقع: جاري فحص fused/GPS");\n        FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));\n        locationLp.gravity = Gravity.TOP | Gravity.LEFT;\n        locationLp.leftMargin = dp(24);\n        locationLp.topMargin = dp(207);\n        root.addView(locationDiagnosticText, locationLp);\n'''
+          if old not in s:
+              raise SystemExit('diagnostic UI block not found')
+          s = s.replace(old, new)
+
+          anchor = '    private void applyImmersiveMode() {'
+          helper = '''    private TextView createDiagnosticText(String text) {\n        TextView view = new TextView(this);\n        view.setText(text);\n        view.setTextSize(14f);\n        view.setTextColor(0xFFF1F7FA);\n        view.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);\n        view.setPadding(dp(14), 0, dp(14), 0);\n        GradientDrawable bg = new GradientDrawable();\n        bg.setColor(0xCC07151C);\n        bg.setCornerRadius(dp(12));\n        bg.setStroke(dp(1), 0xFF2FE0C7);\n        view.setBackground(bg);\n        return view;\n    }\n\n'''
+          if helper not in s:
+              s = s.replace(anchor, helper + anchor)
+
+          s = s.replace('updateDiagnosticText("fused متاح • بانتظار أول موقع")', 'updateLocationDiagnosticText("fused متاح • بانتظار أول موقع")')
+          s = s.replace('updateDiagnosticText("fused غير متاح للنظام")', 'updateLocationDiagnosticText("fused غير متاح للنظام")')
+          s = s.replace('updateDiagnosticText("لا توجد صلاحية موقع")', 'updateLocationDiagnosticText("لا توجد صلاحية موقع")')
+          s = s.replace('updateDiagnosticText("fused رفض الطلب • GPS احتياط")', 'updateLocationDiagnosticText("fused رفض الطلب • GPS احتياط")')
+          s = s.replace('updateDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText)', 'updateLocationDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText)')
+
+          # Everything inside middleware probe keeps its own independent line.
+          s = s.replace('updateDiagnosticText("middleware: فحص المسارات الداخلية...")', 'updateMiddlewareDiagnosticText("فحص المسارات الداخلية...")')
+          s = s.replace('updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق")', 'updateMiddlewareDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق")')
+          s = s.replace('updateDiagnosticText(out)', 'updateMiddlewareDiagnosticText(out)')
+          s = s.replace('updateDiagnosticText("SecurityException • "+x)', 'updateMiddlewareDiagnosticText("SecurityException • "+x)')
+
+          old_method = '''    private void updateDiagnosticText(String text) {\n        if (diagnosticText != null) diagnosticText.setText("1.9 TEST • " + text);\n    }\n'''
+          new_method = '''    private void updateMiddlewareDiagnosticText(String text) {\n        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.0 TEST • GWM: " + text);\n    }\n\n    private void updateLocationDiagnosticText(String text) {\n        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.0 TEST • LOC: " + text);\n    }\n'''
+          if old_method not in s:
+              raise SystemExit('old diagnostic method not found')
+          s = s.replace(old_method, new_method)
+          p.write_text(s)
+
+          q = Path('app/src/main/java/sa/h9/qibla/QiblaView.java')
+          qs = q.read_text().replace('"1.9 TEST"', '"2.0 TEST"')
+          q.write_text(qs)
+
+          g = Path('app/build.gradle')
+          gs = g.read_text().replace('versionCode 19', 'versionCode 20').replace("versionName '1.9-test'", "versionName '2.0-test'")
+          g.write_text(gs)
+          PY
+      - name: Build APK
+        run: gradle clean assembleDebug --stacktrace
+      - name: Prepare APK
+        run: mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-2.0-Test-Haval-H9.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: H9-Qibla-2.0-Test-Haval-H9
+          path: dist/H9-Qibla-2.0-Test-Haval-H9.apk
+      - name: Persist 2.0 source changes
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
+          git commit -m "H9 Qibla 2.0 split GWM and location diagnostics" || true
+          git push || true
