@@ -93,7 +93,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         diagnosticText = new TextView(this);
-        diagnosticText.setText("1.8 TEST • GWM middleware: جاري الاختبار");
+        diagnosticText.setText("1.9 TEST • GWM middleware: جاري الاختبار");
         diagnosticText.setTextSize(15f);
         diagnosticText.setTextColor(0xFFF1F7FA);
         diagnosticText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
@@ -462,48 +462,68 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void testGwmMiddleware() {
-        updateDiagnosticText("GWM middleware: فحص الصلاحية...");
+        updateDiagnosticText("middleware: فحص المسارات الداخلية...");
         new Thread(() -> {
-            Cursor c = null;
-            try {
-                if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
-                    runOnUiThread(() -> updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
-                    return;
-                }
-                Uri uri = Uri.parse("content://com.gwm.navi.middleware");
-                c = getContentResolver().query(uri, null, null, null, null);
-                if (c == null) {
-                    runOnUiThread(() -> updateDiagnosticText("middleware متاح • query=null"));
-                    return;
-                }
-                String[] cols = c.getColumnNames();
-                StringBuilder b = new StringBuilder("middleware OK • rows=").append(c.getCount()).append(" • cols=");
-                for (int i=0; i<Math.min(cols.length,8); i++) { if(i>0)b.append(','); b.append(cols[i]); }
-                if (c.moveToFirst()) {
-                    b.append(" • values=");
-                    for (int i=0; i<Math.min(cols.length,5); i++) {
-                        if(i>0)b.append(" | ");
-                        b.append(cols[i]).append('=');
-                        try { String v=c.getString(i); if(v!=null && v.length()>24)v=v.substring(0,24)+"…"; b.append(v); } catch(Exception e){ b.append('?'); }
+            if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
+                runOnUiThread(() -> updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
+                return;
+            }
+            String[] paths = new String[]{
+                    "", "location", "gps", "position", "navi", "navigation",
+                    "status", "data", "car", "vehicle", "route", "dr",
+                    "sensor", "sens", "heading", "bearing", "speed"
+            };
+            StringBuilder report = new StringBuilder();
+            for (String path : paths) {
+                Cursor c = null;
+                try {
+                    Uri uri = Uri.parse("content://com.gwm.navi.middleware" + (path.length()==0 ? "" : "/" + path));
+                    String type = null;
+                    try { type = getContentResolver().getType(uri); } catch (Exception ignored) { }
+                    c = getContentResolver().query(uri, null, null, null, null);
+                    if (c != null) {
+                        String[] cols = c.getColumnNames();
+                        StringBuilder b = new StringBuilder();
+                        b.append(path.length()==0 ? "root" : path).append(" OK rows=").append(c.getCount());
+                        if (type != null) b.append(" type=").append(type);
+                        b.append(" cols=");
+                        for (int i=0;i<Math.min(cols.length,6);i++){ if(i>0)b.append(','); b.append(cols[i]); }
+                        if (c.moveToFirst()) {
+                            b.append(" values=");
+                            for (int i=0;i<Math.min(cols.length,4);i++){
+                                if(i>0)b.append(" | ");
+                                b.append(cols[i]).append('=');
+                                try { String v=c.getString(i); if(v!=null && v.length()>18)v=v.substring(0,18)+"…"; b.append(v); } catch(Exception e){ b.append('?'); }
+                            }
+                        }
+                        String out=b.toString();
+                        runOnUiThread(() -> updateDiagnosticText(out));
+                        return;
+                    } else {
+                        if (report.length()>0) report.append(" • ");
+                        report.append(path.length()==0?"root":path).append("=null");
                     }
-                }
-                String out=b.toString();
-                runOnUiThread(() -> updateDiagnosticText(out));
-            } catch (SecurityException e) {
-                String x=e.getMessage();
-                runOnUiThread(() -> updateDiagnosticText("SecurityException • "+x));
-            } catch (IllegalArgumentException e) {
-                String x=e.getMessage();
-                runOnUiThread(() -> updateDiagnosticText("Provider وصلنا • URI غير معروف • "+x));
-            } catch (Exception e) {
-                String x=e.getClass().getSimpleName()+" • "+e.getMessage();
-                runOnUiThread(() -> updateDiagnosticText(x));
-            } finally { if(c!=null)c.close(); }
-        }, "H9-GwmMiddleware-Test").start();
+                } catch (SecurityException e) {
+                    String x=e.getMessage();
+                    runOnUiThread(() -> updateDiagnosticText("SecurityException • "+x));
+                    return;
+                } catch (IllegalArgumentException e) {
+                    if (report.length()>0) report.append(" • ");
+                    report.append(path.length()==0?"root":path).append("=bad-uri");
+                } catch (Exception e) {
+                    if (report.length()>0) report.append(" • ");
+                    report.append(path.length()==0?"root":path).append('=').append(e.getClass().getSimpleName());
+                } finally { if(c!=null)c.close(); }
+            }
+            String out = "لا Cursor • " + report.toString();
+            if (out.length() > 180) out = out.substring(0,180) + "…";
+            String finalOut=out;
+            runOnUiThread(() -> updateDiagnosticText(finalOut));
+        }, "H9-GwmMiddleware-Probe").start();
     }
 
     private void updateDiagnosticText(String text) {
-        if (diagnosticText != null) diagnosticText.setText("1.8 TEST • " + text);
+        if (diagnosticText != null) diagnosticText.setText("1.9 TEST • " + text);
     }
 
     private void updateLiveCourse(Location location) {
