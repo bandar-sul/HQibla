@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -92,7 +93,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         diagnosticText = new TextView(this);
-        diagnosticText.setText("1.7 TEST • fused: بانتظار البيانات");
+        diagnosticText.setText("1.8 TEST • GWM middleware: جاري الاختبار");
         diagnosticText.setTextSize(15f);
         diagnosticText.setTextColor(0xFFF1F7FA);
         diagnosticText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
@@ -138,6 +139,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
+        testGwmMiddleware();
     }
 
     private void applyImmersiveMode() {
@@ -459,8 +461,49 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
+    private void testGwmMiddleware() {
+        updateDiagnosticText("GWM middleware: فحص الصلاحية...");
+        new Thread(() -> {
+            Cursor c = null;
+            try {
+                if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
+                    runOnUiThread(() -> updateDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
+                    return;
+                }
+                Uri uri = Uri.parse("content://com.gwm.navi.middleware");
+                c = getContentResolver().query(uri, null, null, null, null);
+                if (c == null) {
+                    runOnUiThread(() -> updateDiagnosticText("middleware متاح • query=null"));
+                    return;
+                }
+                String[] cols = c.getColumnNames();
+                StringBuilder b = new StringBuilder("middleware OK • rows=").append(c.getCount()).append(" • cols=");
+                for (int i=0; i<Math.min(cols.length,8); i++) { if(i>0)b.append(','); b.append(cols[i]); }
+                if (c.moveToFirst()) {
+                    b.append(" • values=");
+                    for (int i=0; i<Math.min(cols.length,5); i++) {
+                        if(i>0)b.append(" | ");
+                        b.append(cols[i]).append('=');
+                        try { String v=c.getString(i); if(v!=null && v.length()>24)v=v.substring(0,24)+"…"; b.append(v); } catch(Exception e){ b.append('?'); }
+                    }
+                }
+                String out=b.toString();
+                runOnUiThread(() -> updateDiagnosticText(out));
+            } catch (SecurityException e) {
+                String x=e.getMessage();
+                runOnUiThread(() -> updateDiagnosticText("SecurityException • "+x));
+            } catch (IllegalArgumentException e) {
+                String x=e.getMessage();
+                runOnUiThread(() -> updateDiagnosticText("Provider وصلنا • URI غير معروف • "+x));
+            } catch (Exception e) {
+                String x=e.getClass().getSimpleName()+" • "+e.getMessage();
+                runOnUiThread(() -> updateDiagnosticText(x));
+            } finally { if(c!=null)c.close(); }
+        }, "H9-GwmMiddleware-Test").start();
+    }
+
     private void updateDiagnosticText(String text) {
-        if (diagnosticText != null) diagnosticText.setText("1.7 TEST • " + text);
+        if (diagnosticText != null) diagnosticText.setText("1.8 TEST • " + text);
     }
 
     private void updateLiveCourse(Location location) {
