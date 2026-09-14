@@ -1,4 +1,4 @@
-name: Build H9 Qibla 2.2 Test APK
+name: Build H9 Qibla 2.3 Test APK
 on:
   push:
     branches: [ main ]
@@ -28,8 +28,8 @@ jobs:
         with:
           gradle-version: '8.9'
       - run: gradle clean assembleDebug --stacktrace
-      - run: mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-2.2-Test-Haval-H9.apk
+      - run: mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-2.3-Test-Haval-H9.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-2.2-Test-Haval-H9
-          path: dist/H9-Qibla-2.2-Test-Haval-H9.apk
+          name: H9-Qibla-2.3-Test-Haval-H9
+          path: dist/H9-Qibla-2.3-Test-Haval-H9.apk
