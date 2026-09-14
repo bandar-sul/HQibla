@@ -93,14 +93,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.0 TEST • GWM middleware: جاري الاختبار");
+        middlewareDiagnosticText = createDiagnosticText("2.1 TEST • GWM middleware: جاري الاختبار");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(142);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        locationDiagnosticText = createDiagnosticText("2.0 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.1 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -475,72 +475,76 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void testGwmMiddleware() {
-        updateMiddlewareDiagnosticText("فحص المسارات الداخلية...");
+        updateMiddlewareDiagnosticText("فحص URI الحقيقية من GWMNavi.apk...");
         new Thread(() -> {
             if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
                 runOnUiThread(() -> updateMiddlewareDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
                 return;
             }
-            String[] paths = new String[]{
-                    "", "location", "gps", "position", "navi", "navigation",
-                    "status", "data", "car", "vehicle", "route", "dr",
-                    "sensor", "sens", "heading", "bearing", "speed"
-            };
+
             StringBuilder report = new StringBuilder();
-            for (String path : paths) {
-                Cursor c = null;
-                try {
-                    Uri uri = Uri.parse("content://com.gwm.navi.middleware" + (path.length()==0 ? "" : "/" + path));
-                    String type = null;
-                    try { type = getContentResolver().getType(uri); } catch (Exception ignored) { }
-                    c = getContentResolver().query(uri, null, null, null, null);
-                    if (c != null) {
-                        String[] cols = c.getColumnNames();
-                        StringBuilder b = new StringBuilder();
-                        b.append(path.length()==0 ? "root" : path).append(" OK rows=").append(c.getCount());
-                        if (type != null) b.append(" type=").append(type);
-                        b.append(" cols=");
-                        for (int i=0;i<Math.min(cols.length,6);i++){ if(i>0)b.append(','); b.append(cols[i]); }
-                        if (c.moveToFirst()) {
-                            b.append(" values=");
-                            for (int i=0;i<Math.min(cols.length,4);i++){
-                                if(i>0)b.append(" | ");
-                                b.append(cols[i]).append('=');
-                                try { String v=c.getString(i); if(v!=null && v.length()>18)v=v.substring(0,18)+"…"; b.append(v); } catch(Exception e){ b.append('?'); }
-                            }
-                        }
-                        String out=b.toString();
-                        runOnUiThread(() -> updateMiddlewareDiagnosticText(out));
-                        return;
-                    } else {
-                        if (report.length()>0) report.append(" • ");
-                        report.append(path.length()==0?"root":path).append("=null");
-                    }
-                } catch (SecurityException e) {
-                    String x=e.getMessage();
-                    runOnUiThread(() -> updateMiddlewareDiagnosticText("SecurityException • "+x));
-                    return;
-                } catch (IllegalArgumentException e) {
-                    if (report.length()>0) report.append(" • ");
-                    report.append(path.length()==0?"root":path).append("=bad-uri");
-                } catch (Exception e) {
-                    if (report.length()>0) report.append(" • ");
-                    report.append(path.length()==0?"root":path).append('=').append(e.getClass().getSimpleName());
-                } finally { if(c!=null)c.close(); }
-            }
-            String out = "لا Cursor • " + report.toString();
-            if (out.length() > 180) out = out.substring(0,180) + "…";
-            String finalOut=out;
+            probeMiddlewareUri(report,
+                    "project",
+                    new String[]{"project", "area", "wrapper", "navi_type", "drive_handle_type", "fuel_type", "map_widget_type"});
+            probeMiddlewareUri(report,
+                    "vehicleSignal",
+                    new String[]{"ev_odometer_remain", "ev_battery_remain", "ev_battery_remain_percentage", "ev_battery_total", "hvac_state", "hvac_temp", "drive_type", "basic_outside_temp"});
+            probeMiddlewareUri(report, "ability/data", null);
+
+            String out = report.toString();
+            if (out.length() > 260) out = out.substring(0, 260) + "…";
+            final String finalOut = out.length() == 0 ? "لم ترجع URI الحقيقية بيانات" : out;
             runOnUiThread(() -> updateMiddlewareDiagnosticText(finalOut));
-        }, "H9-GwmMiddleware-Probe").start();
+        }, "H9-GwmMiddleware-RealProbe").start();
+    }
+
+    private void probeMiddlewareUri(StringBuilder report, String path, String[] projection) {
+        Cursor c = null;
+        try {
+            Uri uri = Uri.parse("content://com.gwm.navi.middleware/" + path);
+            c = getContentResolver().query(uri, projection, null, null, null);
+            if (report.length() > 0) report.append(" • ");
+            if (c == null) {
+                report.append(path).append("=null");
+                return;
+            }
+            report.append(path).append(" OK rows=").append(c.getCount());
+            String[] cols = c.getColumnNames();
+            if (c.moveToFirst()) {
+                report.append(" [");
+                int shown = 0;
+                for (int i = 0; i < cols.length && shown < 3; i++) {
+                    String v;
+                    try { v = c.getString(i); } catch (Exception e) { v = "?"; }
+                    if (shown > 0) report.append(", ");
+                    report.append(cols[i]).append('=').append(v);
+                    shown++;
+                }
+                report.append(']');
+            } else if (cols.length > 0) {
+                report.append(" cols=");
+                for (int i = 0; i < Math.min(cols.length, 4); i++) {
+                    if (i > 0) report.append(',');
+                    report.append(cols[i]);
+                }
+            }
+        } catch (SecurityException e) {
+            if (report.length() > 0) report.append(" • ");
+            report.append(path).append(" SecurityException");
+        } catch (Exception e) {
+            if (report.length() > 0) report.append(" • ");
+            report.append(path).append('=').append(e.getClass().getSimpleName());
+        } finally {
+            if (c != null) c.close();
+        }
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.0 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.1 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.0 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.1 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
