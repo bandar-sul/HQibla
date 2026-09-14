@@ -1,0 +1,24 @@
+name: Apply H9 Qibla 2.0 Diagnostics
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/patch_v20_diagnostics.py'
+      - '.github/workflows/patch-v20-diagnostics.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply diagnostics patch
+        run: python3 tools/patch_v20_diagnostics.py
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle .github/workflows/build-apk.yml
+          git commit -m "H9 Qibla 2.0 separate middleware and location diagnostics" || true
+          git push
