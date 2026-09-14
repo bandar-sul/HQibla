@@ -93,18 +93,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.1 TEST • GWM middleware: جاري الاختبار");
-        FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(700), dp(58));
+        middlewareDiagnosticText = createDiagnosticText("2.2 TEST • GWM middleware: جاري الاختبار");
+        FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(125));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(142);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        locationDiagnosticText = createDiagnosticText("2.1 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.2 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
-        locationLp.topMargin = dp(207);
+        locationLp.topMargin = dp(275);
         root.addView(locationDiagnosticText, locationLp);
 
         Button aboutButton = new Button(this);
@@ -143,7 +143,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private TextView createDiagnosticText(String text) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextSize(14f);
+        view.setTextSize(12f);
         view.setTextColor(0xFFF1F7FA);
         view.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         view.setPadding(dp(14), 0, dp(14), 0);
@@ -475,76 +475,66 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void testGwmMiddleware() {
-        updateMiddlewareDiagnosticText("فحص URI الحقيقية من GWMNavi.apk...");
+        updateMiddlewareDiagnosticText("vehicleSignal: قراءة جميع الأعمدة...");
         new Thread(() -> {
             if (checkSelfPermission("com.gwm.navi.permission.READ_CONTENT") != PackageManager.PERMISSION_GRANTED) {
                 runOnUiThread(() -> updateMiddlewareDiagnosticText("READ_CONTENT غير ممنوحة للتطبيق"));
                 return;
             }
-
-            StringBuilder report = new StringBuilder();
-            probeMiddlewareUri(report,
-                    "project",
-                    new String[]{"project", "area", "wrapper", "navi_type", "drive_handle_type", "fuel_type", "map_widget_type"});
-            probeMiddlewareUri(report,
-                    "vehicleSignal",
-                    new String[]{"ev_odometer_remain", "ev_battery_remain", "ev_battery_remain_percentage", "ev_battery_total", "hvac_state", "hvac_temp", "drive_type", "basic_outside_temp"});
-            probeMiddlewareUri(report, "ability/data", null);
-
-            String out = report.toString();
-            if (out.length() > 260) out = out.substring(0, 260) + "…";
-            final String finalOut = out.length() == 0 ? "لم ترجع URI الحقيقية بيانات" : out;
-            runOnUiThread(() -> updateMiddlewareDiagnosticText(finalOut));
-        }, "H9-GwmMiddleware-RealProbe").start();
-    }
-
-    private void probeMiddlewareUri(StringBuilder report, String path, String[] projection) {
-        Cursor c = null;
-        try {
-            Uri uri = Uri.parse("content://com.gwm.navi.middleware/" + path);
-            c = getContentResolver().query(uri, projection, null, null, null);
-            if (report.length() > 0) report.append(" • ");
-            if (c == null) {
-                report.append(path).append("=null");
-                return;
-            }
-            report.append(path).append(" OK rows=").append(c.getCount());
-            String[] cols = c.getColumnNames();
-            if (c.moveToFirst()) {
-                report.append(" [");
-                int shown = 0;
-                for (int i = 0; i < cols.length && shown < 3; i++) {
-                    String v;
-                    try { v = c.getString(i); } catch (Exception e) { v = "?"; }
-                    if (shown > 0) report.append(", ");
-                    report.append(cols[i]).append('=').append(v);
-                    shown++;
+            Cursor c = null;
+            try {
+                Uri uri = Uri.parse("content://com.gwm.navi.middleware/vehicleSignal");
+                c = getContentResolver().query(uri, null, null, null, null);
+                if (c == null) {
+                    runOnUiThread(() -> updateMiddlewareDiagnosticText("vehicleSignal=null"));
+                    return;
                 }
-                report.append(']');
-            } else if (cols.length > 0) {
-                report.append(" cols=");
-                for (int i = 0; i < Math.min(cols.length, 4); i++) {
-                    if (i > 0) report.append(',');
-                    report.append(cols[i]);
+                String[] cols = c.getColumnNames();
+                StringBuilder matches = new StringBuilder();
+                StringBuilder all = new StringBuilder();
+                String[] keys = new String[]{"heading","bearing","yaw","angle","direction","speed","steering","gyro","course","azimuth","orientation","wheel"};
+                if (c.moveToFirst()) {
+                    for (int i = 0; i < cols.length; i++) {
+                        String name = cols[i];
+                        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+                        String value;
+                        try { value = c.isNull(i) ? "null" : c.getString(i); }
+                        catch (Exception e) { value = "?"; }
+                        if (value != null && value.length() > 24) value = value.substring(0, 24) + "…";
+                        if (all.length() > 0) all.append(" | ");
+                        all.append(name).append('=').append(value);
+                        for (String key : keys) {
+                            if (lower.contains(key)) {
+                                if (matches.length() > 0) matches.append(" • ");
+                                matches.append(name).append('=').append(value);
+                                break;
+                            }
+                        }
+                    }
                 }
+                String out = matches.length() > 0
+                        ? "MATCH: " + matches + "\nALL(" + cols.length + "): " + all
+                        : "لا توجد أسماء heading/yaw/speed مباشرة • ALL(" + cols.length + "): " + all;
+                if (out.length() > 900) out = out.substring(0, 900) + "…";
+                final String finalOut = out;
+                runOnUiThread(() -> updateMiddlewareDiagnosticText(finalOut));
+            } catch (SecurityException e) {
+                runOnUiThread(() -> updateMiddlewareDiagnosticText("vehicleSignal SecurityException"));
+            } catch (Exception e) {
+                final String err = e.getClass().getSimpleName() + ": " + e.getMessage();
+                runOnUiThread(() -> updateMiddlewareDiagnosticText(err));
+            } finally {
+                if (c != null) c.close();
             }
-        } catch (SecurityException e) {
-            if (report.length() > 0) report.append(" • ");
-            report.append(path).append(" SecurityException");
-        } catch (Exception e) {
-            if (report.length() > 0) report.append(" • ");
-            report.append(path).append('=').append(e.getClass().getSimpleName());
-        } finally {
-            if (c != null) c.close();
-        }
+        }, "H9-VehicleSignal-FullProbe").start();
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.1 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.2 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.1 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.2 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
