@@ -1,9 +1,9 @@
-name: Apply H9 Qibla 2.2 VehicleSignal Probe
+name: Apply H9 Qibla 2.3 Binder Probe
 on:
   push:
     branches: [ main ]
     paths:
-      - 'tools/patch_v22_vehicle_signal.py'
+      - 'tools/patch_v23_binder.py'
       - '.github/workflows/patch-v21-real-middleware.yml'
   workflow_dispatch:
 permissions:
@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Apply 2.2 vehicleSignal patch
-        run: python3 tools/patch_v22_vehicle_signal.py
+      - name: Apply 2.3 Binder patch
+        run: python3 tools/patch_v23_binder.py
       - name: Commit application changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
-          git commit -m "H9 Qibla 2.2 full vehicleSignal probe" || true
+          git commit -m "H9 Qibla 2.3 Binder probe" || true
           git push
