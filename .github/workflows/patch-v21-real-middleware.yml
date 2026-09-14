@@ -1,9 +1,9 @@
-name: Apply H9 Qibla 2.1 Real Middleware
+name: Apply H9 Qibla 2.2 VehicleSignal Probe
 on:
   push:
     branches: [ main ]
     paths:
-      - 'tools/patch_v21_real_middleware.py'
+      - 'tools/patch_v22_vehicle_signal.py'
       - '.github/workflows/patch-v21-real-middleware.yml'
   workflow_dispatch:
 permissions:
@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Apply 2.1 patch
-        run: python3 tools/patch_v21_real_middleware.py
+      - name: Apply 2.2 vehicleSignal patch
+        run: python3 tools/patch_v22_vehicle_signal.py
       - name: Commit application changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
-          git commit -m "H9 Qibla 2.1 probe real GWM middleware URIs" || true
+          git commit -m "H9 Qibla 2.2 full vehicleSignal probe" || true
           git push
