@@ -72,6 +72,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private TextView locationDiagnosticText;
     private boolean gwmBinderBound;
     private IBinder gwmMapBinder;
+    private android.os.Binder gwmMapCallbackBinder;
 
     private final ServiceConnection gwmMapConnection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
@@ -79,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • descriptor=" + descriptor + " • OEM LOCATION/DR...");
-            probeExactGwmLocationApi(service);
+            updateBinderDiagnosticText("CONNECTED • descriptor=" + descriptor + " • registering callback + subscribe...");
+            probeGwmSubscribe(service);
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -130,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.5 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("2.6 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("2.5 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("2.6 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("2.5 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.6 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -595,44 +596,107 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    private void probeExactGwmLocationApi(IBinder service) {
+    private void probeGwmSubscribe(IBinder service) {
         new Thread(() -> {
-            final String iface = "com.gwm.map.sdk.MapControl";
+            final String mapIface = "com.gwm.map.sdk.MapControl";
+            final String cbIface = "com.gwm.map.sdk.MapCallback";
             final String pkg = getPackageName();
-            final String[] protocolIds = new String[]{"10022000", "10042000", "10062000", "10082000"};
-            final String[] labels = new String[]{"CARD_STATE", "NAVI_MISC", "GUIDE_TBT", "NAVI_FOCUS"};
-            StringBuilder out = new StringBuilder("V4 envelope requestSync\n");
-            long reqId = System.currentTimeMillis();
-            for (int i = 0; i < protocolIds.length; i++) {
-                Parcel data = Parcel.obtain();
-                Parcel reply = Parcel.obtain();
+            final String[] protocolIds = new String[]{
+                    "10011000", "10022000", "10031000", "10042000", "10051000",
+                    "10062000", "10071000", "10082000", "10091000"
+            };
+            final StringBuilder log = new StringBuilder("V4 callback/subscribe probe\n");
+
+            try {
+                gwmMapCallbackBinder = new android.os.Binder() {
+                    { attachInterface(null, cbIface); }
+
+                    @Override
+                    protected boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags)
+                            throws android.os.RemoteException {
+                        if (code == INTERFACE_TRANSACTION) {
+                            if (reply != null) reply.writeString(cbIface);
+                            return true;
+                        }
+                        try {
+                            data.enforceInterface(cbIface);
+                            if (code == 1) { // MapCallback.onResponse(String)
+                                String response = data.readString();
+                                final String msg = response == null ? "null" : response;
+                                runOnUiThread(() -> updateBinderDiagnosticText("CALLBACK onResponse:\n" + trimDiag(msg)));
+                                if (reply != null) reply.writeNoException();
+                                return true;
+                            }
+                            if (code == 2) { // MapCallback.onReceiveDataFromMap(String, Bundle)
+                                String key = data.readString();
+                                android.os.Bundle bundle = null;
+                                if (data.readInt() != 0) bundle = android.os.Bundle.CREATOR.createFromParcel(data);
+                                String bundleText = bundle == null ? "null" : bundle.toString();
+                                final String msg = "CALLBACK data key=" + key + "\n" + bundleText;
+                                runOnUiThread(() -> updateBinderDiagnosticText(trimDiag(msg)));
+                                if (reply != null) reply.writeNoException();
+                                return true;
+                            }
+                        } catch (Throwable e) {
+                            final String err = "CALLBACK tx=" + code + " ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e);
+                            runOnUiThread(() -> updateBinderDiagnosticText(err));
+                        }
+                        return super.onTransact(code, data, reply, flags);
+                    }
+                };
+
+                android.os.Parcel d1 = android.os.Parcel.obtain();
+                android.os.Parcel r1 = android.os.Parcel.obtain();
+                try {
+                    d1.writeInterfaceToken(mapIface);
+                    d1.writeString(pkg);
+                    d1.writeStrongBinder(gwmMapCallbackBinder);
+                    boolean ok = service.transact(1, d1, r1, 0); // registerCallBack
+                    r1.readException();
+                    log.append("registerCallBack tx1=").append(ok).append('\n');
+                } finally { d1.recycle(); r1.recycle(); }
+
+                android.os.Parcel d2 = android.os.Parcel.obtain();
+                android.os.Parcel r2 = android.os.Parcel.obtain();
+                try {
+                    d2.writeInterfaceToken(mapIface);
+                    d2.writeString(pkg);
+                    d2.writeStringArray(protocolIds);
+                    boolean ok = service.transact(5, d2, r2, 0); // subscribe(String,String[])
+                    r2.readException();
+                    log.append("subscribe tx5=").append(ok).append(" ids=").append(java.util.Arrays.toString(protocolIds)).append('\n');
+                } finally { d2.recycle(); r2.recycle(); }
+
+                // Keep one validated sync request so we know the transport is still accepted.
+                android.os.Parcel d3 = android.os.Parcel.obtain();
+                android.os.Parcel r3 = android.os.Parcel.obtain();
                 try {
                     org.json.JSONObject req = new org.json.JSONObject();
                     req.put("pkgName", pkg);
-                    req.put("protocolId", protocolIds[i]);
-                    req.put("reqId", reqId + i);
+                    req.put("protocolId", "10022000");
+                    req.put("reqId", String.valueOf(System.currentTimeMillis()));
                     req.put("verName", "1.0");
                     req.put("data", new org.json.JSONObject());
-                    String json = req.toString();
-                    data.writeInterfaceToken(iface);
-                    data.writeString(json);
-                    boolean sent = service.transact(4, data, reply, 0);
-                    reply.readException();
-                    String result = reply.readString();
-                    out.append(labels[i]).append('(').append(protocolIds[i]).append(") sent=").append(sent).append("\n");
-                    out.append(result == null ? "null" : result).append("\n");
-                } catch (Throwable e) {
-                    out.append(labels[i]).append(" ERR=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e)).append("\n");
-                } finally {
-                    data.recycle();
-                    reply.recycle();
-                }
+                    d3.writeInterfaceToken(mapIface);
+                    d3.writeString(req.toString());
+                    boolean ok = service.transact(4, d3, r3, 0);
+                    r3.readException();
+                    String response = r3.readString();
+                    log.append("requestSync tx4=").append(ok).append(" -> ").append(response).append('\n');
+                } finally { d3.recycle(); r3.recycle(); }
+
+                log.append("waiting for live MapCallback…");
+            } catch (Throwable e) {
+                log.append("ERROR=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e));
             }
-            String text = out.toString();
-            if (text.length() > 1500) text = text.substring(0, 1500) + "…";
-            final String finalText = text;
-            runOnUiThread(() -> updateBinderDiagnosticText(finalText));
-        }, "H9-GWM-V4-Envelope-Probe").start();
+            final String out = trimDiag(log.toString());
+            runOnUiThread(() -> updateBinderDiagnosticText(out));
+        }, "H9-GWM-SubscribeProbe").start();
+    }
+
+    private String trimDiag(String value) {
+        if (value == null) return "null";
+        return value.length() > 1500 ? value.substring(0, 1500) + "…" : value;
     }
 
     private String shortMessage(Throwable t) {
@@ -642,15 +706,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.5 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.6 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.5 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.6 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.5 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.6 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
