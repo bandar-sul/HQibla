@@ -79,8 +79,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • descriptor=" + descriptor + " • بدء requestSync...");
-            probeMapControlSync(service);
+            updateBinderDiagnosticText("CONNECTED • descriptor=" + descriptor + " • OEM LOCATION/DR...");
+            probeExactGwmLocationApi(service);
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -130,21 +130,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.4 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("2.5 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("2.4 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("2.5 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("2.4 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.5 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -595,47 +595,41 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    private void probeMapControlSync(IBinder service) {
+    private void probeExactGwmLocationApi(IBinder service) {
         new Thread(() -> {
-            String[] requests = new String[]{
-                    "{}",
-                    "{\"action\":\"getLocation\"}",
-                    "{\"method\":\"getLocation\"}",
-                    "{\"action\":\"getCurrentPosition\"}",
-                    "{\"method\":\"getCurrentPosition\"}"
-            };
-            StringBuilder report = new StringBuilder("TX4 requestSync");
-            for (String request : requests) {
-                Parcel data = Parcel.obtain();
-                Parcel reply = Parcel.obtain();
+            final String iface = "com.gwm.map.sdk.MapControl";
+            final String version = "v1.1.10-SNAPSHOT_t20250217";
+            final int[] actions = new int[]{14001, 14002};
+            final String[] labels = new String[]{"GET_LOCATION_INFO", "GET_DR_INFO"};
+            StringBuilder out = new StringBuilder("OEM exact requestSync\n");
+            for (int i = 0; i < actions.length; i++) {
+                android.os.Parcel data = android.os.Parcel.obtain();
+                android.os.Parcel reply = android.os.Parcel.obtain();
                 try {
-                    data.writeInterfaceToken("com.gwm.map.sdk.MapControl");
-                    data.writeString(request);
-                    boolean handled = service.transact(4, data, reply, 0);
-                    report.append("\n").append(request).append(" => transact=").append(handled);
-                    if (handled) {
-                        try {
-                            reply.readException();
-                            String result = reply.readString();
-                            if (result == null) result = "null";
-                            if (result.length() > 180) result = result.substring(0, 180) + "…";
-                            report.append(" result=").append(result);
-                        } catch (Exception e) {
-                            report.append(" reply=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e));
-                        }
-                    }
-                } catch (Exception e) {
-                    report.append("\n").append(request).append(" => ").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e));
+                    org.json.JSONObject req = new org.json.JSONObject();
+                    req.put("actionType", actions[i]);
+                    req.put("version", version);
+                    String json = req.toString();
+                    data.writeInterfaceToken(iface);
+                    data.writeString(json);
+                    boolean sent = service.transact(4, data, reply, 0);
+                    reply.readException();
+                    String result = reply.readString();
+                    out.append(labels[i]).append('(').append(actions[i]).append(") sent=").append(sent).append("\n");
+                    out.append(result == null ? "null" : result).append("\n");
+                } catch (Throwable e) {
+                    out.append(labels[i]).append(" ERROR=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e)).append("\n");
                 } finally {
-                    reply.recycle();
                     data.recycle();
+                    reply.recycle();
                 }
             }
-            String out = report.toString();
-            if (out.length() > 1100) out = out.substring(0, 1100) + "…";
-            final String finalOut = out;
+            out.append("caller=").append(getPackageName()).append(" • GWM api_auth whitelist=com.gwm.voiceassistantoversea→vr");
+            String s = out.toString();
+            if (s.length() > 1200) s = s.substring(0, 1200) + "…";
+            final String finalOut = s;
             runOnUiThread(() -> updateBinderDiagnosticText(finalOut));
-        }, "H9-MapControl-SyncProbe").start();
+        }, "H9-GWM-ExactLocationApi").start();
     }
 
     private String shortMessage(Throwable t) {
@@ -645,15 +639,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.4 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.5 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.4 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.5 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.4 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.5 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
