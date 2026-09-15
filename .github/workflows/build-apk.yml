@@ -33,3 +33,4 @@ jobs:
         with:
           name: H9-Qibla-2.5-Test-Haval-H9
           path: dist/H9-Qibla-2.5-Test-Haval-H9.apk
+# v2.5 exact V4 envelope build
