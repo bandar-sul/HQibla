@@ -598,38 +598,41 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeExactGwmLocationApi(IBinder service) {
         new Thread(() -> {
             final String iface = "com.gwm.map.sdk.MapControl";
-            final String version = "v1.1.10-SNAPSHOT_t20250217";
-            final int[] actions = new int[]{14001, 14002};
-            final String[] labels = new String[]{"GET_LOCATION_INFO", "GET_DR_INFO"};
-            StringBuilder out = new StringBuilder("OEM exact requestSync\n");
-            for (int i = 0; i < actions.length; i++) {
-                android.os.Parcel data = android.os.Parcel.obtain();
-                android.os.Parcel reply = android.os.Parcel.obtain();
+            final String pkg = getPackageName();
+            final String[] protocolIds = new String[]{"10022000", "10042000", "10062000", "10082000"};
+            final String[] labels = new String[]{"CARD_STATE", "NAVI_MISC", "GUIDE_TBT", "NAVI_FOCUS"};
+            StringBuilder out = new StringBuilder("V4 envelope requestSync\n");
+            long reqId = System.currentTimeMillis();
+            for (int i = 0; i < protocolIds.length; i++) {
+                Parcel data = Parcel.obtain();
+                Parcel reply = Parcel.obtain();
                 try {
                     org.json.JSONObject req = new org.json.JSONObject();
-                    req.put("actionType", actions[i]);
-                    req.put("version", version);
+                    req.put("pkgName", pkg);
+                    req.put("protocolId", protocolIds[i]);
+                    req.put("reqId", reqId + i);
+                    req.put("verName", "1.0");
+                    req.put("data", new org.json.JSONObject());
                     String json = req.toString();
                     data.writeInterfaceToken(iface);
                     data.writeString(json);
                     boolean sent = service.transact(4, data, reply, 0);
                     reply.readException();
                     String result = reply.readString();
-                    out.append(labels[i]).append('(').append(actions[i]).append(") sent=").append(sent).append("\n");
+                    out.append(labels[i]).append('(').append(protocolIds[i]).append(") sent=").append(sent).append("\n");
                     out.append(result == null ? "null" : result).append("\n");
                 } catch (Throwable e) {
-                    out.append(labels[i]).append(" ERROR=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e)).append("\n");
+                    out.append(labels[i]).append(" ERR=").append(e.getClass().getSimpleName()).append(':').append(shortMessage(e)).append("\n");
                 } finally {
                     data.recycle();
                     reply.recycle();
                 }
             }
-            out.append("caller=").append(getPackageName()).append(" • GWM api_auth whitelist=com.gwm.voiceassistantoversea→vr");
-            String s = out.toString();
-            if (s.length() > 1200) s = s.substring(0, 1200) + "…";
-            final String finalOut = s;
-            runOnUiThread(() -> updateBinderDiagnosticText(finalOut));
-        }, "H9-GWM-ExactLocationApi").start();
+            String text = out.toString();
+            if (text.length() > 1500) text = text.substring(0, 1500) + "…";
+            final String finalText = text;
+            runOnUiThread(() -> updateBinderDiagnosticText(finalText));
+        }, "H9-GWM-V4-Envelope-Probe").start();
     }
 
     private String shortMessage(Throwable t) {
