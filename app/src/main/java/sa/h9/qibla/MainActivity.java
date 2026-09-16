@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • descriptor=" + descriptor + " • probing direct GWM DR service...");
-            probeDirectGwmDr();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • binding OEM location services...");
+            probeOemLocationServices();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.7 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("2.8 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("2.7 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("2.8 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("2.7 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.8 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,151 +596,150 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    private void probeDirectGwmDr() {
+    private final java.util.concurrent.atomic.AtomicInteger oemLocReplies = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final StringBuilder oemLocLog = new StringBuilder();
+
+    private void probeOemLocationServices() {
+        synchronized (oemLocLog) {
+            oemLocLog.setLength(0);
+            oemLocLog.append("OEM LOCATION SERVICE BIND PROBE\n");
+        }
+        bindOneOemLocationService("SensService",
+                "com.neusoft.nmasdk.location.service.SensService");
+        bindOneOemLocationService("SystemService",
+                "com.neusoft.nmasdk.system.service.SystemService");
+    }
+
+    private void bindOneOemLocationService(final String label, final String className) {
+        try {
+            Intent i = new Intent();
+            i.setComponent(new ComponentName("com.gwm.navi.app", className));
+            ServiceConnection c = new ServiceConnection() {
+                @Override public void onServiceConnected(ComponentName name, IBinder service) {
+                    inspectOemLocationBinder(label, name, service);
+                }
+                @Override public void onServiceDisconnected(ComponentName name) {
+                    appendOemLoc(label + " disconnected");
+                }
+                @Override public void onBindingDied(ComponentName name) {
+                    appendOemLoc(label + " bindingDied");
+                }
+                @Override public void onNullBinding(ComponentName name) {
+                    appendOemLoc(label + " nullBinding");
+                }
+            };
+            boolean ok = bindService(i, c, Context.BIND_AUTO_CREATE);
+            appendOemLoc(label + " bindService=" + ok + " • " + className);
+        } catch (Throwable e) {
+            appendOemLoc(label + " bind ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+        }
+    }
+
+    private void inspectOemLocationBinder(final String label, final ComponentName name, final IBinder binder) {
         new Thread(() -> {
-            StringBuilder log = new StringBuilder("DIRECT GWM DR REFLECTION\n");
-            Object locationService = null;
-            String providerClass = null;
+            String descriptor = "?";
+            try { descriptor = binder.getInterfaceDescriptor(); } catch (Throwable ignored) { }
+            appendOemLoc(label + " CONNECTED • desc=" + descriptor);
+            appendOemLoc(label + " component=" + name.flattenToShortString());
             try {
                 Context navCtx = createPackageContext("com.gwm.navi.app",
                         Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
                 ClassLoader cl = navCtx.getClassLoader();
-                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
-                log.append("apk=").append(ai.sourceDir).append('\n');
 
-                // First inspect the exact OEM contracts we discovered statically.
-                try {
-                    Class<?> iface = Class.forName("com.gwm.navi.service.location.ILocationService", false, cl);
-                    log.append("ILocationService methods:");
-                    for (java.lang.reflect.Method m : iface.getDeclaredMethods()) {
-                        String n = m.getName();
-                        if (n.toLowerCase(Locale.US).contains("dr") || n.toLowerCase(Locale.US).contains("loc") ||
-                                n.toLowerCase(Locale.US).contains("heading")) {
-                            log.append(' ').append(n).append("()");
-                        }
-                    }
-                    log.append('\n');
-                } catch (Throwable e) {
-                    log.append("ILocationService load=").append(e.getClass().getSimpleName()).append('\n');
-                }
-
-                // Enumerate GWMNavi classes and find a live provider with static getLocationService().
-                dalvik.system.DexFile dex = new dalvik.system.DexFile(ai.sourceDir);
-                java.util.Enumeration<String> entries = dex.entries();
-                int inspected = 0;
-                while (entries.hasMoreElements() && locationService == null) {
-                    String cn = entries.nextElement();
-                    if (!cn.startsWith("com.gwm.navi.")) continue;
-                    String low = cn.toLowerCase(Locale.US);
-                    if (!(low.contains("service") || low.contains("wrapper") || low.contains("location"))) continue;
-                    if (++inspected > 2600) break;
+                String[] ifaceCandidates = new String[]{
+                        "com.gwm.navi.service.location.ILocationService",
+                        "com.neusoft.nmasdk.location.service.ILocationService"
+                };
+                boolean contractFound = false;
+                for (String ifaceName : ifaceCandidates) {
                     try {
-                        Class<?> c = Class.forName(cn, false, cl);
-                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
-                            if (!"getLocationService".equals(m.getName())) continue;
-                            if (m.getParameterTypes().length != 0) continue;
-                            if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
-                            try {
-                                m.setAccessible(true);
-                                Object v = m.invoke(null);
-                                if (v != null) {
-                                    locationService = v;
-                                    providerClass = cn + ".getLocationService";
-                                    break;
-                                }
-                            } catch (Throwable ignored) { }
-                        }
-                    } catch (Throwable ignored) { }
-                }
-                try { dex.close(); } catch (Throwable ignored) { }
+                        Class<?> iface = Class.forName(ifaceName, false, cl);
+                        contractFound = true;
+                        appendOemLoc("contract=" + ifaceName);
+                        appendInterestingMethods(iface, "iface");
 
-                if (locationService == null) {
-                    // Fallback: find singleton getInstance() then instance getLocationService().
-                    dalvik.system.DexFile dex2 = new dalvik.system.DexFile(ai.sourceDir);
-                    java.util.Enumeration<String> e2 = dex2.entries();
-                    inspected = 0;
-                    outer:
-                    while (e2.hasMoreElements()) {
-                        String cn = e2.nextElement();
-                        if (!cn.startsWith("com.gwm.navi.")) continue;
-                        String low = cn.toLowerCase(Locale.US);
-                        if (!(low.contains("manager") || low.contains("service") || low.contains("wrapper"))) continue;
-                        if (++inspected > 1800) break;
+                        // If this is AIDL, use its real Stub.asInterface(IBinder).
                         try {
-                            Class<?> c = Class.forName(cn, false, cl);
-                            java.lang.reflect.Method gi = null;
-                            java.lang.reflect.Method gls = null;
-                            for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
-                                if ("getInstance".equals(m.getName()) && m.getParameterTypes().length == 0 &&
-                                        java.lang.reflect.Modifier.isStatic(m.getModifiers())) gi = m;
-                                if ("getLocationService".equals(m.getName()) && m.getParameterTypes().length == 0 &&
-                                        !java.lang.reflect.Modifier.isStatic(m.getModifiers())) gls = m;
-                            }
-                            if (gi != null && gls != null) {
-                                gi.setAccessible(true); gls.setAccessible(true);
-                                Object owner = gi.invoke(null);
-                                if (owner != null) {
-                                    Object v = gls.invoke(owner);
-                                    if (v != null) {
-                                        locationService = v;
-                                        providerClass = cn + ".getInstance().getLocationService";
-                                        break outer;
-                                    }
-                                }
-                            }
-                        } catch (Throwable ignored) { }
-                    }
-                    try { dex2.close(); } catch (Throwable ignored) { }
+                            Class<?> stub = Class.forName(ifaceName + "$Stub", false, cl);
+                            java.lang.reflect.Method asInterface = stub.getDeclaredMethod("asInterface", IBinder.class);
+                            asInterface.setAccessible(true);
+                            Object proxy = asInterface.invoke(null, binder);
+                            appendOemLoc("asInterface=" + (proxy == null ? "null" : proxy.getClass().getName()));
+                            if (proxy != null && invokeDrInfo(proxy, label + "/AIDL")) return;
+                        } catch (ClassNotFoundException e) {
+                            appendOemLoc("Stub absent for " + ifaceName);
+                        } catch (Throwable e) {
+                            appendOemLoc("asInterface ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                        }
+                    } catch (ClassNotFoundException ignored) { }
                 }
+                if (!contractFound) appendOemLoc("ILocationService class not found in candidate packages");
 
-                if (locationService == null) {
-                    log.append("locationService=NULL • provider not resolved\n");
-                } else {
-                    log.append("provider=").append(providerClass).append('\n');
-                    log.append("serviceClass=").append(locationService.getClass().getName()).append('\n');
-                    Object dr = null;
-                    java.lang.reflect.Method getDr = null;
-                    for (java.lang.reflect.Method m : locationService.getClass().getMethods()) {
-                        if ("getDrLocInfo".equals(m.getName()) && m.getParameterTypes().length == 0) {
-                            getDr = m; break;
+                // Inspect service binder itself for OEM methods exposed directly.
+                appendInterestingMethods(binder.getClass(), label + "/binder");
+                if (invokeDrInfo(binder, label + "/binder")) return;
+
+                // Inspect local interface if available.
+                if (descriptor != null && !"?".equals(descriptor)) {
+                    try {
+                        android.os.IInterface local = binder.queryLocalInterface(descriptor);
+                        appendOemLoc("queryLocalInterface=" + (local == null ? "null" : local.getClass().getName()));
+                        if (local != null) {
+                            appendInterestingMethods(local.getClass(), label + "/local");
+                            if (invokeDrInfo(local, label + "/local")) return;
                         }
-                    }
-                    if (getDr == null) {
-                        for (java.lang.reflect.Method m : locationService.getClass().getDeclaredMethods()) {
-                            if ("getDrLocInfo".equals(m.getName()) && m.getParameterTypes().length == 0) {
-                                getDr = m; break;
-                            }
-                        }
-                    }
-                    if (getDr != null) {
-                        getDr.setAccessible(true);
-                        dr = getDr.invoke(locationService);
-                    }
-                    if (dr == null) {
-                        log.append("getDrLocInfo=NULL\n");
-                    } else {
-                        log.append("drClass=").append(dr.getClass().getName()).append('\n');
-                        Double heading = extractHeading(dr);
-                        log.append("DrLocInfo=").append(String.valueOf(dr)).append('\n');
-                        if (heading != null && !heading.isNaN()) {
-                            final float h = normalize(heading.floatValue());
-                            log.append("DR_HEADING=").append(String.format(Locale.US, "%.2f°", h)).append('\n');
-                            runOnUiThread(() -> {
-                                qiblaView.setHeading(h, "اتجاه DR من نظام هافال");
-                                updateBinderDiagnosticText(trimDiag("SUCCESS • OEM DR heading=" + String.format(Locale.US, "%.2f°", h) + "\n" + log));
-                            });
-                            return;
-                        } else {
-                            log.append("heading field/getter not resolved\n");
-                        }
+                    } catch (Throwable e) {
+                        appendOemLoc("localInterface ERROR=" + e.getClass().getSimpleName());
                     }
                 }
             } catch (Throwable e) {
-                log.append("ERROR=").append(e.getClass().getName()).append(':').append(shortMessage(e)).append('\n');
+                appendOemLoc(label + " inspect ERROR=" + e.getClass().getName() + ":" + shortMessage(e));
             }
-            final String out = trimDiag(log.toString());
-            runOnUiThread(() -> updateBinderDiagnosticText(out));
-        }, "H9-Direct-DR-Probe").start();
+            oemLocReplies.incrementAndGet();
+        }, "H9-OEM-Loc-" + label).start();
+    }
+
+    private void appendInterestingMethods(Class<?> c, String prefix) {
+        try {
+            StringBuilder b = new StringBuilder(prefix).append(" methods:");
+            int count = 0;
+            for (java.lang.reflect.Method m : c.getMethods()) {
+                String n = m.getName().toLowerCase(Locale.US);
+                if (n.contains("dr") || n.contains("loc") || n.contains("heading") || n.contains("bearing") || n.contains("position")) {
+                    b.append(' ').append(m.getName()).append('(').append(m.getParameterTypes().length).append(')');
+                    if (++count >= 18) break;
+                }
+            }
+            appendOemLoc(b.toString());
+        } catch (Throwable ignored) { }
+    }
+
+    private boolean invokeDrInfo(Object target, String source) {
+        if (target == null) return false;
+        String[] names = new String[]{"getDrLocInfo", "getLocInfo", "getLastLocation"};
+        for (String n : names) {
+            try {
+                java.lang.reflect.Method m;
+                try { m = target.getClass().getMethod(n); }
+                catch (NoSuchMethodException e) { m = target.getClass().getDeclaredMethod(n); }
+                m.setAccessible(true);
+                Object value = m.invoke(target);
+                appendOemLoc(source + " " + n + "=" + String.valueOf(value));
+                if ("getDrLocInfo".equals(n) && value != null) {
+                    Double heading = extractHeading(value);
+                    if (heading != null && !heading.isNaN()) {
+                        final float h = normalize(heading.floatValue());
+                        appendOemLoc("SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f°", h));
+                        runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه DR من نظام هافال"));
+                        return true;
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {
+            } catch (Throwable e) {
+                appendOemLoc(source + " " + n + " ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+            }
+        }
+        return false;
     }
 
     private Double extractHeading(Object dr) {
@@ -768,9 +767,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         return null;
     }
 
+    private void appendOemLoc(String line) {
+        final String out;
+        synchronized (oemLocLog) {
+            if (oemLocLog.length() > 0) oemLocLog.append('\n');
+            oemLocLog.append(line);
+            out = trimDiag(oemLocLog.toString());
+        }
+        runOnUiThread(() -> updateBinderDiagnosticText(out));
+    }
+
     private String trimDiag(String value) {
         if (value == null) return "null";
-        return value.length() > 1700 ? value.substring(0, 1700) + "…" : value;
+        return value.length() > 1900 ? value.substring(0, 1900) + "…" : value;
     }
 
     private String shortMessage(Throwable t) {
@@ -780,15 +789,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.7 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.8 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.7 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.8 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.7 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.8 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
