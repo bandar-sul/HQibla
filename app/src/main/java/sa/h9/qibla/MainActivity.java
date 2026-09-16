@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • binding OEM location services...");
-            probeOemLocationServices();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • scanning internal ILocationService provider...");
+            probeInternalGwmLocationService();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("2.8 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("2.9 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("2.8 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("2.9 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("2.8 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("2.9 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,163 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
+    private void probeInternalGwmLocationService() {
+        synchronized (oemLocLog) {
+            oemLocLog.setLength(0);
+            oemLocLog.append("INTERNAL ILocationService PROVIDER PROBE\n");
+        }
+        new Thread(() -> {
+            dalvik.system.DexFile dex = null;
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
+                appendOemLoc("apk=" + ai.sourceDir);
+
+                Class<?> contract = null;
+                try {
+                    contract = Class.forName("com.gwm.navi.service.location.ILocationService", false, cl);
+                    appendOemLoc("contract=" + contract.getName() + " • getDrLocInfo confirmed");
+                } catch (Throwable e) {
+                    appendOemLoc("contract load ERROR=" + e.getClass().getSimpleName());
+                }
+
+                dex = new dalvik.system.DexFile(ai.sourceDir);
+                java.util.Enumeration<String> entries = dex.entries();
+                int scanned = 0;
+                int candidateClasses = 0;
+                while (entries.hasMoreElements()) {
+                    String cn = entries.nextElement();
+                    if (!cn.startsWith("com.gwm.navi.")) continue;
+                    String low = cn.toLowerCase(Locale.US);
+                    if (!(low.contains("location") || low.contains("service") || low.contains("manager") ||
+                            low.contains("wrapper") || low.contains("factory") || low.contains("sdk"))) continue;
+                    if (++scanned > 4200) break;
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        boolean interesting = false;
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            String n = m.getName().toLowerCase(Locale.US);
+                            String rt = m.getReturnType().getName().toLowerCase(Locale.US);
+                            if (n.contains("locationservice") || n.equals("getlocationservice") ||
+                                    rt.contains("ilocationservice") || rt.endsWith("locationservice")) {
+                                interesting = true;
+                                break;
+                            }
+                        }
+                        if (!interesting) {
+                            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                                String ft = f.getType().getName().toLowerCase(Locale.US);
+                                if (ft.contains("ilocationservice") || ft.endsWith("locationservice")) {
+                                    interesting = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!interesting) continue;
+                        candidateClasses++;
+                        if (candidateClasses <= 18) appendOemLoc("candidate=" + cn);
+
+                        // 1) Static fields that already hold ILocationService or a provider object.
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                            String ft = f.getType().getName().toLowerCase(Locale.US);
+                            if (!(ft.contains("locationservice") || ft.contains("locationmanager") ||
+                                    ft.contains("locationprovider"))) continue;
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(null);
+                                if (v != null) {
+                                    appendOemLoc("staticField=" + cn + "." + f.getName() + " -> " + v.getClass().getName());
+                                    if (probeLocationCarrier(v, cn + "." + f.getName())) return;
+                                }
+                            } catch (Throwable e) {
+                                if (candidateClasses <= 8) appendOemLoc("field " + f.getName() + " ERROR=" + e.getClass().getSimpleName());
+                            }
+                        }
+
+                        // 2) Static no-arg factories/singletons.
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            if (!java.lang.reflect.Modifier.isStatic(m.getModifiers()) || m.getParameterTypes().length != 0) continue;
+                            String n = m.getName().toLowerCase(Locale.US);
+                            String rt = m.getReturnType().getName().toLowerCase(Locale.US);
+                            if (!(n.equals("getlocationservice") || n.equals("getinstance") || n.equals("getlocservice") ||
+                                    rt.contains("ilocationservice") || rt.endsWith("locationservice"))) continue;
+                            try {
+                                m.setAccessible(true);
+                                Object v = m.invoke(null);
+                                if (v != null) {
+                                    appendOemLoc("factory=" + cn + "." + m.getName() + " -> " + v.getClass().getName());
+                                    if (probeLocationCarrier(v, cn + "." + m.getName() + "()")) return;
+                                }
+                            } catch (Throwable e) {
+                                if (candidateClasses <= 8) appendOemLoc("factory " + m.getName() + " ERROR=" + rootCauseName(e));
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+                appendOemLoc("NO LIVE ILocationService • scanned=" + scanned + " candidates=" + candidateClasses);
+            } catch (Throwable e) {
+                appendOemLoc("SCAN ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+            } finally {
+                if (dex != null) try { dex.close(); } catch (Throwable ignored) { }
+            }
+        }, "H9-Internal-ILocationService").start();
+    }
+
+    private boolean probeLocationCarrier(Object carrier, String source) {
+        if (carrier == null) return false;
+        if (invokeDrInfo(carrier, source)) return true;
+
+        // Look for an instance no-arg accessor returning the actual ILocationService.
+        Class<?> c = carrier.getClass();
+        for (java.lang.reflect.Method m : c.getMethods()) {
+            if (m.getParameterTypes().length != 0 || java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            String n = m.getName().toLowerCase(Locale.US);
+            String rt = m.getReturnType().getName().toLowerCase(Locale.US);
+            if (!(n.equals("getlocationservice") || n.equals("getlocservice") ||
+                    rt.contains("ilocationservice") || rt.endsWith("locationservice"))) continue;
+            try {
+                m.setAccessible(true);
+                Object v = m.invoke(carrier);
+                if (v != null) {
+                    appendOemLoc("accessor=" + source + "." + m.getName() + " -> " + v.getClass().getName());
+                    if (invokeDrInfo(v, source + "." + m.getName())) return true;
+                }
+            } catch (Throwable e) {
+                appendOemLoc("accessor " + m.getName() + " ERROR=" + rootCauseName(e));
+            }
+        }
+
+        // Inspect one level of instance fields for a cached location-service proxy.
+        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+            String ft = f.getType().getName().toLowerCase(Locale.US);
+            if (!(ft.contains("ilocationservice") || ft.endsWith("locationservice") || ft.contains("locationprovider"))) continue;
+            try {
+                f.setAccessible(true);
+                Object v = f.get(carrier);
+                if (v != null) {
+                    appendOemLoc("instanceField=" + source + "." + f.getName() + " -> " + v.getClass().getName());
+                    if (invokeDrInfo(v, source + "." + f.getName())) return true;
+                }
+            } catch (Throwable e) {
+                appendOemLoc("instanceField " + f.getName() + " ERROR=" + rootCauseName(e));
+            }
+        }
+        return false;
+    }
+
+    private String rootCauseName(Throwable e) {
+        Throwable r = e;
+        while (r.getCause() != null && r.getCause() != r) r = r.getCause();
+        String msg = r.getMessage();
+        if (msg == null) msg = "";
+        if (msg.length() > 80) msg = msg.substring(0, 80) + "…";
+        return r.getClass().getSimpleName() + (msg.isEmpty() ? "" : ":" + msg);
+    }
+
     private final java.util.concurrent.atomic.AtomicInteger oemLocReplies = new java.util.concurrent.atomic.AtomicInteger(0);
     private final StringBuilder oemLocLog = new StringBuilder();
 
@@ -789,15 +946,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.8 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("2.9 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.8 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("2.9 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.8 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("2.9 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
