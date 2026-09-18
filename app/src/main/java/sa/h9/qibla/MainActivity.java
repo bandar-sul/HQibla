@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("3.4 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("3.5 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("3.4 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("3.5 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("3.4 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("3.5 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("GWMNaviEngineer • GwmAdapterClient PROBE\n");
+            oemLocLog.append("GWMNaviEngineer • Adapter DATA PROBE\n");
         }
         new Thread(() -> {
             try {
@@ -607,101 +607,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
                 ClassLoader cl = engCtx.getClassLoader();
                 Class<?> clientClass = Class.forName("com.gwm.android.adapter.client.GwmAdapterClient", false, cl);
-                appendOemLoc("pkg=com.gwm.naviengineer");
-                appendOemLoc("class=" + clientClass.getName());
 
-                for (java.lang.reflect.Constructor<?> c : clientClass.getDeclaredConstructors()) {
-                    StringBuilder b = new StringBuilder("ctor(");
-                    Class<?>[] ps = c.getParameterTypes();
-                    for (int i=0;i<ps.length;i++) { if(i>0)b.append(','); b.append(ps[i].getName()); }
-                    b.append(')');
-                    appendOemLoc(b.toString());
-                }
-                for (java.lang.reflect.Method m : clientClass.getDeclaredMethods()) {
-                    String n = m.getName();
-                    if (n.toLowerCase(Locale.US).contains("data") || n.toLowerCase(Locale.US).contains("instance")) {
-                        StringBuilder b = new StringBuilder("method=");
-                        b.append(java.lang.reflect.Modifier.toString(m.getModifiers())).append(' ')
-                         .append(n).append('(');
-                        Class<?>[] ps = m.getParameterTypes();
-                        for (int i=0;i<ps.length;i++) { if(i>0)b.append(','); b.append(ps[i].getName()); }
-                        b.append(")->").append(m.getReturnType().getName());
-                        appendOemLoc(b.toString());
-                    }
-                }
-
-                Object client = null;
-                for (java.lang.reflect.Field f : clientClass.getDeclaredFields()) {
-                    if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-                    try {
-                        f.setAccessible(true);
-                        Object v = f.get(null);
-                        if (v != null && clientClass.isInstance(v)) {
-                            client = v;
-                            appendOemLoc("instance=static field " + f.getName());
-                            break;
-                        }
-                    } catch (Throwable ignored) { }
-                }
-
+                java.lang.reflect.Method getInstance = clientClass.getDeclaredMethod("getInstance");
+                getInstance.setAccessible(true);
+                Object client = getInstance.invoke(null);
+                appendOemLoc("instance=" + (client == null ? "NULL" : client.getClass().getName()));
                 if (client == null) {
-                    for (java.lang.reflect.Method m : clientClass.getDeclaredMethods()) {
-                        if (!java.lang.reflect.Modifier.isStatic(m.getModifiers()) || m.getParameterTypes().length != 0) continue;
-                        if (!clientClass.isAssignableFrom(m.getReturnType())) continue;
-                        try {
-                            m.setAccessible(true);
-                            Object v = m.invoke(null);
-                            appendOemLoc("instanceCall=" + m.getName() + " -> " + (v == null ? "NULL" : v.getClass().getName()));
-                            if (v != null) { client = v; break; }
-                        } catch (Throwable e) {
-                            appendOemLoc("instanceCall " + m.getName() + " ERROR=" + rootCauseName(e));
-                        }
-                    }
-                }
-
-                if (client == null) {
-                    for (java.lang.reflect.Constructor<?> c : clientClass.getDeclaredConstructors()) {
-                        Class<?>[] ps = c.getParameterTypes();
-                        try {
-                            c.setAccessible(true);
-                            Object v = null;
-                            if (ps.length == 0) v = c.newInstance();
-                            else if (ps.length == 1 && Context.class.isAssignableFrom(ps[0])) v = c.newInstance(engCtx);
-                            if (v != null) {
-                                client = v;
-                                appendOemLoc("instance=constructor(" + ps.length + ")");
-                                break;
-                            }
-                        } catch (Throwable e) {
-                            if (ps.length <= 1) appendOemLoc("ctor ERROR=" + rootCauseName(e));
-                        }
-                    }
-                }
-
-                java.lang.reflect.Method getData = null;
-                for (java.lang.reflect.Method m : clientClass.getMethods()) {
-                    if (!"getData".equals(m.getName())) continue;
-                    Class<?>[] ps = m.getParameterTypes();
-                    if (ps.length == 1 && ps[0] == String.class) { getData = m; break; }
-                }
-                if (getData == null) {
-                    for (java.lang.reflect.Method m : clientClass.getDeclaredMethods()) {
-                        if (!"getData".equals(m.getName())) continue;
-                        Class<?>[] ps = m.getParameterTypes();
-                        if (ps.length == 1 && ps[0] == String.class) { getData = m; break; }
-                    }
-                }
-                if (getData == null) {
-                    appendOemLoc("RESULT: getData(String) NOT FOUND");
+                    appendOemLoc("RESULT: getInstance() returned NULL");
                     return;
                 }
+
+                java.lang.reflect.Method getData = clientClass.getDeclaredMethod("getData", String.class);
+                java.lang.reflect.Method getDataForcely = clientClass.getDeclaredMethod("getDataForcely", String.class);
                 getData.setAccessible(true);
-                boolean isStatic = java.lang.reflect.Modifier.isStatic(getData.getModifiers());
-                appendOemLoc("getData(String) static=" + isStatic + " return=" + getData.getReturnType().getName());
-                if (!isStatic && client == null) {
-                    appendOemLoc("RESULT: client instance NULL");
-                    return;
-                }
+                getDataForcely.setAccessible(true);
 
                 String[] keys = new String[]{
                         "car.basic.gear_status",
@@ -721,23 +640,41 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         "vehicle.heading",
                         "vehicle.azimuth"
                 };
-                Object target = isStatic ? null : client;
+
                 int useful = 0;
                 for (String key : keys) {
+                    Object normal = null;
+                    Object forced = null;
+                    String ne = null;
+                    String fe = null;
                     try {
-                        Object v = getData.invoke(target, key);
-                        String out = String.valueOf(v);
-                        appendOemLoc(key + "=" + out);
-                        if (v != null && !"null".equalsIgnoreCase(out) && !"".equals(out)) useful++;
+                        normal = getData.invoke(client, key);
                     } catch (Throwable e) {
-                        appendOemLoc(key + " ERROR=" + rootCauseName(e));
+                        ne = rootCauseName(e);
                     }
+                    try {
+                        forced = getDataForcely.invoke(client, key);
+                    } catch (Throwable e) {
+                        fe = rootCauseName(e);
+                    }
+
+                    String n = normal == null ? "null" : String.valueOf(normal);
+                    String f = forced == null ? "null" : String.valueOf(forced);
+                    if (!"null".equalsIgnoreCase(n) || !"null".equalsIgnoreCase(f)) useful++;
+
+                    StringBuilder line = new StringBuilder();
+                    line.append(key).append(" | get=").append(n);
+                    if (ne != null) line.append("[").append(ne).append("]");
+                    line.append(" | force=").append(f);
+                    if (fe != null) line.append("[").append(fe).append("]");
+                    appendOemLoc(line.toString());
                 }
-                appendOemLoc("RESULT: useful=" + useful + "/" + keys.length);
+
+                appendOemLoc("RESULT useful=" + useful + "/" + keys.length);
             } catch (Throwable e) {
-                appendOemLoc("3.4 ENGINEER ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("3.5 ENGINEER ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-GwmEngineerAdapter").start();
+        }, "H9-GwmEngineerAdapter35").start();
     }
 
     private void probeServiceManagerInitAndLocation() {
@@ -1506,15 +1443,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.4 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.5 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.4 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.5 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.4 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.5 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {

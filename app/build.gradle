@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 34
-        versionName '3.4-test'
+        versionCode 35
+        versionName '3.5-test'
     }
 
     buildTypes {
