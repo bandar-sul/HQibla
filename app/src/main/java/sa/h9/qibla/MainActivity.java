@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • direct getLocationService()...");
-            probeDirectGetLocationService();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • probing ServiceManagerFactory init/dependency...");
+            probeServiceManagerInitAndLocation();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("3.2 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("3.3 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("3.2 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("3.3 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("3.2 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("3.3 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -594,6 +594,122 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeServiceManagerInitAndLocation() {
+        synchronized (oemLocLog) {
+            oemLocLog.setLength(0);
+            oemLocLog.append("ServiceManagerFactory INIT/DEPENDENCY PROBE\n");
+        }
+        new Thread(() -> {
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+                Class<?> factory = Class.forName("com.gwm.navi.service.manager.ServiceManagerFactory", false, cl);
+                Class<?> contract = Class.forName("com.gwm.navi.service.location.ILocationService", false, cl);
+                appendOemLoc("factory=" + factory.getName());
+                appendOemLoc("contract=" + contract.getName());
+
+                // Show factory state and any init/register/set entry points.
+                for (java.lang.reflect.Method m : factory.getDeclaredMethods()) {
+                    String n = m.getName().toLowerCase(Locale.US);
+                    if (n.contains("init") || n.contains("depend") || n.contains("register") ||
+                            n.startsWith("set") || n.contains("location")) {
+                        appendOemLoc("factoryMethod=" + java.lang.reflect.Modifier.toString(m.getModifiers()) + " " +
+                                m.getName() + "(" + m.getParameterTypes().length + ")->" + m.getReturnType().getName());
+                    }
+                }
+                for (java.lang.reflect.Field f : factory.getDeclaredFields()) {
+                    if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                    try {
+                        f.setAccessible(true);
+                        Object v = f.get(null);
+                        appendOemLoc("factoryField=" + f.getName() + ":" + f.getType().getName() + "=" +
+                                (v == null ? "null" : v.getClass().getName()));
+                    } catch (Throwable e) {
+                        appendOemLoc("factoryField " + f.getName() + " ERROR=" + rootCauseName(e));
+                    }
+                }
+
+                Object dependency = null;
+                try {
+                    java.lang.reflect.Method m = factory.getDeclaredMethod("getDependencyService");
+                    m.setAccessible(true);
+                    dependency = m.invoke(null);
+                    appendOemLoc("getDependencyService=" + (dependency == null ? "NULL" : dependency.getClass().getName()));
+                } catch (Throwable e) {
+                    appendOemLoc("getDependencyService ERROR=" + rootCauseName(e));
+                }
+
+                if (dependency != null) {
+                    Class<?> dc = dependency.getClass();
+                    int shown = 0;
+                    for (java.lang.reflect.Method m : dc.getMethods()) {
+                        String n = m.getName().toLowerCase(Locale.US);
+                        String rt = m.getReturnType().getName().toLowerCase(Locale.US);
+                        if (n.contains("init") || n.contains("register") || n.contains("service") ||
+                                n.contains("location") || n.startsWith("get") || rt.contains("locationservice")) {
+                            appendOemLoc("depMethod=" + m.getName() + "(" + m.getParameterTypes().length + ")->" +
+                                    m.getReturnType().getName());
+                            if (++shown >= 18) break;
+                        }
+                    }
+
+                    // Read cached service fields from the dependency object.
+                    for (java.lang.reflect.Field f : dc.getDeclaredFields()) {
+                        String ft = f.getType().getName().toLowerCase(Locale.US);
+                        String fn = f.getName().toLowerCase(Locale.US);
+                        if (!(ft.contains("location") || ft.contains("service") || fn.contains("location") || fn.contains("service"))) continue;
+                        try {
+                            f.setAccessible(true);
+                            Object v = f.get(dependency);
+                            appendOemLoc("depField=" + f.getName() + ":" + f.getType().getName() + "=" +
+                                    (v == null ? "null" : v.getClass().getName()));
+                            if (v != null && invokeDrInfo(v, "depField/" + f.getName())) return;
+                        } catch (Throwable e) {
+                            appendOemLoc("depField " + f.getName() + " ERROR=" + rootCauseName(e));
+                        }
+                    }
+
+                    // Only invoke no-arg accessors that look like getters. Avoid mutating init/register calls.
+                    for (java.lang.reflect.Method m : dc.getMethods()) {
+                        if (m.getParameterTypes().length != 0) continue;
+                        String n = m.getName().toLowerCase(Locale.US);
+                        String rt = m.getReturnType().getName().toLowerCase(Locale.US);
+                        if (!(n.equals("getlocationservice") || n.equals("getlocservice") ||
+                                rt.contains("ilocationservice") || rt.endsWith("locationservice"))) continue;
+                        try {
+                            m.setAccessible(true);
+                            Object v = m.invoke(dependency);
+                            appendOemLoc("depCall=" + m.getName() + " -> " +
+                                    (v == null ? "NULL" : v.getClass().getName()));
+                            if (v != null && invokeDrInfo(v, "dependency/" + m.getName())) return;
+                        } catch (Throwable e) {
+                            appendOemLoc("depCall " + m.getName() + " ERROR=" + rootCauseName(e));
+                        }
+                    }
+                }
+
+                // Retry the exact factory accessor after dependency inspection.
+                try {
+                    java.lang.reflect.Method getLocationService = factory.getDeclaredMethod("getLocationService");
+                    getLocationService.setAccessible(true);
+                    Object service = getLocationService.invoke(null);
+                    appendOemLoc("RETRY getLocationService=" + (service == null ? "NULL" : service.getClass().getName()));
+                    if (service != null) {
+                        if (invokeDrInfo(service, "factoryRetry")) return;
+                        appendInterestingMethods(service.getClass(), "factoryRetry");
+                    }
+                } catch (Throwable e) {
+                    appendOemLoc("RETRY getLocationService ERROR=" + rootCauseName(e));
+                }
+
+                appendOemLoc("RESULT: factory/dependency not initialized in our process");
+            } catch (Throwable e) {
+                appendOemLoc("DIRECT 3.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+            }
+        }, "H9-ServiceFactory-Init").start();
     }
 
     private void probeDirectGetLocationService() {
@@ -1246,15 +1362,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.2 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.3 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.2 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.3 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.2 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.3 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
