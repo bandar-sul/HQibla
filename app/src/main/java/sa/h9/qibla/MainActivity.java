@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("3.6 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("3.7 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("3.6 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("3.7 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("3.6 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("3.7 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("GWMNaviEngineer • GwmCarSettingManager PROBE\n");
+            oemLocLog.append("GWMNaviEngineer • SAFE Car/GwmCarSetting PROBE\n");
         }
         new Thread(() -> {
             try {
@@ -612,113 +612,117 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 appendOemLoc("carClass=" + carClass.getName());
                 appendOemLoc("mgrClass=" + mgrClass.getName());
 
-                // Dump useful service/setting constants only.
-                for (java.lang.reflect.Field f : mgrClass.getDeclaredFields()) {
-                    String n = f.getName().toLowerCase(Locale.US);
-                    if (!(n.contains("speed") || n.contains("gear") || n.contains("yaw") ||
-                            n.contains("heading") || n.contains("azimuth") || n.contains("bearing") ||
-                            n.contains("service"))) continue;
-                    try {
-                        if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-                        f.setAccessible(true);
-                        appendOemLoc("CONST " + f.getName() + "=" + String.valueOf(f.get(null)));
-                    } catch (Throwable e) {
-                        appendOemLoc("CONST " + f.getName() + " ERROR=" + rootCauseName(e));
-                    }
-                }
-
-                // Dump only methods relevant to vehicle movement/orientation.
-                for (java.lang.reflect.Method m : mgrClass.getMethods()) {
-                    String n = m.getName().toLowerCase(Locale.US);
-                    if (n.contains("speed") || n.contains("gear") || n.contains("yaw") ||
-                            n.contains("heading") || n.contains("azimuth") || n.contains("bearing") ||
-                            n.contains("vehicle") || n.contains("angle")) {
-                        StringBuilder b = new StringBuilder("M ");
-                        b.append(m.getName()).append('(');
-                        Class<?>[] ps = m.getParameterTypes();
-                        for (int i=0;i<ps.length;i++) { if(i>0)b.append(','); b.append(ps[i].getSimpleName()); }
-                        b.append(")->").append(m.getReturnType().getSimpleName());
-                        appendOemLoc(b.toString());
-                    }
-                }
-
                 Object car = null;
-                try {
-                    java.lang.reflect.Method create = carClass.getMethod("createCar", Context.class);
-                    car = create.invoke(null, this);
-                    appendOemLoc("Car.createCar=" + (car == null ? "NULL" : car.getClass().getName()));
-                } catch (Throwable e) {
-                    appendOemLoc("createCar(Context) ERROR=" + rootCauseName(e));
-                }
+                android.content.ServiceConnection safeConn = new android.content.ServiceConnection() {
+                    @Override
+                    public void onServiceConnected(android.content.ComponentName name, android.os.IBinder service) {
+                        appendOemLoc("ServiceConnection CONNECTED " + String.valueOf(name));
+                    }
 
-                if (car == null) {
-                    for (java.lang.reflect.Method m : carClass.getMethods()) {
-                        if (!"createCar".equals(m.getName()) || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
-                        Class<?>[] ps = m.getParameterTypes();
-                        if (ps.length < 1 || !Context.class.isAssignableFrom(ps[0])) continue;
-                        try {
-                            Object[] args = new Object[ps.length];
-                            args[0] = this;
-                            for (int i=1;i<ps.length;i++) {
-                                Class<?> p = ps[i];
-                                if (p == android.os.Handler.class) args[i] = new android.os.Handler(android.os.Looper.getMainLooper());
-                                else if (p == long.class || p == Long.class) args[i] = 0L;
-                                else if (p == int.class || p == Integer.class) args[i] = 0;
-                                else args[i] = null;
-                            }
-                            m.setAccessible(true);
-                            Object v = m.invoke(null, args);
-                            appendOemLoc("createCar/" + ps.length + "=" + (v == null ? "NULL" : v.getClass().getName()));
-                            if (v != null) { car = v; break; }
-                        } catch (Throwable e) {
-                            appendOemLoc("createCar/" + ps.length + " ERROR=" + rootCauseName(e));
+                    @Override
+                    public void onServiceDisconnected(android.content.ComponentName name) {
+                        appendOemLoc("ServiceConnection DISCONNECTED " + String.valueOf(name));
+                    }
+                };
+
+                for (java.lang.reflect.Method m : carClass.getMethods()) {
+                    if (!"createCar".equals(m.getName()) || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+                    Class<?>[] ps = m.getParameterTypes();
+                    StringBuilder sig = new StringBuilder("createCar(");
+                    for (int i=0;i<ps.length;i++) { if(i>0)sig.append(','); sig.append(ps[i].getSimpleName()); }
+                    sig.append(')');
+                    appendOemLoc("FOUND " + sig.toString());
+
+                    boolean hasServiceConnection = false;
+                    for (Class<?> p : ps) {
+                        if (android.content.ServiceConnection.class.isAssignableFrom(p)) {
+                            hasServiceConnection = true;
+                            break;
                         }
                     }
+                    if (!hasServiceConnection) continue;
+
+                    try {
+                        Object[] args = new Object[ps.length];
+                        boolean supported = true;
+                        for (int i=0;i<ps.length;i++) {
+                            Class<?> p = ps[i];
+                            if (Context.class.isAssignableFrom(p)) args[i] = this;
+                            else if (android.content.ServiceConnection.class.isAssignableFrom(p)) args[i] = safeConn;
+                            else if (android.os.Handler.class.isAssignableFrom(p)) args[i] = new android.os.Handler(android.os.Looper.getMainLooper());
+                            else if (p == long.class || p == Long.class) args[i] = 0L;
+                            else if (p == int.class || p == Integer.class) args[i] = 0;
+                            else if (p == boolean.class || p == Boolean.class) args[i] = false;
+                            else {
+                                args[i] = null;
+                            }
+                        }
+                        m.setAccessible(true);
+                        Object v = m.invoke(null, args);
+                        appendOemLoc("CALL " + sig.toString() + "=" + (v == null ? "NULL" : v.getClass().getName()));
+                        if (v != null) { car = v; break; }
+                    } catch (Throwable e) {
+                        appendOemLoc("CALL " + sig.toString() + " ERROR=" + rootCauseName(e));
+                    }
                 }
 
                 if (car == null) {
-                    appendOemLoc("RESULT: android.car.Car instance NULL");
+                    appendOemLoc("RESULT: no safe createCar(ServiceConnection) succeeded");
                     return;
                 }
+
+                try {
+                    java.lang.reflect.Method isConnected = carClass.getMethod("isConnected");
+                    appendOemLoc("isConnected(before)=" + String.valueOf(isConnected.invoke(car)));
+                } catch (Throwable ignored) { }
 
                 try {
                     java.lang.reflect.Method connect = carClass.getMethod("connect");
                     connect.invoke(car);
                     appendOemLoc("Car.connect=OK");
                 } catch (Throwable e) {
-                    appendOemLoc("Car.connect=" + rootCauseName(e));
+                    appendOemLoc("Car.connect ERROR=" + rootCauseName(e));
                 }
+
+                try { Thread.sleep(600); } catch (InterruptedException ignored) { }
+
+                try {
+                    java.lang.reflect.Method isConnected = carClass.getMethod("isConnected");
+                    appendOemLoc("isConnected(after)=" + String.valueOf(isConnected.invoke(car)));
+                } catch (Throwable ignored) { }
 
                 java.lang.reflect.Method getMgr = carClass.getMethod("getCarManager", String.class);
                 java.util.LinkedHashSet<String> serviceNames = new java.util.LinkedHashSet<>();
-                serviceNames.add("setting");
-                serviceNames.add("gwm_setting");
-                serviceNames.add("car_setting");
-                serviceNames.add("gwm_car_setting");
 
                 for (java.lang.reflect.Field f : carClass.getDeclaredFields()) {
-                    String n = f.getName().toLowerCase(Locale.US);
-                    if (!(n.contains("setting") || n.contains("service"))) continue;
                     try {
                         if (!java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType() != String.class) continue;
                         f.setAccessible(true);
                         Object v = f.get(null);
-                        if (v != null) {
-                            String s = String.valueOf(v);
-                            if (s.toLowerCase(Locale.US).contains("setting")) {
-                                serviceNames.add(s);
-                                appendOemLoc("CarConst " + f.getName() + "=" + s);
-                            }
+                        if (v == null) continue;
+                        String s = String.valueOf(v);
+                        String both = (f.getName() + " " + s).toLowerCase(Locale.US);
+                        if (both.contains("setting")) {
+                            serviceNames.add(s);
+                            appendOemLoc("CarConst " + f.getName() + "=" + s);
                         }
                     } catch (Throwable ignored) { }
                 }
+
+                serviceNames.add("setting");
+                serviceNames.add("gwm_setting");
+                serviceNames.add("car_setting");
+                serviceNames.add("gwm_car_setting");
 
                 Object manager = null;
                 for (String svc : serviceNames) {
                     try {
                         Object v = getMgr.invoke(car, svc);
                         appendOemLoc("getCarManager(" + svc + ")=" + (v == null ? "NULL" : v.getClass().getName()));
-                        if (v != null && mgrClass.isInstance(v)) { manager = v; break; }
+                        if (v != null && mgrClass.isInstance(v)) {
+                            manager = v;
+                            break;
+                        }
                     } catch (Throwable e) {
                         appendOemLoc("mgr(" + svc + ") ERROR=" + rootCauseName(e));
                     }
@@ -731,25 +735,33 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
                 int useful = 0;
                 for (java.lang.reflect.Method m : mgrClass.getMethods()) {
-                    if (m.getParameterTypes().length != 0) continue;
                     String n = m.getName().toLowerCase(Locale.US);
                     if (!(n.contains("speed") || n.contains("gear") || n.contains("yaw") ||
                             n.contains("heading") || n.contains("azimuth") || n.contains("bearing") ||
                             n.contains("angle"))) continue;
-                    try {
-                        m.setAccessible(true);
-                        Object v = m.invoke(manager);
-                        appendOemLoc("CALL " + m.getName() + "=" + String.valueOf(v));
-                        if (v != null) useful++;
-                    } catch (Throwable e) {
-                        appendOemLoc("CALL " + m.getName() + " ERROR=" + rootCauseName(e));
+                    StringBuilder sig = new StringBuilder("M ");
+                    sig.append(m.getName()).append('(');
+                    Class<?>[] ps = m.getParameterTypes();
+                    for (int i=0;i<ps.length;i++) { if(i>0)sig.append(','); sig.append(ps[i].getSimpleName()); }
+                    sig.append(")->").append(m.getReturnType().getSimpleName());
+                    appendOemLoc(sig.toString());
+
+                    if (ps.length == 0) {
+                        try {
+                            m.setAccessible(true);
+                            Object v = m.invoke(manager);
+                            appendOemLoc("CALL " + m.getName() + "=" + String.valueOf(v));
+                            if (v != null) useful++;
+                        } catch (Throwable e) {
+                            appendOemLoc("CALL " + m.getName() + " ERROR=" + rootCauseName(e));
+                        }
                     }
                 }
                 appendOemLoc("RESULT usefulCalls=" + useful);
             } catch (Throwable e) {
-                appendOemLoc("3.6 CAR ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("3.7 SAFE CAR ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-GwmCarSetting36").start();
+        }, "H9-GwmCarSetting37").start();
     }
 
     private void probeServiceManagerInitAndLocation() {
@@ -1518,15 +1530,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.6 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.7 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.6 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.7 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.6 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.7 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
