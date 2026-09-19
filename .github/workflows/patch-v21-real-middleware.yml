@@ -1,9 +1,9 @@
-name: Apply H9 Qibla 3.5 GWM Adapter Data Probe
+name: Apply H9 Qibla 3.6 GwmCarSettingManager Probe
 on:
   push:
     branches: [ main ]
     paths:
-      - 'tools/patch_v35_gwm_adapter_data.py'
+      - 'tools/patch_v36_gwm_car_setting.py'
       - '.github/workflows/patch-v21-real-middleware.yml'
   workflow_dispatch:
 permissions:
@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Apply 3.5 focused GWM adapter data patch
-        run: python3 tools/patch_v35_gwm_adapter_data.py
+      - name: Apply 3.6 GwmCarSettingManager patch
+        run: python3 tools/patch_v36_gwm_car_setting.py
       - name: Commit application changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java app/build.gradle
-          git commit -m "H9 Qibla 3.5 focused GWM adapter data probe" || true
+          git commit -m "H9 Qibla 3.6 GwmCarSettingManager probe" || true
           git push
