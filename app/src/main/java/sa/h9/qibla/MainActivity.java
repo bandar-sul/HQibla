@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("GWM CarService • gwm_car_setting PROBE\n");
+            oemLocLog.append("GWM CarService • gwm_car_setting PROBE\\n");
         }
         new Thread(() -> {
             try {
@@ -623,14 +623,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 };
 
                 Object car = null;
-                for (java.lang.reflect.Method m : carClass.getMethods()) {
-                    if (!"createCar".equals(m.getName()) || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
-                    Class<?>[] ps = m.getParameterTypes();
-
+                for (java.lang.reflect.Method mm : carClass.getMethods()) {
+                    if (!"createCar".equals(mm.getName()) || !java.lang.reflect.Modifier.isStatic(mm.getModifiers())) continue;
+                    Class<?>[] ps = mm.getParameterTypes();
                     boolean hasConn = false;
                     for (Class<?> p : ps) if (android.content.ServiceConnection.class.isAssignableFrom(p)) hasConn = true;
                     if (!hasConn) continue;
-
                     try {
                         Object[] args = new Object[ps.length];
                         for (int i=0;i<ps.length;i++) {
@@ -643,8 +641,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             else if (p == boolean.class || p == Boolean.class) args[i] = false;
                             else args[i] = null;
                         }
-                        m.setAccessible(true);
-                        Object v = m.invoke(null, args);
+                        mm.setAccessible(true);
+                        Object v = mm.invoke(null, args);
                         if (v != null) { car = v; break; }
                     } catch (Throwable ignored) { }
                 }
@@ -667,8 +665,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     java.lang.reflect.Method isConnected = carClass.getMethod("isConnected");
                     while (System.currentTimeMillis() < deadline) {
                         try {
-                            Object v = isConnected.invoke(car);
-                            connected = Boolean.TRUE.equals(v);
+                            connected = Boolean.TRUE.equals(isConnected.invoke(car));
                             if (connected) break;
                         } catch (Throwable ignored) { }
                         try { Thread.sleep(100); } catch (InterruptedException ignored) { }
@@ -695,31 +692,31 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
                 int shown = 0;
                 int useful = 0;
-                for (java.lang.reflect.Method m : manager.getClass().getMethods()) {
-                    String n = m.getName().toLowerCase(Locale.US);
+                for (java.lang.reflect.Method mm : manager.getClass().getMethods()) {
+                    String n = mm.getName().toLowerCase(Locale.US);
                     if (!(n.contains("speed") || n.contains("gear") || n.contains("yaw") ||
                             n.contains("heading") || n.contains("azimuth") || n.contains("bearing") ||
                             n.contains("angle"))) continue;
 
-                    Class<?>[] ps = m.getParameterTypes();
+                    Class<?>[] ps = mm.getParameterTypes();
                     StringBuilder sig = new StringBuilder();
-                    sig.append(m.getName()).append('(');
+                    sig.append(mm.getName()).append('(');
                     for (int i=0;i<ps.length;i++) {
                         if (i>0) sig.append(',');
                         sig.append(ps[i].getSimpleName());
                     }
-                    sig.append(")->").append(m.getReturnType().getSimpleName());
+                    sig.append(")->").append(mm.getReturnType().getSimpleName());
                     appendOemLoc("M " + sig.toString());
                     shown++;
 
                     if (ps.length == 0) {
                         try {
-                            m.setAccessible(true);
-                            Object v = m.invoke(manager);
-                            appendOemLoc("V " + m.getName() + "=" + String.valueOf(v));
+                            mm.setAccessible(true);
+                            Object v = mm.invoke(manager);
+                            appendOemLoc("V " + mm.getName() + "=" + String.valueOf(v));
                             if (v != null) useful++;
                         } catch (Throwable e) {
-                            appendOemLoc("V " + m.getName() + " ERROR=" + rootCauseName(e));
+                            appendOemLoc("V " + mm.getName() + " ERROR=" + rootCauseName(e));
                         }
                     }
                 }
