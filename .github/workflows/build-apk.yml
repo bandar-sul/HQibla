@@ -33,3 +33,5 @@ jobs:
         with:
           name: H9-Qibla-3.8-Test-Haval-H9
           path: dist/H9-Qibla-3.8-Test-Haval-H9.apk
+
+# trigger-3.8
