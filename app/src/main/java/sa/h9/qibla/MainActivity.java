@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("3.9 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.0 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("3.9 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.0 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("3.9 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.0 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("GwmCarSettingManager API PROBE\\n");
+            oemLocLog.append("FINAL DIAG • GwmCarSettingManager 4.0\\n");
         }
         new Thread(() -> {
             try {
@@ -607,15 +607,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
                 ClassLoader cl = engCtx.getClassLoader();
                 Class<?> carClass = Class.forName("android.car.Car", false, cl);
-                Class<?> mgrClass = Class.forName("android.car.hardware.setting.GwmCarSettingManager", false, cl);
 
                 android.content.ServiceConnection safeConn = new android.content.ServiceConnection() {
-                    @Override
-                    public void onServiceConnected(android.content.ComponentName name, android.os.IBinder service) {
+                    @Override public void onServiceConnected(android.content.ComponentName name, android.os.IBinder service) {
                         appendOemLoc("CONNECTED");
                     }
-                    @Override
-                    public void onServiceDisconnected(android.content.ComponentName name) {
+                    @Override public void onServiceDisconnected(android.content.ComponentName name) {
                         appendOemLoc("DISCONNECTED");
                     }
                 };
@@ -645,76 +642,86 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     } catch (Throwable ignored) { }
                 }
 
-                if (car == null) {
-                    appendOemLoc("RESULT Car=NULL");
-                    return;
-                }
-
+                if (car == null) { appendOemLoc("RESULT Car=NULL"); return; }
                 try { carClass.getMethod("connect").invoke(car); } catch (Throwable ignored) { }
 
                 java.lang.reflect.Method isConnected = carClass.getMethod("isConnected");
                 long deadline = System.currentTimeMillis() + 2500L;
                 while (System.currentTimeMillis() < deadline) {
-                    try {
-                        if (Boolean.TRUE.equals(isConnected.invoke(car))) break;
-                    } catch (Throwable ignored) { }
+                    try { if (Boolean.TRUE.equals(isConnected.invoke(car))) break; } catch (Throwable ignored) { }
                     try { Thread.sleep(100); } catch (InterruptedException ignored) { }
                 }
 
-                Object manager = carClass.getMethod("getCarManager", String.class)
-                        .invoke(car, "gwm_car_setting");
-
+                Object manager = carClass.getMethod("getCarManager", String.class).invoke(car, "gwm_car_setting");
                 appendOemLoc("manager=" + (manager == null ? "NULL" : manager.getClass().getName()));
                 if (manager == null) return;
 
-                java.util.ArrayList<String> fields = new java.util.ArrayList<>();
+                java.util.LinkedHashMap<String,Integer> candidateIds = new java.util.LinkedHashMap<>();
+                String[] needles = new String[]{"speed","gear","yaw","steer","direction","wheel","accel","vehicle","angle"};
+
                 for (java.lang.reflect.Field f : manager.getClass().getFields()) {
                     try {
-                        int mod = f.getModifiers();
-                        if (!java.lang.reflect.Modifier.isStatic(mod)) continue;
-                        String n = f.getName().toLowerCase(Locale.US);
-                        String t = f.getType().getSimpleName();
-                        if (f.getType() == int.class || f.getType() == Integer.class ||
-                                f.getType() == String.class || f.getType() == boolean.class ||
-                                f.getType() == Boolean.class) {
-                            f.setAccessible(true);
-                            Object v = f.get(null);
-                            fields.add(f.getName() + "=" + String.valueOf(v) + ":" + t);
+                        if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        String nl = f.getName().toLowerCase(Locale.US);
+                        boolean hit = false;
+                        for (String n : needles) if (nl.contains(n)) { hit = true; break; }
+                        if (!hit) continue;
+                        f.setAccessible(true);
+                        Object v = f.get(null);
+                        if (v instanceof Integer) {
+                            candidateIds.put(f.getName(), (Integer)v);
+                            appendOemLoc("FID " + f.getName() + "=" + v);
+                        } else {
+                            appendOemLoc("FIELD " + f.getName() + "=" + String.valueOf(v));
                         }
                     } catch (Throwable ignored) { }
                 }
-                java.util.Collections.sort(fields);
-                appendOemLoc("STATIC_FIELDS=" + fields.size());
-                int fieldLimit = Math.min(fields.size(), 24);
-                for (int i=0;i<fieldLimit;i++) appendOemLoc("F " + fields.get(i));
 
-                java.util.ArrayList<String> methods = new java.util.ArrayList<>();
+                java.util.ArrayList<java.lang.reflect.Method> readers = new java.util.ArrayList<>();
                 for (java.lang.reflect.Method mm : manager.getClass().getMethods()) {
-                    String n = mm.getName();
-                    String nl = n.toLowerCase(Locale.US);
-                    if (!(nl.startsWith("get") || nl.startsWith("set") || nl.startsWith("register") ||
-                            nl.startsWith("unregister") || nl.contains("callback") || nl.contains("property"))) continue;
-
-                    StringBuilder sig = new StringBuilder();
-                    sig.append(n).append('(');
+                    String nl = mm.getName().toLowerCase(Locale.US);
+                    if (!(nl.startsWith("get") || nl.startsWith("read") || nl.contains("property") ||
+                            nl.startsWith("register") || nl.contains("callback"))) continue;
+                    StringBuilder sig = new StringBuilder(mm.getName()).append('(');
                     Class<?>[] ps = mm.getParameterTypes();
                     for (int i=0;i<ps.length;i++) {
                         if (i>0) sig.append(',');
                         sig.append(ps[i].getSimpleName());
                     }
                     sig.append(")->").append(mm.getReturnType().getSimpleName());
-                    methods.add(sig.toString());
-                }
-                java.util.Collections.sort(methods);
-                appendOemLoc("METHODS=" + methods.size());
-                int methodLimit = Math.min(methods.size(), 28);
-                for (int i=0;i<methodLimit;i++) appendOemLoc("M " + methods.get(i));
+                    appendOemLoc("M " + sig.toString());
 
-                appendOemLoc("RESULT API_DUMP_DONE");
+                    if (ps.length == 1 && (ps[0] == int.class || ps[0] == Integer.class) &&
+                            !mm.getReturnType().equals(Void.TYPE)) {
+                        readers.add(mm);
+                    }
+                }
+
+                int reads = 0;
+                for (java.util.Map.Entry<String,Integer> e : candidateIds.entrySet()) {
+                    if (reads >= 12) break;
+                    for (java.lang.reflect.Method mm : readers) {
+                        if (reads >= 12) break;
+                        try {
+                            mm.setAccessible(true);
+                            Object v = mm.invoke(manager, e.getValue());
+                            appendOemLoc("READ " + e.getKey() + " via " + mm.getName() + "=" + String.valueOf(v));
+                            reads++;
+                        } catch (Throwable ex) {
+                            String rc = rootCauseName(ex);
+                            if (!"IllegalArgumentException".equals(rc)) {
+                                appendOemLoc("READ " + e.getKey() + " via " + mm.getName() + " ERROR=" + rc);
+                                reads++;
+                            }
+                        }
+                    }
+                }
+
+                appendOemLoc("RESULT ids=" + candidateIds.size() + " readers=" + readers.size() + " reads=" + reads);
             } catch (Throwable e) {
-                appendOemLoc("3.9 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-GwmCarSetting39").start();
+        }, "H9-FinalDiag40").start();
     }
 
     private void probeServiceManagerInitAndLocation() {
@@ -1483,15 +1490,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("3.9 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.0 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("3.9 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.0 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("3.9 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.0 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
