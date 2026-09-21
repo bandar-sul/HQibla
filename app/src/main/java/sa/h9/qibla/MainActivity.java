@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.0 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.1 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.0 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.1 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.0 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.1 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("FINAL DIAG • GwmCarSettingManager 4.0\\n");
+            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.1\\n");
         }
         new Thread(() -> {
             try {
@@ -656,72 +656,84 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 appendOemLoc("manager=" + (manager == null ? "NULL" : manager.getClass().getName()));
                 if (manager == null) return;
 
-                java.util.LinkedHashMap<String,Integer> candidateIds = new java.util.LinkedHashMap<>();
-                String[] needles = new String[]{"speed","gear","yaw","steer","direction","wheel","accel","vehicle","angle"};
+                Class<?> mc = manager.getClass();
+                java.lang.reflect.Method getList = mc.getMethod("getPropertyList");
+                java.lang.reflect.Method getInt = mc.getMethod("getIntProperty", int.class);
+                java.lang.reflect.Method getFloat = mc.getMethod("getFloatProperty", int.class);
+                java.lang.reflect.Method getBool = mc.getMethod("getBooleanProperty", int.class);
+                java.lang.reflect.Method isAvail = mc.getMethod("isPropertyAvailable", int.class);
 
-                for (java.lang.reflect.Field f : manager.getClass().getFields()) {
+                java.util.HashMap<Integer,String> idNames = new java.util.HashMap<>();
+                for (java.lang.reflect.Field f : mc.getFields()) {
                     try {
                         if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-                        String nl = f.getName().toLowerCase(Locale.US);
-                        boolean hit = false;
-                        for (String n : needles) if (nl.contains(n)) { hit = true; break; }
-                        if (!hit) continue;
+                        if (!(f.getType() == int.class || f.getType() == Integer.class)) continue;
                         f.setAccessible(true);
                         Object v = f.get(null);
-                        if (v instanceof Integer) {
-                            candidateIds.put(f.getName(), (Integer)v);
-                            appendOemLoc("FID " + f.getName() + "=" + v);
-                        } else {
-                            appendOemLoc("FIELD " + f.getName() + "=" + String.valueOf(v));
-                        }
+                        if (!(v instanceof Integer)) continue;
+                        int id = (Integer)v;
+                        String old = idNames.get(id);
+                        String name = f.getName();
+                        idNames.put(id, old == null ? name : old + "|" + name);
                     } catch (Throwable ignored) { }
                 }
 
-                java.util.ArrayList<java.lang.reflect.Method> readers = new java.util.ArrayList<>();
-                for (java.lang.reflect.Method mm : manager.getClass().getMethods()) {
-                    String nl = mm.getName().toLowerCase(Locale.US);
-                    if (!(nl.startsWith("get") || nl.startsWith("read") || nl.contains("property") ||
-                            nl.startsWith("register") || nl.contains("callback"))) continue;
-                    StringBuilder sig = new StringBuilder(mm.getName()).append('(');
-                    Class<?>[] ps = mm.getParameterTypes();
-                    for (int i=0;i<ps.length;i++) {
-                        if (i>0) sig.append(',');
-                        sig.append(ps[i].getSimpleName());
-                    }
-                    sig.append(")->").append(mm.getReturnType().getSimpleName());
-                    appendOemLoc("M " + sig.toString());
-
-                    if (ps.length == 1 && (ps[0] == int.class || ps[0] == Integer.class) &&
-                            !mm.getReturnType().equals(Void.TYPE)) {
-                        readers.add(mm);
-                    }
+                Object listObj = getList.invoke(manager);
+                if (!(listObj instanceof java.util.List)) {
+                    appendOemLoc("RESULT getPropertyList=" + String.valueOf(listObj));
+                    return;
                 }
 
-                int reads = 0;
-                for (java.util.Map.Entry<String,Integer> e : candidateIds.entrySet()) {
-                    if (reads >= 12) break;
-                    for (java.lang.reflect.Method mm : readers) {
-                        if (reads >= 12) break;
-                        try {
-                            mm.setAccessible(true);
-                            Object v = mm.invoke(manager, e.getValue());
-                            appendOemLoc("READ " + e.getKey() + " via " + mm.getName() + "=" + String.valueOf(v));
-                            reads++;
-                        } catch (Throwable ex) {
-                            String rc = rootCauseName(ex);
-                            if (!"IllegalArgumentException".equals(rc)) {
-                                appendOemLoc("READ " + e.getKey() + " via " + mm.getName() + " ERROR=" + rc);
-                                reads++;
-                            }
+                java.util.List<?> props = (java.util.List<?>) listObj;
+                appendOemLoc("PROPERTY_LIST size=" + props.size());
+
+                int shown = 0;
+                int resolved = 0;
+                for (Object item : props) {
+                    if (shown >= 22) break;
+
+                    Integer id = null;
+                    if (item instanceof Number) {
+                        id = ((Number)item).intValue();
+                    } else if (item != null) {
+                        String[] idMethods = new String[]{"getPropertyId","getId","getPropId","getProperty"};
+                        for (String mn : idMethods) {
+                            try {
+                                java.lang.reflect.Method im = item.getClass().getMethod(mn);
+                                Object iv = im.invoke(item);
+                                if (iv instanceof Number) { id = ((Number)iv).intValue(); break; }
+                            } catch (Throwable ignored) { }
                         }
                     }
+
+                    if (id == null) {
+                        appendOemLoc("P object=" + String.valueOf(item));
+                        shown++;
+                        continue;
+                    }
+
+                    String name = idNames.get(id);
+                    if (name == null) name = "?";
+                    boolean available = false;
+                    try { available = Boolean.TRUE.equals(isAvail.invoke(manager, id)); } catch (Throwable ignored) { }
+
+                    String iVal = "-";
+                    String fVal = "-";
+                    String bVal = "-";
+                    try { iVal = String.valueOf(getInt.invoke(manager, id)); } catch (Throwable ignored) { }
+                    try { fVal = String.valueOf(getFloat.invoke(manager, id)); } catch (Throwable ignored) { }
+                    try { bVal = String.valueOf(getBool.invoke(manager, id)); } catch (Throwable ignored) { }
+
+                    appendOemLoc("P " + id + " " + name + " A=" + available + " I=" + iVal + " F=" + fVal + " B=" + bVal);
+                    if (!"?".equals(name)) resolved++;
+                    shown++;
                 }
 
-                appendOemLoc("RESULT ids=" + candidateIds.size() + " readers=" + readers.size() + " reads=" + reads);
+                appendOemLoc("RESULT shown=" + shown + " named=" + resolved + " total=" + props.size());
             } catch (Throwable e) {
-                appendOemLoc("4.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-FinalDiag40").start();
+        }, "H9-FinalPropertyScan41").start();
     }
 
     private void probeServiceManagerInitAndLocation() {
@@ -1490,15 +1502,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.0 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.1 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.0 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.1 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.0 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.1 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
