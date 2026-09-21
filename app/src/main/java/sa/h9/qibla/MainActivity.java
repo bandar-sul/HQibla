@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.1 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.2 TEST • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.1 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.2 TEST • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.1 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.2 TEST • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.1\\n");
+            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.2\\n");
         }
         new Thread(() -> {
             try {
@@ -657,11 +657,33 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 if (manager == null) return;
 
                 Class<?> mc = manager.getClass();
-                java.lang.reflect.Method getList = mc.getMethod("getPropertyList");
-                java.lang.reflect.Method getInt = mc.getMethod("getIntProperty", int.class);
-                java.lang.reflect.Method getFloat = mc.getMethod("getFloatProperty", int.class);
-                java.lang.reflect.Method getBool = mc.getMethod("getBooleanProperty", int.class);
-                java.lang.reflect.Method isAvail = mc.getMethod("isPropertyAvailable", int.class);
+
+                java.lang.reflect.Method getList = null;
+                java.util.ArrayList<java.lang.reflect.Method> intReaders = new java.util.ArrayList<>();
+                java.util.ArrayList<java.lang.reflect.Method> floatReaders = new java.util.ArrayList<>();
+                java.util.ArrayList<java.lang.reflect.Method> boolReaders = new java.util.ArrayList<>();
+                java.util.ArrayList<java.lang.reflect.Method> availReaders = new java.util.ArrayList<>();
+
+                for (java.lang.reflect.Method mm : mc.getMethods()) {
+                    String n = mm.getName();
+                    if ("getPropertyList".equals(n) && mm.getParameterTypes().length == 0) getList = mm;
+                    else if ("getIntProperty".equals(n)) intReaders.add(mm);
+                    else if ("getFloatProperty".equals(n)) floatReaders.add(mm);
+                    else if ("getBooleanProperty".equals(n)) boolReaders.add(mm);
+                    else if ("isPropertyAvailable".equals(n)) availReaders.add(mm);
+                }
+
+                appendOemLoc("SIG int=" + intReaders.size() + " float=" + floatReaders.size() +
+                        " bool=" + boolReaders.size() + " avail=" + availReaders.size());
+
+                for (java.lang.reflect.Method mm : intReaders) appendOemLoc("I " + methodSig(mm));
+                for (java.lang.reflect.Method mm : floatReaders) appendOemLoc("F " + methodSig(mm));
+                for (java.lang.reflect.Method mm : boolReaders) appendOemLoc("B " + methodSig(mm));
+
+                if (getList == null) {
+                    appendOemLoc("RESULT getPropertyList MISSING");
+                    return;
+                }
 
                 java.util.HashMap<Integer,String> idNames = new java.util.HashMap<>();
                 for (java.lang.reflect.Field f : mc.getFields()) {
@@ -673,8 +695,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         if (!(v instanceof Integer)) continue;
                         int id = (Integer)v;
                         String old = idNames.get(id);
-                        String name = f.getName();
-                        idNames.put(id, old == null ? name : old + "|" + name);
+                        idNames.put(id, old == null ? f.getName() : old + "|" + f.getName());
                     } catch (Throwable ignored) { }
                 }
 
@@ -688,9 +709,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 appendOemLoc("PROPERTY_LIST size=" + props.size());
 
                 int shown = 0;
-                int resolved = 0;
                 for (Object item : props) {
-                    if (shown >= 22) break;
+                    if (shown >= 18) break;
 
                     Integer id = null;
                     if (item instanceof Number) {
@@ -714,26 +734,63 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
                     String name = idNames.get(id);
                     if (name == null) name = "?";
-                    boolean available = false;
-                    try { available = Boolean.TRUE.equals(isAvail.invoke(manager, id)); } catch (Throwable ignored) { }
 
-                    String iVal = "-";
-                    String fVal = "-";
-                    String bVal = "-";
-                    try { iVal = String.valueOf(getInt.invoke(manager, id)); } catch (Throwable ignored) { }
-                    try { fVal = String.valueOf(getFloat.invoke(manager, id)); } catch (Throwable ignored) { }
-                    try { bVal = String.valueOf(getBool.invoke(manager, id)); } catch (Throwable ignored) { }
+                    String aVal = invokeAdaptiveReaders(manager, availReaders, id);
+                    String iVal = invokeAdaptiveReaders(manager, intReaders, id);
+                    String fVal = invokeAdaptiveReaders(manager, floatReaders, id);
+                    String bVal = invokeAdaptiveReaders(manager, boolReaders, id);
 
-                    appendOemLoc("P " + id + " " + name + " A=" + available + " I=" + iVal + " F=" + fVal + " B=" + bVal);
-                    if (!"?".equals(name)) resolved++;
+                    appendOemLoc("P " + id + " " + name + " A=" + aVal + " I=" + iVal + " F=" + fVal + " B=" + bVal);
                     shown++;
                 }
 
-                appendOemLoc("RESULT shown=" + shown + " named=" + resolved + " total=" + props.size());
+                appendOemLoc("RESULT shown=" + shown + " total=" + props.size());
             } catch (Throwable e) {
-                appendOemLoc("4.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-FinalPropertyScan41").start();
+        }, "H9-FinalPropertyScan42").start();
+    }
+
+    private String methodSig(java.lang.reflect.Method mm) {
+        StringBuilder sb = new StringBuilder(mm.getName()).append('(');
+        Class<?>[] ps = mm.getParameterTypes();
+        for (int i=0;i<ps.length;i++) {
+            if (i>0) sb.append(',');
+            sb.append(ps[i].getSimpleName());
+        }
+        return sb.append(")->").append(mm.getReturnType().getSimpleName()).toString();
+    }
+
+    private String invokeAdaptiveReaders(Object target, java.util.List<java.lang.reflect.Method> methods, int propertyId) {
+        for (java.lang.reflect.Method mm : methods) {
+            try {
+                Class<?>[] ps = mm.getParameterTypes();
+                Object[] args = new Object[ps.length];
+                boolean supported = true;
+                for (int i=0;i<ps.length;i++) {
+                    Class<?> p = ps[i];
+                    if (p == int.class || p == Integer.class) {
+                        args[i] = (i == 0) ? propertyId : 0;
+                    } else if (p == boolean.class || p == Boolean.class) {
+                        args[i] = false;
+                    } else if (p == long.class || p == Long.class) {
+                        args[i] = 0L;
+                    } else if (p == float.class || p == Float.class) {
+                        args[i] = 0f;
+                    } else if (p == double.class || p == Double.class) {
+                        args[i] = 0d;
+                    } else {
+                        supported = false;
+                        break;
+                    }
+                }
+                if (!supported) continue;
+                mm.setAccessible(true);
+                Object v = mm.invoke(target, args);
+                return String.valueOf(v);
+            } catch (Throwable ignored) { }
+        }
+        return "-";
     }
 
     private void probeServiceManagerInitAndLocation() {
@@ -1502,15 +1559,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.1 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.2 TEST • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.1 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.2 TEST • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.1 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.2 TEST • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
