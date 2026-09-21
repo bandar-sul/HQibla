@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.2 TEST • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.2 TEST • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.2 TEST • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -599,7 +599,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.2\\n");
+            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.3\\n");
         }
         new Thread(() -> {
             try {
@@ -708,10 +708,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 java.util.List<?> props = (java.util.List<?>) listObj;
                 appendOemLoc("PROPERTY_LIST size=" + props.size());
 
+                android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_BEGIN size=" + props.size());
                 int shown = 0;
+                int scanned = 0;
                 for (Object item : props) {
-                    if (shown >= 18) break;
-
                     Integer id = null;
                     if (item instanceof Number) {
                         id = ((Number)item).intValue();
@@ -727,8 +727,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     }
 
                     if (id == null) {
-                        appendOemLoc("P object=" + String.valueOf(item));
-                        shown++;
+                        String line = "P[" + scanned + "] object=" + String.valueOf(item);
+                        android.util.Log.i("H9QiblaProperty", line);
+                        if (shown < 18) { appendOemLoc(line); shown++; }
+                        scanned++;
                         continue;
                     }
 
@@ -740,15 +742,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     String fVal = invokeAdaptiveReaders(manager, floatReaders, id);
                     String bVal = invokeAdaptiveReaders(manager, boolReaders, id);
 
-                    appendOemLoc("P " + id + " " + name + " A=" + aVal + " I=" + iVal + " F=" + fVal + " B=" + bVal);
-                    shown++;
+                    String line = "P[" + scanned + "] FID=" + id + " NAME=" + name + " A=" + aVal + " I=" + iVal + " F=" + fVal + " B=" + bVal;
+                    android.util.Log.i("H9QiblaProperty", line);
+                    String lowName = name.toLowerCase(Locale.US);
+                    if (lowName.contains("speed") || lowName.contains("gear") || lowName.contains("heading") ||
+                            lowName.contains("yaw") || lowName.contains("angle") || lowName.contains("direction") ||
+                            lowName.contains("steer")) {
+                        android.util.Log.w("H9QiblaProperty", "CANDIDATE " + line);
+                    }
+                    if (shown < 18) { appendOemLoc(line); shown++; }
+                    scanned++;
                 }
 
-                appendOemLoc("RESULT shown=" + shown + " total=" + props.size());
+                android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
+                appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-FinalPropertyScan42").start();
+        }, "H9-FinalPropertyScan43").start();
     }
 
     private String methodSig(java.lang.reflect.Method mm) {
@@ -1559,15 +1570,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.2 TEST • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.3 FINAL PROBE • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.2 TEST • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.3 FINAL PROBE • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.2 TEST • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.3 FINAL PROBE • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
