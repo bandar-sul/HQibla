@@ -80,7 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • DR callback/subscription...");
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • extracting GWM Navi DR protocol...");
+            probeInstalledGwmNaviProtocol();
             probeGwmBinderDrCallback(service);
         }
 
@@ -131,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.5 BINDER DR • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.5 BINDER DR • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.5 BINDER DR • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -597,6 +598,125 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
+    private void probeInstalledGwmNaviProtocol() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaProto";
+            android.util.Log.i(TAG, "BEGIN runtime scan com.gwm.navi.app");
+            dalvik.system.DexFile dex = null;
+            try {
+                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
+                android.util.Log.i(TAG, "sourceDir=" + ai.sourceDir);
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                dex = new dalvik.system.DexFile(ai.sourceDir);
+                java.util.Enumeration<String> entries = dex.entries();
+                int classCount = 0;
+                int interestingClasses = 0;
+                int emittedMethods = 0;
+                while (entries.hasMoreElements()) {
+                    String cn = entries.nextElement();
+                    classCount++;
+                    String lcn = cn.toLowerCase(Locale.US);
+                    boolean classHit = lcn.contains("heading") || lcn.contains("deadreck") ||
+                            lcn.contains(".dr") || lcn.contains("dr.") || lcn.contains("location") ||
+                            lcn.contains("position") || lcn.contains("mapcontrol") ||
+                            lcn.contains("mapcallback") || lcn.contains("navi.service");
+                    if (!classHit) continue;
+
+                    Class<?> c;
+                    try {
+                        c = Class.forName(cn, false, cl);
+                    } catch (Throwable loadErr) {
+                        continue;
+                    }
+
+                    java.util.ArrayList<String> interesting = new java.util.ArrayList<>();
+                    try {
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            String mn = m.getName().toLowerCase(Locale.US);
+                            if (mn.contains("heading") || mn.contains("bearing") || mn.contains("azimuth") ||
+                                    mn.contains("yaw") || mn.contains("course") || mn.contains("direction") ||
+                                    mn.contains("deadreck") || mn.equals("getdrlocinfo") ||
+                                    mn.contains("drheading") || mn.contains("drinfo") ||
+                                    mn.contains("locationinfo") || mn.contains("subscribe")) {
+                                interesting.add(methodSig(m));
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+
+                    java.util.ArrayList<String> fields = new java.util.ArrayList<>();
+                    try {
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            String fn = f.getName().toLowerCase(Locale.US);
+                            boolean nameHit = fn.contains("heading") || fn.contains("bearing") ||
+                                    fn.contains("azimuth") || fn.contains("yaw") || fn.contains("course") ||
+                                    fn.contains("direction") || fn.contains("deadreck") || fn.contains("dr") ||
+                                    fn.contains("protocol") || fn.contains("location");
+                            if (!nameHit) continue;
+                            String value = "";
+                            if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) &&
+                                    (f.getType().isPrimitive() || f.getType() == String.class ||
+                                     Number.class.isAssignableFrom(f.getType()))) {
+                                try {
+                                    f.setAccessible(true);
+                                    Object fv = f.get(null);
+                                    value = "=" + String.valueOf(fv);
+                                } catch (Throwable ignored) { }
+                            }
+                            fields.add(f.getName() + ":" + f.getType().getSimpleName() + value);
+                        }
+                    } catch (Throwable ignored) { }
+
+                    if (!interesting.isEmpty() || !fields.isEmpty()) {
+                        interestingClasses++;
+                        android.util.Log.w(TAG, "CLASS " + cn);
+                        for (String s : interesting) {
+                            android.util.Log.w(TAG, "METHOD " + cn + "#" + s);
+                            emittedMethods++;
+                            if (emittedMethods >= 220) break;
+                        }
+                        for (String s : fields) {
+                            android.util.Log.w(TAG, "FIELD " + cn + "#" + s);
+                        }
+                        if (emittedMethods >= 220) {
+                            android.util.Log.w(TAG, "METHOD_LIMIT reached");
+                            break;
+                        }
+                    }
+                }
+
+                android.util.Log.i(TAG, "END classes=" + classCount + " interestingClasses=" +
+                        interestingClasses + " methods=" + emittedMethods);
+
+                // Known anchor from prior GWM navigation analysis: try exact symbolic lookup
+                // so the declaring class is surfaced immediately if present.
+                dex = dex == null ? new dalvik.system.DexFile(ai.sourceDir) : dex;
+                java.util.Enumeration<String> e2 = dex.entries();
+                while (e2.hasMoreElements()) {
+                    String cn = e2.nextElement();
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            String n = m.getName();
+                            if ("setDrHeading".equals(n) || "getDrHeading".equals(n) ||
+                                    "getDrLocInfo".equals(n)) {
+                                android.util.Log.e(TAG, "ANCHOR " + cn + "#" + methodSig(m));
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "ERROR " + rootCauseName(e));
+            } finally {
+                if (dex != null) {
+                    try { dex.close(); } catch (Throwable ignored) { }
+                }
+            }
+        }, "H9-Navi-Protocol46").start();
+    }
+
     private void probeGwmBinderDrCallback(IBinder service) {
         new Thread(() -> {
             final String mapIface = "com.gwm.map.sdk.MapControl";
@@ -970,7 +1090,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.5 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.6 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1206,7 +1326,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 4.5 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 4.6 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -1790,15 +1910,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.5 BINDER DR • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.6 NAVI PROTOCOL • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.5 BINDER DR • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.6 NAVI PROTOCOL • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.5 BINDER DR • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.6 NAVI PROTOCOL • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
