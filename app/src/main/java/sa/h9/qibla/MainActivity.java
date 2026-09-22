@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • DR auth/status mapping...");
-            probeDrAuthorizationV48();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • DR gate/status decode...");
+            probeDrGateV49();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.8 DR AUTH • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.9 DR GATE • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.8 DR AUTH • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.9 DR GATE • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.8 DR AUTH • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.9 DR GATE • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,126 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrGateV49() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaGate49";
+            dalvik.system.DexFile dex = null;
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
+                dex = new dalvik.system.DexFile(ai.sourceDir);
+
+                java.util.Enumeration<String> en = dex.entries();
+                int codeHits = 0;
+                while (en.hasMoreElements()) {
+                    String cn = en.nextElement();
+                    if (!cn.startsWith("com.gwm.navi.service.external")) continue;
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                            Class<?> t = f.getType();
+                            if (!(t == int.class || t == Integer.class || t == long.class || t == Long.class || t == String.class)) continue;
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(null);
+                                String sv = String.valueOf(v);
+                                if ("10000".equals(sv) || "10001".equals(sv) || "10002".equals(sv) ||
+                                        "10003".equals(sv) || "10004".equals(sv) || "10005".equals(sv)) {
+                                    android.util.Log.w(TAG, "STATUS_CONST " + cn + "#" + f.getName() + "=" + sv);
+                                    codeHits++;
+                                }
+                            } catch (Throwable ignored) { }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+                android.util.Log.i(TAG, "STATUS_CONST_HITS=" + codeHits);
+
+                String[] targets = new String[]{
+                        "com.gwm.navi.service.external.interceptor.AppModeInterceptor",
+                        "com.gwm.navi.service.external.interceptor.PermissionInterceptor"
+                };
+                for (String cn : targets) {
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "TARGET " + cn);
+
+                        for (java.lang.reflect.Constructor<?> ctor : c.getDeclaredConstructors()) {
+                            android.util.Log.i(TAG, "CTOR " + ctor.toString());
+                        }
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            android.util.Log.i(TAG, "METHOD " + methodSig(m));
+                        }
+
+                        Object instance = null;
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                            if (!c.isAssignableFrom(f.getType())) continue;
+                            try {
+                                f.setAccessible(true);
+                                instance = f.get(null);
+                                if (instance != null) {
+                                    android.util.Log.w(TAG, "INSTANCE_FROM_FIELD " + f.getName());
+                                    break;
+                                }
+                            } catch (Throwable ignored) { }
+                        }
+
+                        if (instance == null) {
+                            for (java.lang.reflect.Constructor<?> ctor : c.getDeclaredConstructors()) {
+                                try {
+                                    Class<?>[] ps = ctor.getParameterTypes();
+                                    Object[] args = new Object[ps.length];
+                                    boolean ok = true;
+                                    for (int i = 0; i < ps.length; i++) {
+                                        Class<?> p = ps[i];
+                                        if (p == Context.class || p.isAssignableFrom(navCtx.getClass())) args[i] = navCtx;
+                                        else if (p == String.class) args[i] = getPackageName();
+                                        else if (p == int.class || p == Integer.class) args[i] = 0;
+                                        else if (p == boolean.class || p == Boolean.class) args[i] = false;
+                                        else { ok = false; break; }
+                                    }
+                                    if (!ok) continue;
+                                    ctor.setAccessible(true);
+                                    instance = ctor.newInstance(args);
+                                    android.util.Log.w(TAG, "INSTANCE_FROM_CTOR " + ctor.toString());
+                                    break;
+                                } catch (Throwable ignored) { }
+                            }
+                        }
+
+                        if (instance != null) {
+                            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                                String n = f.getName().toLowerCase(Locale.US);
+                                if (!(n.contains("dr") || n.contains("api") || n.contains("permission") ||
+                                        n.contains("check") || n.contains("support") || n.contains("location"))) continue;
+                                try {
+                                    f.setAccessible(true);
+                                    Object v = f.get(instance);
+                                    android.util.Log.w(TAG, "INSTANCE_FIELD " + cn + "#" + f.getName() + "=" + String.valueOf(v));
+                                } catch (Throwable e) {
+                                    android.util.Log.i(TAG, "INSTANCE_FIELD_ERR " + f.getName() + " " + rootCauseName(e));
+                                }
+                            }
+                        } else {
+                            android.util.Log.w(TAG, "NO_INSTANCE " + cn);
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "TARGET_ERR " + cn + " " + rootCauseName(e));
+                    }
+                }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            } finally {
+                if (dex != null) try { dex.close(); } catch (Throwable ignored) { }
+            }
+        }, "H9-DR-Gate49").start();
     }
 
     private void probeDrAuthorizationV48() {
@@ -1344,7 +1464,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.8 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.9 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1580,7 +1700,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 4.8 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 4.9 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2164,15 +2284,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.8 DR AUTH • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.9 DR GATE • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.8 DR AUTH • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.9 DR GATE • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.8 DR AUTH • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.9 DR GATE • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
