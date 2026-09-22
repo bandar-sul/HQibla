@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • DR gate/status decode...");
-            probeDrGateV49();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • decoding DR gate objects...");
+            probeDrGateObjectsV50();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.9 DR GATE • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.9 DR GATE • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.9 DR GATE • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,99 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrGateObjectsV50() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaGate50";
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                String[] targets = new String[]{
+                        "com.gwm.navi.service.external.interceptor.AppModeInterceptor",
+                        "com.gwm.navi.service.external.interceptor.PermissionInterceptor"
+                };
+
+                for (String cn : targets) {
+                    Class<?> c = Class.forName(cn, false, cl);
+                    java.lang.reflect.Constructor<?> ctor = c.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    Object instance = ctor.newInstance();
+                    android.util.Log.i(TAG, "TARGET " + cn);
+
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        String fn = f.getName().toLowerCase(Locale.US);
+                        if (!(fn.contains("dr") || fn.contains("api") || fn.contains("permission") ||
+                                fn.contains("check") || fn.contains("support") || fn.contains("location"))) continue;
+                        f.setAccessible(true);
+                        Object v = f.get(instance);
+                        android.util.Log.w(TAG, "LIST_FIELD " + f.getName() + " class=" +
+                                (v == null ? "null" : v.getClass().getName()) + " value=" + String.valueOf(v));
+
+                        if (v instanceof java.util.List) {
+                            java.util.List<?> list = (java.util.List<?>) v;
+                            for (int i = 0; i < list.size(); i++) {
+                                Object item = list.get(i);
+                                if (item == null) {
+                                    android.util.Log.w(TAG, f.getName() + "[" + i + "]=null");
+                                    continue;
+                                }
+                                Class<?> ic = item.getClass();
+                                android.util.Log.w(TAG, "ITEM " + f.getName() + "[" + i + "] class=" + ic.getName());
+                                for (java.lang.reflect.Field x : ic.getDeclaredFields()) {
+                                    try {
+                                        x.setAccessible(true);
+                                        Object xv = x.get(item);
+                                        android.util.Log.w(TAG, "  FIELD " + x.getName() + ":" +
+                                                x.getType().getSimpleName() + "=" + String.valueOf(xv));
+                                    } catch (Throwable ignored) { }
+                                }
+                                for (java.lang.reflect.Method m : ic.getDeclaredMethods()) {
+                                    if (m.getParameterTypes().length != 0) continue;
+                                    String mn = m.getName().toLowerCase(Locale.US);
+                                    if (!(mn.startsWith("get") || mn.startsWith("is"))) continue;
+                                    Class<?> rt = m.getReturnType();
+                                    if (!(rt.isPrimitive() || rt == String.class || Number.class.isAssignableFrom(rt))) continue;
+                                    try {
+                                        m.setAccessible(true);
+                                        Object mv = m.invoke(item);
+                                        android.util.Log.w(TAG, "  GET " + m.getName() + "()=" + String.valueOf(mv));
+                                    } catch (Throwable ignored) { }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                try {
+                    Class<?> ac = Class.forName("com.gwm.navi.service.external.api.ApiContext", false, cl);
+                    android.util.Log.i(TAG, "APICONTEXT " + ac.getName());
+                    for (java.lang.reflect.Constructor<?> ctor : ac.getDeclaredConstructors()) {
+                        android.util.Log.i(TAG, "APICONTEXT_CTOR " + ctor.toString());
+                    }
+                    for (java.lang.reflect.Field f : ac.getDeclaredFields()) {
+                        try {
+                            android.util.Log.i(TAG, "APICONTEXT_FIELD " + f.getName() + ":" + f.getType().getName());
+                        } catch (Throwable ignored) { }
+                    }
+                    for (java.lang.reflect.Method m : ac.getDeclaredMethods()) {
+                        String mn = m.getName().toLowerCase(Locale.US);
+                        if (mn.contains("protocol") || mn.contains("package") || mn.contains("pkg") ||
+                                mn.contains("type") || mn.contains("version") || mn.startsWith("get") || mn.startsWith("set")) {
+                            android.util.Log.i(TAG, "APICONTEXT_METHOD " + methodSig(m));
+                        }
+                    }
+                } catch (Throwable e) {
+                    android.util.Log.e(TAG, "APICONTEXT_ERR " + rootCauseName(e));
+                }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-DR-Gate50").start();
     }
 
     private void probeDrGateV49() {
@@ -1464,7 +1557,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.9 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("5.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1700,7 +1793,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 4.9 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 5.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2284,15 +2377,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.9 DR GATE • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.0 DR GATE DECODE • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.9 DR GATE • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.0 DR GATE DECODE • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.9 DR GATE • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.0 DR GATE DECODE • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
