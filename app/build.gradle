@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 46
-        versionName '4.6-navi-protocol'
+        versionCode 47
+        versionName '4.7-dr-exact'
     }
 
     buildTypes {
