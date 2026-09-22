@@ -131,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.4 DR+SPEED • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.4 DR+SPEED • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.3 FINAL PROBE • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.4 DR+SPEED • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -510,6 +510,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         String speedText = speed >= 0f ? String.format(Locale.US, "%.2f m/s", speed) : "--";
         String accuracyText = location.hasAccuracy() ? String.format(Locale.US, "%.1f m", location.getAccuracy()) : "--";
         updateLocationDiagnosticText("Provider: fused   Bearing: " + bearingText + "   Speed: " + speedText + "   Accuracy: " + accuracyText);
+        android.util.Log.i("H9QiblaDR", "FUSED bearing=" + bearingText + " speed=" + speedText + " accuracy=" + accuracyText);
 
         // For this test build we intentionally accept a fused bearing even at standstill.
         // This will tell us whether GWM's DR service preserves a real vehicle heading.
@@ -599,7 +600,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeGwmEngineerAdapter() {
         synchronized (oemLocLog) {
             oemLocLog.setLength(0);
-            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.3\\n");
+            oemLocLog.append("FINAL PROPERTY SCAN • GwmCarSettingManager 4.4\\n");
         }
         new Thread(() -> {
             try {
@@ -657,6 +658,56 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 if (manager == null) return;
 
                 Class<?> mc = manager.getClass();
+
+                // 4.4 focused probe: resolve the confirmed Haval vehicle-speed FID with exact
+                // reader signatures and common area IDs. Every attempt is logged with its
+                // real exception instead of being swallowed.
+                final int VEHSPD_FID = 560010980;
+                int[] speedAreas = new int[]{0, 1, 2, 4, 8, 16, 32, 64, 16777216};
+                android.util.Log.i("H9QiblaSpeed", "BEGIN FID=" + VEHSPD_FID + " NAME=ID_GWM_VEHSPD");
+                for (java.lang.reflect.Method sm : mc.getMethods()) {
+                    String sn = sm.getName();
+                    if (!("getIntProperty".equals(sn) || "getFloatProperty".equals(sn) || "isPropertyAvailable".equals(sn))) continue;
+                    Class<?>[] sps = sm.getParameterTypes();
+                    if (sps.length < 1 || !(sps[0] == int.class || sps[0] == Integer.class)) continue;
+                    android.util.Log.i("H9QiblaSpeed", "SIG " + methodSig(sm));
+                    for (int area : speedAreas) {
+                        try {
+                            Object[] args = new Object[sps.length];
+                            boolean ok = true;
+                            for (int ai = 0; ai < sps.length; ai++) {
+                                Class<?> p = sps[ai];
+                                if (p == int.class || p == Integer.class) args[ai] = (ai == 0) ? VEHSPD_FID : area;
+                                else if (p == long.class || p == Long.class) args[ai] = 0L;
+                                else if (p == float.class || p == Float.class) args[ai] = 0f;
+                                else if (p == double.class || p == Double.class) args[ai] = 0d;
+                                else if (p == boolean.class || p == Boolean.class) args[ai] = false;
+                                else { ok = false; break; }
+                            }
+                            if (!ok) continue;
+                            sm.setAccessible(true);
+                            Object sv = sm.invoke(manager, args);
+                            android.util.Log.i("H9QiblaSpeed", "READ " + sn + " area=" + area + " => " + String.valueOf(sv));
+                            if (sv instanceof Number && !("isPropertyAvailable".equals(sn))) {
+                                float raw = ((Number) sv).floatValue();
+                                if (!Float.isNaN(raw)) {
+                                    // Keep the raw value visible for calibration; if it already looks like km/h,
+                                    // preserve it. If OEM returns m/s the subsequent drive sample will reveal it.
+                                    final float liveSpeed = raw;
+                                    lastSpeedMps = raw;
+                                    android.util.Log.w("H9QiblaSpeed", "SUCCESS RAW_SPEED=" + liveSpeed + " area=" + area + " via=" + sn);
+                                }
+                            }
+                        } catch (Throwable se) {
+                            android.util.Log.w("H9QiblaSpeed", "ERR " + sn + " area=" + area + " => " + rootCauseName(se));
+                        }
+                    }
+                }
+                android.util.Log.i("H9QiblaSpeed", "END");
+
+                // 4.4 focused DR path. Prior broad probes are no longer repeated; this calls the
+                // exact navigation factory accessor and getDrLocInfo() path.
+                probeDirectGetLocationService();
 
                 java.lang.reflect.Method getList = null;
                 java.util.ArrayList<java.lang.reflect.Method> intReaders = new java.util.ArrayList<>();
@@ -757,9 +808,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.4 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
-        }, "H9-FinalPropertyScan43").start();
+        }, "H9-FinalPropertyScan44").start();
     }
 
     private String methodSig(java.lang.reflect.Method mm) {
@@ -925,6 +976,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             oemLocLog.setLength(0);
             oemLocLog.append("DIRECT getLocationService -> getDrLocInfo PROBE\n");
         }
+        android.util.Log.i("H9QiblaDR", "BEGIN direct getLocationService -> getDrLocInfo");
         new Thread(() -> {
             try {
                 Context navCtx = createPackageContext("com.gwm.navi.app",
@@ -940,8 +992,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 appendOemLoc("method=getLocationService()->" + getLocationService.getReturnType().getName());
 
                 Object service = getLocationService.invoke(null);
+                android.util.Log.i("H9QiblaDR", "getLocationService=" + (service == null ? "NULL" : service.getClass().getName()));
                 appendOemLoc("getLocationService=" + (service == null ? "NULL" : service.getClass().getName()));
                 if (service == null) {
+                    android.util.Log.w("H9QiblaDR", "RESULT NULL service instance");
                     appendOemLoc("RESULT: NULL service instance");
                     return;
                 }
@@ -952,12 +1006,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     java.lang.reflect.Method drMethod = service.getClass().getMethod("getDrLocInfo");
                     drMethod.setAccessible(true);
                     Object dr = drMethod.invoke(service);
+                    android.util.Log.i("H9QiblaDR", "getDrLocInfo=" + String.valueOf(dr));
                     appendOemLoc("getDrLocInfo=" + String.valueOf(dr));
                     if (dr != null) {
                         appendOemLoc("DrLocInfo class=" + dr.getClass().getName());
                         Double heading = extractHeading(dr);
                         if (heading != null && !heading.isNaN()) {
                             final float h = normalize(heading.floatValue());
+                            android.util.Log.w("H9QiblaDR", "SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f", h));
                             appendOemLoc("SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f°", h));
                             runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه DR من نظام هافال"));
                         } else {
@@ -979,6 +1035,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             }
                         }
                     } else {
+                        android.util.Log.w("H9QiblaDR", "getDrLocInfo returned NULL");
                         appendOemLoc("RESULT: getDrLocInfo returned NULL");
                     }
                 } catch (Throwable e) {
@@ -986,7 +1043,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     invokeDrInfo(service, "directService");
                 }
             } catch (Throwable e) {
-                appendOemLoc("DIRECT 3.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
+                appendOemLoc("DIRECT 4.4 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -1570,15 +1628,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.3 FINAL PROBE • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.4 DR+SPEED • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.3 FINAL PROBE • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.4 DR+SPEED • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.3 FINAL PROBE • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.4 DR+SPEED • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
