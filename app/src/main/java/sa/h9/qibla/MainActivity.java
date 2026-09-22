@@ -80,9 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • extracting GWM Navi DR protocol...");
-            probeInstalledGwmNaviProtocol();
-            probeGwmBinderDrCallback(service);
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • exact DR 14021/14032...");
+            probeExactDrV47(service);
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -132,21 +131,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.7 DR EXACT • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.7 DR EXACT • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.6 NAVI PROTOCOL • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.7 DR EXACT • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +595,176 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeExactDrV47(IBinder service) {
+        new Thread(() -> {
+            final String TAG = "H9QiblaDR47";
+            final String mapIface = "com.gwm.map.sdk.MapControl";
+            final String cbIface = "com.gwm.map.sdk.MapCallback";
+            final String pkg = getPackageName();
+            final String ACTION_DR = "14021";
+            final String ACTION_NOTIFY_DR = "14032";
+            android.util.Log.i(TAG, "BEGIN ACTION_DR=" + ACTION_DR + " ACTION_NOTIFY_DR=" + ACTION_NOTIFY_DR);
+
+            try {
+                gwmMapCallbackBinder = new android.os.Binder() {
+                    { attachInterface(null, cbIface); }
+
+                    @Override
+                    protected boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags)
+                            throws android.os.RemoteException {
+                        if (code == INTERFACE_TRANSACTION) {
+                            if (reply != null) reply.writeString(cbIface);
+                            return true;
+                        }
+                        try {
+                            data.enforceInterface(cbIface);
+                            if (code == 1) {
+                                String response = data.readString();
+                                android.util.Log.w(TAG, "CALLBACK_RESPONSE " + String.valueOf(response));
+                                inspectDrPayload("callback_response", response);
+                                if (reply != null) reply.writeNoException();
+                                return true;
+                            }
+                            if (code == 2) {
+                                String key = data.readString();
+                                android.os.Bundle bundle = null;
+                                if (data.readInt() != 0) bundle = android.os.Bundle.CREATOR.createFromParcel(data);
+                                String payload = bundle == null ? "null" : bundle.toString();
+                                android.util.Log.w(TAG, "CALLBACK_DATA key=" + key + " bundle=" + payload);
+                                inspectDrPayload(key, payload);
+                                if (reply != null) reply.writeNoException();
+                                return true;
+                            }
+                            android.util.Log.i(TAG, "CALLBACK_TX code=" + code + " flags=" + flags + " avail=" + data.dataAvail());
+                        } catch (Throwable e) {
+                            android.util.Log.e(TAG, "CALLBACK_ERROR code=" + code + " " + rootCauseName(e));
+                        }
+                        return super.onTransact(code, data, reply, flags);
+                    }
+                };
+
+                Parcel rd = Parcel.obtain();
+                Parcel rr = Parcel.obtain();
+                try {
+                    rd.writeInterfaceToken(mapIface);
+                    rd.writeString(pkg);
+                    rd.writeStrongBinder(gwmMapCallbackBinder);
+                    boolean ok = service.transact(1, rd, rr, 0);
+                    rr.readException();
+                    android.util.Log.i(TAG, "REGISTER_CALLBACK=" + ok);
+                } finally { rd.recycle(); rr.recycle(); }
+
+                Parcel sd = Parcel.obtain();
+                Parcel sr = Parcel.obtain();
+                try {
+                    sd.writeInterfaceToken(mapIface);
+                    sd.writeString(pkg);
+                    sd.writeStringArray(new String[]{ACTION_NOTIFY_DR, ACTION_DR});
+                    boolean ok = service.transact(5, sd, sr, 0);
+                    sr.readException();
+                    android.util.Log.i(TAG, "SUBSCRIBE_DR=" + ok + " ids=[" + ACTION_NOTIFY_DR + "," + ACTION_DR + "]");
+                } finally { sd.recycle(); sr.recycle(); }
+
+                for (String protocolId : new String[]{ACTION_DR, ACTION_NOTIFY_DR}) {
+                    Parcel d = Parcel.obtain();
+                    Parcel r = Parcel.obtain();
+                    try {
+                        org.json.JSONObject req = new org.json.JSONObject();
+                        req.put("pkgName", pkg);
+                        req.put("protocolId", protocolId);
+                        req.put("reqId", String.valueOf(System.currentTimeMillis()));
+                        req.put("verName", "1.0");
+                        req.put("data", new org.json.JSONObject());
+                        d.writeInterfaceToken(mapIface);
+                        d.writeString(req.toString());
+                        boolean sent = service.transact(4, d, r, 0);
+                        r.readException();
+                        String response = r.readString();
+                        android.util.Log.w(TAG, "SYNC_DR protocol=" + protocolId + " sent=" + sent + " response=" + String.valueOf(response));
+                        inspectDrPayload(protocolId, response);
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "SYNC_DR protocol=" + protocolId + " ERROR=" + rootCauseName(e));
+                    } finally { d.recycle(); r.recycle(); }
+                }
+
+                // Direct Neusoft binder discovery. The installed navigation APK exposes:
+                // ILocationAidlInterface.setDRListener transaction 5 and listener callback tx1.
+                try {
+                    Class<?> sm = Class.forName("android.os.ServiceManager");
+                    java.lang.reflect.Method list = sm.getDeclaredMethod("listServices");
+                    java.lang.reflect.Method get = sm.getDeclaredMethod("getService", String.class);
+                    list.setAccessible(true); get.setAccessible(true);
+                    String[] services = (String[]) list.invoke(null);
+                    android.util.Log.i(TAG, "SERVICE_COUNT=" + (services == null ? -1 : services.length));
+                    if (services != null) {
+                        for (String sn : services) {
+                            IBinder b = null;
+                            try { b = (IBinder) get.invoke(null, sn); } catch (Throwable ignored) { }
+                            if (b == null) continue;
+                            String desc = "";
+                            try { desc = b.getInterfaceDescriptor(); } catch (Throwable ignored) { }
+                            if (desc != null && desc.toLowerCase(Locale.US).contains("location")) {
+                                android.util.Log.i(TAG, "SERVICE name=" + sn + " desc=" + desc);
+                            }
+                            if (!"com.neusoft.nmasdk.ILocationAidlInterface".equals(desc)) continue;
+
+                            android.util.Log.w(TAG, "FOUND_NEUSOFT_LOCATION_SERVICE name=" + sn);
+                            final String listenerDesc = "com.neusoft.nmasdk.ILocationAidlListener";
+                            android.os.Binder listener = new android.os.Binder() {
+                                { attachInterface(null, listenerDesc); }
+                                @Override
+                                protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                                        throws android.os.RemoteException {
+                                    if (code == INTERFACE_TRANSACTION) {
+                                        if (reply != null) reply.writeString(listenerDesc);
+                                        return true;
+                                    }
+                                    try {
+                                        data.enforceInterface(listenerDesc);
+                                        if (code == 1) {
+                                            double a = data.readDouble();
+                                            double b = data.readDouble();
+                                            double c = data.readDouble();
+                                            double d = data.readDouble();
+                                            double e = data.readDouble();
+                                            double f = data.readDouble();
+                                            android.util.Log.w(TAG, String.format(Locale.US,
+                                                    "NEUSOFT_DR a=%.6f b=%.6f c=%.6f d=%.6f e=%.6f f=%.6f",
+                                                    a,b,c,d,e,f));
+                                            if (reply != null) reply.writeNoException();
+                                            return true;
+                                        }
+                                    } catch (Throwable x) {
+                                        android.util.Log.e(TAG, "NEUSOFT_CALLBACK_ERROR " + rootCauseName(x));
+                                    }
+                                    return super.onTransact(code, data, reply, flags);
+                                }
+                            };
+
+                            Parcel ld = Parcel.obtain();
+                            Parcel lr = Parcel.obtain();
+                            try {
+                                ld.writeInterfaceToken(desc);
+                                ld.writeStrongBinder(listener);
+                                boolean ok = b.transact(5, ld, lr, 0);
+                                lr.readException();
+                                android.util.Log.w(TAG, "SET_DR_LISTENER tx5=" + ok);
+                            } catch (Throwable e) {
+                                android.util.Log.e(TAG, "SET_DR_LISTENER_ERROR " + rootCauseName(e));
+                            } finally { ld.recycle(); lr.recycle(); }
+                        }
+                    }
+                } catch (Throwable e) {
+                    android.util.Log.e(TAG, "SERVICE_DISCOVERY_ERROR " + rootCauseName(e));
+                }
+
+                android.util.Log.i(TAG, "READY waiting live DR");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-Exact-DR47").start();
     }
 
     private void probeInstalledGwmNaviProtocol() {
@@ -1090,7 +1259,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.6 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.7 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1326,7 +1495,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 4.6 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 4.7 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -1910,15 +2079,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.6 NAVI PROTOCOL • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.7 DR EXACT • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.6 NAVI PROTOCOL • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.7 DR EXACT • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.6 NAVI PROTOCOL • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.7 DR EXACT • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
