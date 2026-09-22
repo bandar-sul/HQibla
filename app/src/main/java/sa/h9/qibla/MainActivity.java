@@ -80,7 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • exact DR 14021/14032...");
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • DR auth/status mapping...");
+            probeDrAuthorizationV48();
             probeExactDrV47(service);
         }
 
@@ -131,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("4.7 DR EXACT • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("4.8 DR AUTH • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("4.7 DR EXACT • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("4.8 DR AUTH • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("4.7 DR EXACT • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("4.8 DR AUTH • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -595,6 +596,90 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrAuthorizationV48() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaAuth48";
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                String[] classes = new String[]{
+                        "com.gwm.navi.service.external.ExternalServiceResult",
+                        "com.gwm.navi.service.external.ApiConstV4",
+                        "com.gwm.navi.service.external.api.ApiConst",
+                        "com.gwm.navi.service.external.interceptor.PermissionInterceptor",
+                        "com.gwm.navi.service.external.interceptor.AppModeInterceptor",
+                        "com.gwm.navi.service.external.v4.NaviExternalMessageManagerV4"
+                };
+                for (String cn : classes) {
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "CLASS " + cn);
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            int mod = f.getModifiers();
+                            if (!java.lang.reflect.Modifier.isStatic(mod)) continue;
+                            Class<?> t = f.getType();
+                            if (!(t.isPrimitive() || t == String.class || Number.class.isAssignableFrom(t))) continue;
+                            try {
+                                f.setAccessible(true);
+                                Object v = f.get(null);
+                                android.util.Log.w(TAG, "STATIC " + cn + "#" + f.getName() + "=" + String.valueOf(v));
+                            } catch (Throwable e) {
+                                android.util.Log.i(TAG, "STATIC_ERR " + cn + "#" + f.getName() + " " + rootCauseName(e));
+                            }
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "CLASS_ERR " + cn + " " + rootCauseName(e));
+                    }
+                }
+
+                android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(),
+                        android.content.pm.PackageManager.GET_PERMISSIONS);
+                if (pi.requestedPermissions != null) {
+                    for (int i = 0; i < pi.requestedPermissions.length; i++) {
+                        String p = pi.requestedPermissions[i];
+                        int granted = getPackageManager().checkPermission(p, getPackageName());
+                        android.util.Log.i(TAG, "PERM " + p + "=" +
+                                (granted == android.content.pm.PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
+                    }
+                }
+
+                android.content.pm.PackageInfo navPi = getPackageManager().getPackageInfo("com.gwm.navi.app",
+                        android.content.pm.PackageManager.GET_PROVIDERS);
+                if (navPi.providers != null) {
+                    for (android.content.pm.ProviderInfo p : navPi.providers) {
+                        android.util.Log.i(TAG, "PROVIDER name=" + p.name + " authority=" + p.authority +
+                                " exported=" + p.exported + " readPerm=" + p.readPermission + " writePerm=" + p.writePermission);
+                    }
+                }
+
+                // Inspect instance field names that govern DR/location authorization.
+                String[] inspect = new String[]{
+                        "com.gwm.navi.service.external.interceptor.PermissionInterceptor",
+                        "com.gwm.navi.service.external.interceptor.AppModeInterceptor"
+                };
+                for (String cn : inspect) {
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            String n = f.getName().toLowerCase(Locale.US);
+                            if (n.contains("location") || n.contains("permission") || n.contains("dr") ||
+                                    n.contains("support") || n.contains("api")) {
+                                android.util.Log.w(TAG, "FIELD " + cn + "#" + f.getName() +
+                                        ":" + f.getType().getName());
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-DR-Auth48").start();
     }
 
     private void probeExactDrV47(IBinder service) {
@@ -1259,7 +1344,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("4.7 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("4.8 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1495,7 +1580,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 4.7 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 4.8 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2079,15 +2164,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.7 DR EXACT • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("4.8 DR AUTH • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.7 DR EXACT • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("4.8 DR AUTH • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.7 DR EXACT • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("4.8 DR AUTH • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
