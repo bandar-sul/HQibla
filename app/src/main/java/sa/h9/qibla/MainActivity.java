@@ -66,6 +66,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private boolean haveMagnetic;
     private float lastSpeedMps;
     private long lastGpsHeadingAt;
+    private volatile long lastOemHeadingAt;
+    private volatile boolean oemDrRunning;
+    private volatile Object oemLocationService;
     private QiblaView qiblaView;
     private TextView middlewareDiagnosticText;
     private TextView binderDiagnosticText;
@@ -80,9 +83,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • initializing navigation dependency...");
-            probeDrDependencyInitV54();
-            probeExactDrV47(service);
+            startOemDrIntegration();
         }
 
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -132,26 +133,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • vehicleSignal: آخر فحص");
-        FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
-        middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
-        middlewareLp.leftMargin = dp(24);
-        middlewareLp.topMargin = dp(132);
-        root.addView(middlewareDiagnosticText, middlewareLp);
-
-        binderDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • Binder: جاري البحث عن GWMMapService...");
-        FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
-        binderLp.gravity = Gravity.TOP | Gravity.LEFT;
-        binderLp.leftMargin = dp(24);
-        binderLp.topMargin = dp(230);
-        root.addView(binderDiagnosticText, binderLp);
-
-        locationDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • الموقع: جاري فحص fused/GPS");
-        FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
-        locationLp.gravity = Gravity.TOP | Gravity.LEFT;
-        locationLp.leftMargin = dp(24);
-        locationLp.topMargin = dp(405);
-        root.addView(locationDiagnosticText, locationLp);
+        middlewareDiagnosticText = null;
+        binderDiagnosticText = null;
+        locationDiagnosticText = null;
 
         Button aboutButton = new Button(this);
         aboutButton.setText("حول");
@@ -183,7 +167,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
-        testGwmMiddleware();
         testGwmMapBinder();
     }
 
@@ -506,6 +489,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateFusedCourse(Location location) {
+        if (System.currentTimeMillis() - lastOemHeadingAt < 2500L) return;
         float speed = location.hasSpeed() ? location.getSpeed() : -1f;
         String bearingText = location.hasBearing() ? String.format(Locale.US, "%.1f°", location.getBearing()) : "--";
         String speedText = speed >= 0f ? String.format(Locale.US, "%.2f m/s", speed) : "--";
@@ -596,6 +580,107 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void startOemDrIntegration() {
+        if (oemDrRunning) return;
+        oemDrRunning = true;
+        new Thread(() -> {
+            final String TAG = "H9QiblaOEM";
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                // Initialize the same dependency layer used by the OEM navigation process.
+                try {
+                    Class<?> mgr = Class.forName("com.gwm.navi.dependcy.NaviDependcyManager", false, cl);
+                    java.lang.reflect.Method instanceM = mgr.getDeclaredMethod("instance");
+                    instanceM.setAccessible(true);
+                    Object manager = instanceM.invoke(null);
+                    if (manager != null) {
+                        try {
+                            java.lang.reflect.Method init = mgr.getDeclaredMethod("init", Context.class);
+                            init.setAccessible(true);
+                            init.invoke(manager, navCtx);
+                        } catch (Throwable ignored) { }
+                        try {
+                            java.lang.reflect.Method initService = mgr.getDeclaredMethod("initService", Context.class);
+                            initService.setAccessible(true);
+                            initService.invoke(manager, navCtx);
+                        } catch (Throwable ignored) { }
+                    }
+                } catch (Throwable e) {
+                    android.util.Log.w(TAG, "NaviDependcyManager init: " + rootCauseName(e));
+                }
+
+                try {
+                    Class<?> sm = Class.forName("com.gwm.navi.dependcy.manager.ServiceManager", false, cl);
+                    java.lang.reflect.Method getInstance = sm.getDeclaredMethod("getInstance");
+                    getInstance.setAccessible(true);
+                    Object smi = getInstance.invoke(null);
+                    if (smi != null) {
+                        try {
+                            java.lang.reflect.Method initManager = sm.getDeclaredMethod("initManager", Context.class);
+                            initManager.setAccessible(true);
+                            initManager.invoke(smi, navCtx);
+                        } catch (Throwable ignored) { }
+                    }
+                } catch (Throwable e) {
+                    android.util.Log.w(TAG, "ServiceManager init: " + rootCauseName(e));
+                }
+
+                Class<?> factory = Class.forName("com.gwm.navi.service.manager.ServiceManagerFactory", false, cl);
+                java.lang.reflect.Method getLocationService = factory.getDeclaredMethod("getLocationService");
+                getLocationService.setAccessible(true);
+
+                // The OEM dependency bind may complete asynchronously; retry for up to 10 seconds.
+                for (int i = 0; i < 40 && oemDrRunning && oemLocationService == null; i++) {
+                    try { oemLocationService = getLocationService.invoke(null); } catch (Throwable ignored) { }
+                    if (oemLocationService == null) {
+                        try { Thread.sleep(250L); } catch (InterruptedException ignored) { }
+                    }
+                }
+
+                if (oemLocationService == null) {
+                    android.util.Log.w(TAG, "OEM location service unavailable; keeping normal heading fallback.");
+                    return;
+                }
+
+                java.lang.reflect.Method getDr = null;
+                try { getDr = oemLocationService.getClass().getMethod("getDrLocInfo"); }
+                catch (NoSuchMethodException e) {
+                    try { getDr = oemLocationService.getClass().getDeclaredMethod("getDrLocInfo"); }
+                    catch (NoSuchMethodException ignored) { }
+                }
+                if (getDr == null) {
+                    android.util.Log.w(TAG, "getDrLocInfo() not exposed by OEM location service.");
+                    return;
+                }
+                getDr.setAccessible(true);
+
+                android.util.Log.i(TAG, "OEM DR heading active.");
+                while (oemDrRunning) {
+                    try {
+                        Object dr = getDr.invoke(oemLocationService);
+                        Double heading = extractHeading(dr);
+                        if (heading != null && !heading.isNaN() && !heading.isInfinite()) {
+                            final float h = normalize(heading.floatValue());
+                            lastOemHeadingAt = System.currentTimeMillis();
+                            lastHeadingAt = lastOemHeadingAt;
+                            runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه السيارة من نظام هافال"));
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.w(TAG, "DR read: " + rootCauseName(e));
+                    }
+                    try { Thread.sleep(250L); } catch (InterruptedException ignored) { }
+                }
+            } catch (Throwable e) {
+                android.util.Log.e("H9QiblaOEM", "OEM integration failed: " + rootCauseName(e));
+            } finally {
+                oemDrRunning = false;
+            }
+        }, "H9-OEM-DR").start();
     }
 
     private void probeDrDependencyInitV54() {
@@ -2224,7 +2309,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             final float h = normalize(heading.floatValue());
                             android.util.Log.w("H9QiblaDR", "SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f", h));
                             appendOemLoc("SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f°", h));
-                            runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه DR من نظام هافال"));
+                            lastOemHeadingAt = System.currentTimeMillis();
+                            lastHeadingAt = lastOemHeadingAt;
+                            runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه السيارة من نظام هافال"));
                         } else {
                             appendOemLoc("DR object found but heading field/getter not resolved");
                             for (java.lang.reflect.Method m : dr.getClass().getMethods()) {
@@ -2253,7 +2340,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 5.4 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2778,7 +2865,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     if (heading != null && !heading.isNaN()) {
                         final float h = normalize(heading.floatValue());
                         appendOemLoc("SUCCESS DR_HEADING=" + String.format(Locale.US, "%.2f°", h));
-                        runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه DR من نظام هافال"));
+                        lastOemHeadingAt = System.currentTimeMillis();
+                        lastHeadingAt = lastOemHeadingAt;
+                        runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه السيارة من نظام هافال"));
                         return true;
                     }
                 }
@@ -2837,18 +2926,22 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.4 DR DEP INIT • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("" + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.4 DR DEP INIT • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("" + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.4 DR DEP INIT • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("" + text);
     }
 
     private void updateLiveCourse(Location location) {
+        if (System.currentTimeMillis() - lastOemHeadingAt < 2500L) {
+            if (location.hasSpeed()) lastSpeedMps = location.getSpeed();
+            return;
+        }
         if (location.hasSpeed()) lastSpeedMps = location.getSpeed();
         if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {
             courseAnchor = null;
@@ -2946,6 +3039,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void applySensorHeading(float headingValue) {
         if (Float.isNaN(headingValue)) return;
         long now = System.currentTimeMillis();
+        if (now - lastOemHeadingAt < 2500L) return;
         boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
         if (!gpsFreshAndMoving) {
             lastHeadingAt = now;
@@ -2979,6 +3073,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     @Override
     protected void onDestroy() {
+        oemDrRunning = false;
+        oemLocationService = null;
         if (gwmBinderBound) {
             try { unbindService(gwmMapConnection); } catch (Exception ignored) { }
             gwmBinderBound = false;
