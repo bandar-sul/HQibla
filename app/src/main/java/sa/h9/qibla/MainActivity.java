@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • probing DR interceptor decision...");
-            probeDrInterceptorV52();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • probing navigation dependency service...");
+            probeDrDependencyV53();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,132 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrDependencyV53() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaDep53";
+            android.util.Log.i(TAG, "BEGIN navigation dependency probe");
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                Class<?> factory = Class.forName("com.gwm.navi.service.manager.ServiceManagerFactory", false, cl);
+                android.util.Log.i(TAG, "FACTORY " + factory.getName());
+
+                for (java.lang.reflect.Method m : factory.getDeclaredMethods()) {
+                    String n = m.getName().toLowerCase(Locale.US);
+                    if (n.contains("depend") || n.contains("system") || n.contains("ability") || n.contains("init")) {
+                        android.util.Log.w(TAG, "FACTORY_METHOD " + methodSig(m));
+                    }
+                }
+
+                Object dependency = null;
+                String[] depNames = new String[]{"getDependencyService","getDependcyService"};
+                for (String name : depNames) {
+                    try {
+                        java.lang.reflect.Method m = factory.getDeclaredMethod(name);
+                        m.setAccessible(true);
+                        dependency = m.invoke(null);
+                        android.util.Log.w(TAG, name + "=" + (dependency == null ? "NULL" : dependency.getClass().getName()));
+                        if (dependency != null) break;
+                    } catch (Throwable e) {
+                        android.util.Log.i(TAG, name + "_ERR " + rootCauseName(e));
+                    }
+                }
+
+                if (dependency != null) {
+                    Class<?> depClass = dependency.getClass();
+                    android.util.Log.i(TAG, "DEPENDENCY_CLASS " + depClass.getName());
+
+                    for (java.lang.reflect.Method m : depClass.getMethods()) {
+                        String n = m.getName().toLowerCase(Locale.US);
+                        if (n.contains("ability") || n.contains("system") || n.contains("init") ||
+                                n.contains("service") || n.contains("depend")) {
+                            android.util.Log.w(TAG, "DEP_METHOD " + methodSig(m));
+                        }
+                    }
+
+                    try {
+                        Class<?> sysAbility = Class.forName("com.gwm.navi.service.dependcy.system.INaviSystemAbility", false, cl);
+                        java.lang.reflect.Method getAbility = null;
+                        for (java.lang.reflect.Method m : depClass.getMethods()) {
+                            if (m.getName().equals("getAbility") && m.getParameterTypes().length == 1 &&
+                                    m.getParameterTypes()[0] == Class.class) {
+                                getAbility = m; break;
+                            }
+                        }
+                        if (getAbility != null) {
+                            getAbility.setAccessible(true);
+                            Object ability = getAbility.invoke(dependency, sysAbility);
+                            android.util.Log.w(TAG, "SYSTEM_ABILITY=" + (ability == null ? "NULL" : ability.getClass().getName()));
+                            if (ability != null) {
+                                String[] getters = new String[]{
+                                        "getNaviAppType","getDriveType","getDriveHandleType","getGNSSType",
+                                        "getProjectCode","getMapWrapper","getFlavor","getSalesRegion"
+                                };
+                                for (String gn : getters) {
+                                    try {
+                                        java.lang.reflect.Method gm = ability.getClass().getMethod(gn);
+                                        gm.setAccessible(true);
+                                        Object v = gm.invoke(ability);
+                                        android.util.Log.w(TAG, "ABILITY " + gn + "=" + String.valueOf(v));
+                                    } catch (Throwable e) {
+                                        android.util.Log.i(TAG, "ABILITY_ERR " + gn + " " + rootCauseName(e));
+                                    }
+                                }
+                            }
+                        } else {
+                            android.util.Log.w(TAG, "NO getAbility(Class) on dependency implementation");
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "SYSTEM_ABILITY_ERR " + rootCauseName(e));
+                    }
+                }
+
+                // Also scan for dependency implementation/singletons if the factory accessor is null.
+                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
+                dalvik.system.DexFile dex = new dalvik.system.DexFile(ai.sourceDir);
+                java.util.Enumeration<String> en = dex.entries();
+                int found = 0;
+                while (en.hasMoreElements() && found < 40) {
+                    String cn = en.nextElement();
+                    String l = cn.toLowerCase(Locale.US);
+                    if (!(l.contains("dependcy") || l.contains("dependency"))) continue;
+                    if (!(l.contains("service") || l.contains("manager") || l.contains("factory"))) continue;
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "CANDIDATE " + cn);
+                        found++;
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            String n = m.getName().toLowerCase(Locale.US);
+                            if (n.contains("instance") || n.contains("init") || n.contains("ability") ||
+                                    n.contains("service") || n.startsWith("get")) {
+                                android.util.Log.w(TAG, "  METHOD " + methodSig(m));
+                            }
+                        }
+                        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                            if (!java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                            String n = f.getName().toLowerCase(Locale.US);
+                            if (n.contains("instance") || n.contains("service") || n.contains("depend")) {
+                                try {
+                                    f.setAccessible(true);
+                                    Object v = f.get(null);
+                                    android.util.Log.w(TAG, "  STATIC " + f.getName() + "=" +
+                                            (v == null ? "NULL" : v.getClass().getName()));
+                                } catch (Throwable ignored) { }
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+                try { dex.close(); } catch (Throwable ignored) { }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-DR-Dep53").start();
     }
 
     private void probeDrInterceptorV52() {
@@ -1772,7 +1898,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("5.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("5.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -2008,7 +2134,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 5.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 5.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2592,15 +2718,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.2 DR INTERCEPTOR • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.3 DR DEPENDENCY • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.2 DR INTERCEPTOR • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.3 DR DEPENDENCY • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.2 DR INTERCEPTOR • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.3 DR DEPENDENCY • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
