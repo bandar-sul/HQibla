@@ -601,6 +601,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void probeDrGateObjectsV50() {
         new Thread(() -> {
             final String TAG = "H9QiblaGate50";
+            android.util.Log.i(TAG, "BEGIN decode DR gate objects");
             try {
                 Context navCtx = createPackageContext("com.gwm.navi.app",
                         Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
