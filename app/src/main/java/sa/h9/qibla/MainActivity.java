@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • decoding inherited DR object fields...");
-            probeDrObjectInheritanceV51();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • probing DR interceptor decision...");
+            probeDrInterceptorV52();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("5.2 DR INTERCEPTOR • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,114 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrInterceptorV52() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaGate52";
+            android.util.Log.i(TAG, "BEGIN interceptor decision probe");
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                Class<?> apiContextClass = Class.forName("com.gwm.navi.service.external.api.ApiContext", false, cl);
+                Class<?> appModeClass = Class.forName("com.gwm.navi.service.external.interceptor.AppModeInterceptor", false, cl);
+                Class<?> permClass = Class.forName("com.gwm.navi.service.external.interceptor.PermissionInterceptor", false, cl);
+
+                java.lang.reflect.Constructor<?> apiCtor = apiContextClass.getDeclaredConstructor(String.class);
+                apiCtor.setAccessible(true);
+
+                String[] payloads = new String[]{
+                        "{\\\"moduleType\\\":14000,\\\"actionType\\\":0,\\\"operateType\\\":-9999,\\\"source\\\":\\\"sa.h9.qibla.stable\\\"}",
+                        "{\\\"moduleType\\\":14000,\\\"actionType\\\":21,\\\"operateType\\\":-9999,\\\"source\\\":\\\"sa.h9.qibla.stable\\\"}",
+                        "{\\\"moduleType\\\":14000,\\\"actionType\\\":32,\\\"operateType\\\":-9999,\\\"source\\\":\\\"sa.h9.qibla.stable\\\"}",
+                        "{\\\"pkgName\\\":\\\"sa.h9.qibla.stable\\\",\\\"protocolId\\\":\\\"14021\\\",\\\"verName\\\":\\\"1.0\\\",\\\"data\\\":{}}"
+                };
+
+                java.lang.reflect.Method appDeal = appModeClass.getDeclaredMethod("dealBefore", apiContextClass);
+                java.lang.reflect.Method permDeal = permClass.getDeclaredMethod("dealBefore", apiContextClass);
+                appDeal.setAccessible(true);
+                permDeal.setAccessible(true);
+
+                java.lang.reflect.Field protocolTypeField = apiContextClass.getDeclaredField("protocolType");
+                protocolTypeField.setAccessible(true);
+
+                for (String p : payloads) {
+                    for (int protoType : new int[]{1,2}) {
+                        try {
+                            Object ctx = apiCtor.newInstance(p);
+                            protocolTypeField.setInt(ctx, protoType);
+
+                            Object appMode = appModeClass.getDeclaredConstructor().newInstance();
+                            Object perm = permClass.getDeclaredConstructor().newInstance();
+
+                            boolean appResult = (Boolean) appDeal.invoke(appMode, ctx);
+                            boolean permResult = (Boolean) permDeal.invoke(perm, ctx);
+                            android.util.Log.w(TAG, "DECISION protoType=" + protoType +
+                                    " appMode=" + appResult + " permission=" + permResult +
+                                    " payload=" + p);
+
+                            for (java.lang.reflect.Field f : apiContextClass.getDeclaredFields()) {
+                                try {
+                                    f.setAccessible(true);
+                                    Object v = f.get(ctx);
+                                    if (v != null) {
+                                        android.util.Log.i(TAG, "  CTX " + f.getName() + "=" + String.valueOf(v));
+                                    }
+                                } catch (Throwable ignored) { }
+                            }
+                        } catch (Throwable e) {
+                            android.util.Log.e(TAG, "DECISION_ERR protoType=" + protoType +
+                                    " payload=" + p + " err=" + rootCauseName(e));
+                        }
+                    }
+                }
+
+                // Discover the exact dependency/system-ability API used by AppModeInterceptor.
+                String[] names = new String[]{
+                        "com.gwm.navi.service.dependcy.IDependcyService",
+                        "com.gwm.navi.service.dependency.IDependcyService",
+                        "com.gwm.navi.service.dependcy.INaviSystemAbility",
+                        "com.gwm.navi.service.dependency.INaviSystemAbility"
+                };
+                for (String cn : names) {
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "CLASS " + cn);
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            String n = m.getName().toLowerCase(Locale.US);
+                            if (n.contains("dr") || n.contains("mode") || n.contains("support") ||
+                                    n.contains("system") || n.contains("ability") || n.contains("app")) {
+                                android.util.Log.w(TAG, "METHOD " + cn + "#" + methodSig(m));
+                            }
+                        }
+                    } catch (Throwable ignored) { }
+                }
+
+                // Search loaded dex for INaviSystemAbility / IDependcyService classes even if package spelling differs.
+                android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo("com.gwm.navi.app", 0);
+                dalvik.system.DexFile dex = new dalvik.system.DexFile(ai.sourceDir);
+                java.util.Enumeration<String> en = dex.entries();
+                while (en.hasMoreElements()) {
+                    String cn = en.nextElement();
+                    String l = cn.toLowerCase(Locale.US);
+                    if (!(l.contains("navisystemability") || l.contains("idependcyservice") || l.contains("dependencyservice"))) continue;
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "FOUND_CLASS " + cn);
+                        for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+                            android.util.Log.w(TAG, "  FOUND_METHOD " + methodSig(m));
+                        }
+                    } catch (Throwable ignored) { }
+                }
+                try { dex.close(); } catch (Throwable ignored) { }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-DR-Gate52").start();
     }
 
     private void probeDrObjectInheritanceV51() {
@@ -1664,7 +1772,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("5.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("5.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1900,7 +2008,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 5.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 5.2 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2484,15 +2592,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.1 DR OBJECT DECODE • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.2 DR INTERCEPTOR • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.1 DR OBJECT DECODE • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.2 DR INTERCEPTOR • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.1 DR OBJECT DECODE • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.2 DR INTERCEPTOR • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
