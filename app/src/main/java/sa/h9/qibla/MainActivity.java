@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • decoding DR gate objects...");
-            probeDrGateObjectsV50();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • decoding inherited DR object fields...");
+            probeDrObjectInheritanceV51();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("5.0 DR GATE DECODE • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("5.1 DR OBJECT DECODE • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,112 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrObjectInheritanceV51() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaGate51";
+            android.util.Log.i(TAG, "BEGIN inherited object decode");
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                String[] targets = new String[]{
+                        "com.gwm.navi.service.external.interceptor.AppModeInterceptor",
+                        "com.gwm.navi.service.external.interceptor.PermissionInterceptor"
+                };
+
+                for (String cn : targets) {
+                    Class<?> c = Class.forName(cn, false, cl);
+                    Object owner = c.getDeclaredConstructor().newInstance();
+                    android.util.Log.i(TAG, "TARGET " + cn);
+
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        f.setAccessible(true);
+                        Object v = null;
+                        try { v = f.get(owner); } catch (Throwable ignored) { }
+                        if (!(v instanceof java.util.List)) continue;
+
+                        java.util.List<?> list = (java.util.List<?>) v;
+                        android.util.Log.w(TAG, "LIST " + f.getName() + " size=" + list.size());
+
+                        for (int i = 0; i < list.size(); i++) {
+                            Object item = list.get(i);
+                            if (item == null) continue;
+                            android.util.Log.w(TAG, "ITEM " + f.getName() + "[" + i + "] class=" + item.getClass().getName());
+
+                            // Traverse the whole inheritance chain. Previous build only inspected
+                            // fields declared directly on NaviApiDataOvs and therefore missed
+                            // protocol/action/opera fields inherited from its base bean.
+                            for (Class<?> k = item.getClass(); k != null && k != Object.class; k = k.getSuperclass()) {
+                                android.util.Log.i(TAG, "  SUPER " + k.getName());
+                                for (java.lang.reflect.Field x : k.getDeclaredFields()) {
+                                    try {
+                                        x.setAccessible(true);
+                                        Object xv = java.lang.reflect.Modifier.isStatic(x.getModifiers()) ? x.get(null) : x.get(item);
+                                        android.util.Log.w(TAG, "  FIELD " + k.getSimpleName() + "." + x.getName() +
+                                                ":" + x.getType().getSimpleName() + "=" + String.valueOf(xv));
+                                    } catch (Throwable e) {
+                                        android.util.Log.i(TAG, "  FIELD_ERR " + x.getName() + " " + rootCauseName(e));
+                                    }
+                                }
+
+                                for (java.lang.reflect.Method m : k.getDeclaredMethods()) {
+                                    if (m.getParameterTypes().length != 0) continue;
+                                    String mn = m.getName().toLowerCase(Locale.US);
+                                    boolean interesting = mn.startsWith("get") || mn.startsWith("is") ||
+                                            mn.contains("protocol") || mn.contains("action") ||
+                                            mn.contains("opera") || mn.contains("package") ||
+                                            mn.contains("version") || mn.contains("type") ||
+                                            mn.contains("valid");
+                                    if (!interesting) continue;
+                                    if (m.getReturnType() == Void.TYPE) continue;
+                                    try {
+                                        m.setAccessible(true);
+                                        Object mv = m.invoke(item);
+                                        android.util.Log.w(TAG, "  CALL " + k.getSimpleName() + "." +
+                                                m.getName() + "()=" + String.valueOf(mv));
+                                    } catch (Throwable e) {
+                                        android.util.Log.i(TAG, "  CALL_ERR " + m.getName() + " " + rootCauseName(e));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Inspect base bean constructors and field names once, so we know how list entries
+                // are encoded even if getters are absent.
+                String[] beans = new String[]{
+                        "com.gwm.navi.service.external.ovs.NaviApiDataOvs",
+                        "com.gwm.navi.service.external.bean.INaviApiData"
+                };
+                for (String cn : beans) {
+                    try {
+                        Class<?> c = Class.forName(cn, false, cl);
+                        android.util.Log.i(TAG, "BEAN " + cn + " superclass=" +
+                                (c.getSuperclass() == null ? "null" : c.getSuperclass().getName()));
+                        for (java.lang.reflect.Constructor<?> ctor : c.getDeclaredConstructors()) {
+                            android.util.Log.i(TAG, "BEAN_CTOR " + ctor.toString());
+                        }
+                        for (java.lang.reflect.Method m : c.getMethods()) {
+                            String n = m.getName().toLowerCase(Locale.US);
+                            if (n.contains("action") || n.contains("opera") || n.contains("protocol") ||
+                                    n.contains("package") || n.contains("version") || n.contains("valid")) {
+                                android.util.Log.i(TAG, "BEAN_METHOD " + methodSig(m));
+                            }
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "BEAN_ERR " + cn + " " + rootCauseName(e));
+                    }
+                }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e));
+            }
+        }, "H9-DR-Gate51").start();
     }
 
     private void probeDrGateObjectsV50() {
@@ -1558,7 +1664,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("5.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("5.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -1794,7 +1900,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 5.0 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 5.1 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2378,15 +2484,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.0 DR GATE DECODE • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.1 DR OBJECT DECODE • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.0 DR GATE DECODE • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.1 DR OBJECT DECODE • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.0 DR GATE DECODE • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.1 DR OBJECT DECODE • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
