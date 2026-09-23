@@ -80,8 +80,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             gwmMapBinder = service;
             String descriptor = "?";
             try { descriptor = service.getInterfaceDescriptor(); } catch (Exception ignored) { }
-            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • probing navigation dependency service...");
-            probeDrDependencyV53();
+            updateBinderDiagnosticText("CONNECTED • MapControl=" + descriptor + " • initializing navigation dependency...");
+            probeDrDependencyInitV54();
             probeExactDrV47(service);
         }
 
@@ -132,21 +132,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        middlewareDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • vehicleSignal: آخر فحص");
+        middlewareDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • vehicleSignal: آخر فحص");
         FrameLayout.LayoutParams middlewareLp = new FrameLayout.LayoutParams(dp(900), dp(92));
         middlewareLp.gravity = Gravity.TOP | Gravity.LEFT;
         middlewareLp.leftMargin = dp(24);
         middlewareLp.topMargin = dp(132);
         root.addView(middlewareDiagnosticText, middlewareLp);
 
-        binderDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • Binder: جاري البحث عن GWMMapService...");
+        binderDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • Binder: جاري البحث عن GWMMapService...");
         FrameLayout.LayoutParams binderLp = new FrameLayout.LayoutParams(dp(900), dp(170));
         binderLp.gravity = Gravity.TOP | Gravity.LEFT;
         binderLp.leftMargin = dp(24);
         binderLp.topMargin = dp(230);
         root.addView(binderDiagnosticText, binderLp);
 
-        locationDiagnosticText = createDiagnosticText("5.3 DR DEPENDENCY • الموقع: جاري فحص fused/GPS");
+        locationDiagnosticText = createDiagnosticText("5.4 DR DEP INIT • الموقع: جاري فحص fused/GPS");
         FrameLayout.LayoutParams locationLp = new FrameLayout.LayoutParams(dp(700), dp(58));
         locationLp.gravity = Gravity.TOP | Gravity.LEFT;
         locationLp.leftMargin = dp(24);
@@ -596,6 +596,125 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+    private void probeDrDependencyInitV54() {
+        new Thread(() -> {
+            final String TAG = "H9QiblaDep54";
+            android.util.Log.i(TAG, "BEGIN dependency init probe");
+            try {
+                Context navCtx = createPackageContext("com.gwm.navi.app",
+                        Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                ClassLoader cl = navCtx.getClassLoader();
+
+                Class<?> mgr = Class.forName("com.gwm.navi.dependcy.NaviDependcyManager", false, cl);
+                java.lang.reflect.Method instanceM = mgr.getDeclaredMethod("instance");
+                instanceM.setAccessible(true);
+                Object manager = instanceM.invoke(null);
+                android.util.Log.w(TAG, "MANAGER instance=" + (manager == null ? "NULL" : manager.getClass().getName()));
+
+                if (manager != null) {
+                    try {
+                        java.lang.reflect.Method init = mgr.getDeclaredMethod("init", Context.class);
+                        init.setAccessible(true);
+                        init.invoke(manager, navCtx);
+                        android.util.Log.w(TAG, "MANAGER init(navCtx)=OK");
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "MANAGER init ERR=" + rootCauseName(e) + ":" + shortMessage(e));
+                    }
+
+                    try {
+                        java.lang.reflect.Method initService = mgr.getDeclaredMethod("initService", Context.class);
+                        initService.setAccessible(true);
+                        initService.invoke(manager, navCtx);
+                        android.util.Log.w(TAG, "MANAGER initService(navCtx)=OK");
+                    } catch (Throwable e) {
+                        android.util.Log.i(TAG, "MANAGER initService ERR=" + rootCauseName(e) + ":" + shortMessage(e));
+                    }
+
+                    try {
+                        Class<?> sysAbility = Class.forName("com.gwm.navi.service.dependcy.system.INaviSystemAbility", false, cl);
+                        java.lang.reflect.Method getAbility = mgr.getDeclaredMethod("getAbility", Class.class);
+                        getAbility.setAccessible(true);
+                        Object ability = getAbility.invoke(manager, sysAbility);
+                        android.util.Log.w(TAG, "MANAGER systemAbility=" + (ability == null ? "NULL" : ability.getClass().getName()));
+                        if (ability != null) {
+                            String[] methods = new String[]{
+                                    "getNaviAppType","getDriveType","getDriveHandleType","getGNSSType",
+                                    "getProjectCode","getMapWrapper","getFlavor","getSalesRegion",
+                                    "getBrand","getAutoType"
+                            };
+                            for (String n : methods) {
+                                try {
+                                    java.lang.reflect.Method m = ability.getClass().getMethod(n);
+                                    m.setAccessible(true);
+                                    Object v = m.invoke(ability);
+                                    android.util.Log.w(TAG, "ABILITY " + n + "=" + String.valueOf(v));
+                                } catch (Throwable e) {
+                                    android.util.Log.i(TAG, "ABILITY_ERR " + n + " " + rootCauseName(e));
+                                }
+                            }
+                        }
+                    } catch (Throwable e) {
+                        android.util.Log.e(TAG, "GET_ABILITY ERR=" + rootCauseName(e) + ":" + shortMessage(e));
+                    }
+                }
+
+                try {
+                    Class<?> sm = Class.forName("com.gwm.navi.dependcy.manager.ServiceManager", false, cl);
+                    java.lang.reflect.Method getInstance = sm.getDeclaredMethod("getInstance");
+                    getInstance.setAccessible(true);
+                    Object smi = getInstance.invoke(null);
+                    android.util.Log.w(TAG, "SERVICE_MANAGER=" + (smi == null ? "NULL" : smi.getClass().getName()));
+                    if (smi != null) {
+                        try {
+                            java.lang.reflect.Method initManager = sm.getDeclaredMethod("initManager", Context.class);
+                            initManager.setAccessible(true);
+                            initManager.invoke(smi, navCtx);
+                            android.util.Log.w(TAG, "SERVICE_MANAGER initManager(navCtx)=OK");
+                        } catch (Throwable e) {
+                            android.util.Log.i(TAG, "SERVICE_MANAGER init ERR=" + rootCauseName(e) + ":" + shortMessage(e));
+                        }
+                        try {
+                            java.lang.reflect.Method getDep = sm.getDeclaredMethod("getDependcyService");
+                            getDep.setAccessible(true);
+                            Object dep = getDep.invoke(smi);
+                            android.util.Log.w(TAG, "SERVICE_MANAGER getDependcyService=" +
+                                    (dep == null ? "NULL" : dep.getClass().getName()));
+                            if (dep != null) {
+                                Class<?> sysAbility = Class.forName("com.gwm.navi.service.dependcy.system.INaviSystemAbility", false, cl);
+                                java.lang.reflect.Method getAbility = dep.getClass().getMethod("getAbility", Class.class);
+                                getAbility.setAccessible(true);
+                                Object ability = getAbility.invoke(dep, sysAbility);
+                                android.util.Log.w(TAG, "SERVICE_MANAGER systemAbility=" +
+                                        (ability == null ? "NULL" : ability.getClass().getName()));
+                            }
+                        } catch (Throwable e) {
+                            android.util.Log.e(TAG, "SERVICE_MANAGER getDependcyService ERR=" +
+                                    rootCauseName(e) + ":" + shortMessage(e));
+                        }
+                    }
+                } catch (Throwable e) {
+                    android.util.Log.e(TAG, "SERVICE_MANAGER FATAL=" + rootCauseName(e) + ":" + shortMessage(e));
+                }
+
+                // Re-check the factory accessor after initializing the dependency layer.
+                try {
+                    Class<?> factory = Class.forName("com.gwm.navi.service.manager.ServiceManagerFactory", false, cl);
+                    java.lang.reflect.Method m = factory.getDeclaredMethod("getDependcyService");
+                    m.setAccessible(true);
+                    Object dep = m.invoke(null);
+                    android.util.Log.w(TAG, "FACTORY_AFTER_INIT getDependcyService=" +
+                            (dep == null ? "NULL" : dep.getClass().getName()));
+                } catch (Throwable e) {
+                    android.util.Log.e(TAG, "FACTORY_AFTER_INIT ERR=" + rootCauseName(e) + ":" + shortMessage(e));
+                }
+
+                android.util.Log.i(TAG, "END");
+            } catch (Throwable e) {
+                android.util.Log.e(TAG, "FATAL " + rootCauseName(e) + ":" + shortMessage(e));
+            }
+        }, "H9-DR-Dep54").start();
     }
 
     private void probeDrDependencyV53() {
@@ -1898,7 +2017,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.i("H9QiblaProperty", "PROPERTY_LIST_END scanned=" + scanned + " total=" + props.size());
                 appendOemLoc("LOGCAT READY • scanned=" + scanned + " total=" + props.size() + " • tag=H9QiblaProperty");
             } catch (Throwable e) {
-                appendOemLoc("5.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("5.4 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-FinalPropertyScan44").start();
     }
@@ -2134,7 +2253,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             } catch (Throwable e) {
                 android.util.Log.e("H9QiblaDR", "ERROR " + rootCauseName(e));
-                appendOemLoc("DIRECT 5.3 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
+                appendOemLoc("DIRECT 5.4 ERROR=" + e.getClass().getSimpleName() + ":" + shortMessage(e));
             }
         }, "H9-Direct-getLocationService").start();
     }
@@ -2718,15 +2837,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateBinderDiagnosticText(String text) {
-        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.3 DR DEPENDENCY • BINDER: " + text);
+        if (binderDiagnosticText != null) binderDiagnosticText.setText("5.4 DR DEP INIT • BINDER: " + text);
     }
 
     private void updateMiddlewareDiagnosticText(String text) {
-        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.3 DR DEPENDENCY • GWM: " + text);
+        if (middlewareDiagnosticText != null) middlewareDiagnosticText.setText("5.4 DR DEP INIT • GWM: " + text);
     }
 
     private void updateLocationDiagnosticText(String text) {
-        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.3 DR DEPENDENCY • LOC: " + text);
+        if (locationDiagnosticText != null) locationDiagnosticText.setText("5.4 DR DEP INIT • LOC: " + text);
     }
 
     private void updateLiveCourse(Location location) {
