@@ -1,4 +1,4 @@
-name: Build H9 Qibla 5.5 OEM DR APK
+name: Build H9 Qibla 5.6 Navi Heading APK
 on:
   push:
     branches: [ main ]
