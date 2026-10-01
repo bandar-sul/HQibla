@@ -176,6 +176,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         ensureLocationPermission();
         testGwmMapBinder();
         startGwmNaviHeadingIntegration();
+
+        if (!AppSecurity.verifyOwnSignature(this)) {
+            AppSecurity.showIntegrityFailureAndExit(this);
+            return;
+        }
+        handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
 
     private TextView createDiagnosticText(String text) {
@@ -239,6 +245,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
         });
         card.addView(store, matchWrap(dp(58)));
+
+        Button update = new Button(this);
+        update.setText("فحص التحديثات");
+        update.setTextSize(19f);
+        update.setTextColor(Color.WHITE);
+        update.setAllCaps(false);
+        GradientDrawable updateBg = new GradientDrawable();
+        updateBg.setColor(0xFF165B63);
+        updateBg.setCornerRadius(dp(22));
+        updateBg.setStroke(dp(1), 0xFF2FE0C7);
+        update.setBackground(updateBg);
+        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
+        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(250), dp(54));
+        updateLp.bottomMargin = dp(12);
+        card.addView(update, updateLp);
 
         Button close = new Button(this);
         close.setText("إغلاق");
