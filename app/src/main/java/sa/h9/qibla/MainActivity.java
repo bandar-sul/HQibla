@@ -53,6 +53,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
     private static final String NOTICE_PREFS = "h9_qibla_notice";
     private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v2";
+    private static final String HEADING_PREFS = "h9_qibla_heading";
+    private static final String KEY_LAST_HEADING = "last_heading";
+    private static final String KEY_LAST_HEADING_SOURCE = "last_heading_source";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -135,6 +138,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        restoreLastHeading();
 
         middlewareDiagnosticText = null;
         binderDiagnosticText = null;
@@ -450,6 +454,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         handler.removeCallbacks(uiTick);
         handler.post(uiTick);
         registerHeadingSensors();
+        if (!gwmNaviHeadingStarted) startGwmNaviHeadingIntegration();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();
     }
 
@@ -506,6 +511,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (location.hasBearing() && !Float.isNaN(location.getBearing())) {
             float fusedHeading = normalize(location.getBearing());
             lastHeadingAt = System.currentTimeMillis();
+            saveHeading(fusedHeading, "اتجاه fused من نظام هافال");
             qiblaView.setHeading(fusedHeading, "اتجاه fused من نظام هافال");
         }
     }
@@ -587,12 +593,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
 
+    private void restoreLastHeading() {
+        try {
+            SharedPreferences p = getSharedPreferences(HEADING_PREFS, MODE_PRIVATE);
+            if (!p.contains(KEY_LAST_HEADING)) return;
+            float h = normalize(p.getFloat(KEY_LAST_HEADING, 0f));
+            String source = p.getString(KEY_LAST_HEADING_SOURCE, "آخر اتجاه محفوظ");
+            lastHeadingAt = System.currentTimeMillis();
+            if (qiblaView != null) qiblaView.setHeading(h, source == null ? "آخر اتجاه محفوظ" : source);
+        } catch (Throwable ignored) { }
+    }
+
+    private void saveHeading(float heading, String source) {
+        try {
+            getSharedPreferences(HEADING_PREFS, MODE_PRIVATE).edit()
+                    .putFloat(KEY_LAST_HEADING, normalize(heading))
+                    .putString(KEY_LAST_HEADING_SOURCE, source)
+                    .apply();
+        } catch (Throwable ignored) { }
+    }
+
     private void startGwmNaviHeadingIntegration() {
         if (gwmNaviHeadingStarted) return;
         gwmNaviHeadingStarted = true;
 
         new Thread(() -> {
-            final String TAG = "H9QiblaNavi56";
+            final String TAG = "H9QiblaNavi57";
             try {
                 Context[] contexts = new Context[2];
                 try {
@@ -715,7 +741,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 android.util.Log.w(TAG, "Navi heading integration stopped: " + rootCauseName(e));
                 gwmNaviHeadingStarted = false;
             }
-        }, "H9-Navi-Heading").start();
+        }, "H9-Navi-Heading-57").start();
     }
 
     private Object createNaviControl(Class<?> controlClass, Context context) {
@@ -834,6 +860,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         final float h = normalize(rawHeading);
         lastOemHeadingAt = System.currentTimeMillis();
         lastHeadingAt = lastOemHeadingAt;
+        saveHeading(h, "اتجاه السيارة من بوصلة هافال");
         runOnUiThread(() -> {
             if (qiblaView != null) qiblaView.setHeading(h, "اتجاه السيارة من بوصلة هافال");
         });
@@ -925,6 +952,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             final float h = normalize(heading.floatValue());
                             lastOemHeadingAt = System.currentTimeMillis();
                             lastHeadingAt = lastOemHeadingAt;
+                            saveHeading(h, "اتجاه السيارة من نظام هافال");
                             runOnUiThread(() -> qiblaView.setHeading(h, "اتجاه السيارة من نظام هافال"));
                         }
                     } catch (Throwable e) {
@@ -3225,6 +3253,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (newHeading != null) {
             lastHeadingAt = System.currentTimeMillis();
             lastGpsHeadingAt = lastHeadingAt;
+            saveHeading(newHeading, "آخر اتجاه GPS محفوظ");
             qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");
         }
     }
@@ -3300,6 +3329,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
         if (!gpsFreshAndMoving) {
             lastHeadingAt = now;
+            saveHeading(headingValue, "بوصلة الشاشة / الحساس");
             qiblaView.setHeading(headingValue, "بوصلة الشاشة / الحساس");
         }
     }
