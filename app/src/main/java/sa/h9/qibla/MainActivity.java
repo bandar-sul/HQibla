@@ -69,6 +69,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private volatile long lastOemHeadingAt;
     private volatile boolean oemDrRunning;
     private volatile Object oemLocationService;
+    private volatile boolean gwmNaviHeadingStarted;
+    private volatile Object gwmNaviControl;
+    private volatile Object gwmNaviDataListener;
     private QiblaView qiblaView;
     private TextView middlewareDiagnosticText;
     private TextView binderDiagnosticText;
@@ -168,6 +171,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         showDeveloperNoticeOnce();
         ensureLocationPermission();
         testGwmMapBinder();
+        startGwmNaviHeadingIntegration();
     }
 
     private TextView createDiagnosticText(String text) {
@@ -580,6 +584,259 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception e) {
             updateBinderDiagnosticText(e.getClass().getSimpleName() + " • " + shortMessage(e));
         }
+    }
+
+
+    private void startGwmNaviHeadingIntegration() {
+        if (gwmNaviHeadingStarted) return;
+        gwmNaviHeadingStarted = true;
+
+        new Thread(() -> {
+            final String TAG = "H9QiblaNavi56";
+            try {
+                Context[] contexts = new Context[2];
+                try {
+                    contexts[0] = createPackageContext("com.gwm.app.offroadovs",
+                            Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                } catch (Throwable ignored) { }
+                try {
+                    contexts[1] = createPackageContext("com.gwm.navi.app",
+                            Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+                } catch (Throwable ignored) { }
+
+                Class<?> controlClass = null;
+                Class<?> listenerClass = null;
+                Context codeContext = null;
+                for (Context c : contexts) {
+                    if (c == null) continue;
+                    try {
+                        ClassLoader cl = c.getClassLoader();
+                        controlClass = Class.forName("com.gwm.navi.api.NaviControl", false, cl);
+                        listenerClass = Class.forName("com.gwm.navi.api.NaviDataListener", false, cl);
+                        codeContext = c;
+                        break;
+                    } catch (Throwable ignored) { }
+                }
+
+                if (controlClass == null || listenerClass == null || codeContext == null) {
+                    android.util.Log.w(TAG, "Navi API classes unavailable");
+                    gwmNaviHeadingStarted = false;
+                    return;
+                }
+
+                final Class<?> finalListenerClass = listenerClass;
+                Object listener = java.lang.reflect.Proxy.newProxyInstance(
+                        codeContext.getClassLoader(),
+                        new Class<?>[]{listenerClass},
+                        (proxy, method, args) -> {
+                            if (args != null) {
+                                for (Object arg : args) {
+                                    Double h = extractHeadingDeep(arg, 0);
+                                    if (h != null && !h.isNaN()) {
+                                        applyGwmNaviHeading(h.floatValue());
+                                        break;
+                                    }
+                                }
+                            }
+                            return defaultValue(method.getReturnType());
+                        });
+                gwmNaviDataListener = listener;
+
+                Object control = createNaviControl(controlClass, codeContext);
+                if (control == null) {
+                    android.util.Log.w(TAG, "NaviControl instance unavailable");
+                    gwmNaviHeadingStarted = false;
+                    return;
+                }
+                gwmNaviControl = control;
+
+                // Register the same NaviDataListener family used by GWM OffRoad.
+                for (java.lang.reflect.Method m : controlClass.getMethods()) {
+                    String n = m.getName().toLowerCase(Locale.US);
+                    Class<?>[] pts = m.getParameterTypes();
+                    boolean takesDataListener = false;
+                    for (Class<?> pt : pts) {
+                        if (pt.getName().equals(finalListenerClass.getName())) {
+                            takesDataListener = true;
+                            break;
+                        }
+                    }
+                    if (!takesDataListener) continue;
+                    if (!(n.contains("register") || n.contains("listener") || n.contains("location"))) continue;
+                    try {
+                        m.setAccessible(true);
+                        m.invoke(control, buildNaviArgs(pts, codeContext, finalListenerClass, listener));
+                        android.util.Log.i(TAG, "listener attached via " + m.getName());
+                    } catch (Throwable ignored) { }
+                }
+
+                // Connect/init only on clearly non-destructive Navi API methods.
+                for (java.lang.reflect.Method m : controlClass.getMethods()) {
+                    String n = m.getName().toLowerCase(Locale.US);
+                    if (!(n.equals("connect") || n.equals("init") || n.equals("initialize"))) continue;
+                    try {
+                        m.setAccessible(true);
+                        m.invoke(control, buildNaviArgs(m.getParameterTypes(), codeContext, finalListenerClass, listener));
+                    } catch (Throwable ignored) { }
+                }
+
+                // Start the location stream if the API exposes the same startLocation call seen in OffRoad.
+                for (java.lang.reflect.Method m : controlClass.getMethods()) {
+                    String n = m.getName().toLowerCase(Locale.US);
+                    if (!(n.equals("startlocation") || n.equals("start_location"))) continue;
+                    try {
+                        m.setAccessible(true);
+                        Object out = m.invoke(control, buildNaviArgs(m.getParameterTypes(), codeContext, finalListenerClass, listener));
+                        Double h = extractHeadingDeep(out, 0);
+                        if (h != null && !h.isNaN()) applyGwmNaviHeading(h.floatValue());
+                        android.util.Log.i(TAG, "startLocation invoked");
+                    } catch (Throwable e) {
+                        android.util.Log.w(TAG, "startLocation failed: " + rootCauseName(e));
+                    }
+                }
+
+                // Poll getLocationData as a second path. OffRoad contains this exact API.
+                while (gwmNaviHeadingStarted && gwmNaviControl == control) {
+                    boolean invoked = false;
+                    for (java.lang.reflect.Method m : controlClass.getMethods()) {
+                        String n = m.getName().toLowerCase(Locale.US);
+                        if (!n.equals("getlocationdata")) continue;
+                        try {
+                            m.setAccessible(true);
+                            Object out = m.invoke(control, buildNaviArgs(m.getParameterTypes(), codeContext, finalListenerClass, listener));
+                            invoked = true;
+                            Double h = extractHeadingDeep(out, 0);
+                            if (h != null && !h.isNaN()) applyGwmNaviHeading(h.floatValue());
+                        } catch (Throwable ignored) { }
+                    }
+                    try { Thread.sleep(invoked ? 250L : 1000L); } catch (InterruptedException ignored) { }
+                }
+            } catch (Throwable e) {
+                android.util.Log.w(TAG, "Navi heading integration stopped: " + rootCauseName(e));
+                gwmNaviHeadingStarted = false;
+            }
+        }, "H9-Navi-Heading").start();
+    }
+
+    private Object createNaviControl(Class<?> controlClass, Context context) {
+        String[] names = new String[]{"getInstance", "instance", "getDefault"};
+        for (String name : names) {
+            for (java.lang.reflect.Method m : controlClass.getMethods()) {
+                if (!m.getName().equals(name) || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+                try {
+                    m.setAccessible(true);
+                    Object v = m.invoke(null, buildNaviArgs(m.getParameterTypes(), context, null, null));
+                    if (v != null) return v;
+                } catch (Throwable ignored) { }
+            }
+        }
+        for (java.lang.reflect.Constructor<?> c : controlClass.getDeclaredConstructors()) {
+            try {
+                c.setAccessible(true);
+                Object v = c.newInstance(buildNaviArgs(c.getParameterTypes(), context, null, null));
+                if (v != null) return v;
+            } catch (Throwable ignored) { }
+        }
+        return null;
+    }
+
+    private Object[] buildNaviArgs(Class<?>[] types, Context context, Class<?> listenerType, Object listener) {
+        Object[] args = new Object[types.length];
+        for (int i = 0; i < types.length; i++) {
+            Class<?> t = types[i];
+            if (Context.class.isAssignableFrom(t)) {
+                args[i] = context;
+            } else if (listenerType != null && t.getName().equals(listenerType.getName())) {
+                args[i] = listener;
+            } else if (t.isInterface()) {
+                try {
+                    args[i] = java.lang.reflect.Proxy.newProxyInstance(
+                            context.getClassLoader(), new Class<?>[]{t},
+                            (proxy, method, methodArgs) -> {
+                                if (methodArgs != null) {
+                                    for (Object a : methodArgs) {
+                                        Double h = extractHeadingDeep(a, 0);
+                                        if (h != null && !h.isNaN()) {
+                                            applyGwmNaviHeading(h.floatValue());
+                                            break;
+                                        }
+                                    }
+                                }
+                                return defaultValue(method.getReturnType());
+                            });
+                } catch (Throwable ignored) {
+                    args[i] = null;
+                }
+            } else if (t == String.class) {
+                args[i] = getPackageName();
+            } else {
+                args[i] = defaultValue(t);
+            }
+        }
+        return args;
+    }
+
+    private Object defaultValue(Class<?> t) {
+        if (t == null || t == Void.TYPE || !t.isPrimitive()) return null;
+        if (t == Boolean.TYPE) return false;
+        if (t == Byte.TYPE) return (byte) 0;
+        if (t == Short.TYPE) return (short) 0;
+        if (t == Integer.TYPE) return 0;
+        if (t == Long.TYPE) return 0L;
+        if (t == Float.TYPE) return 0f;
+        if (t == Double.TYPE) return 0d;
+        if (t == Character.TYPE) return (char) 0;
+        return null;
+    }
+
+    private Double extractHeadingDeep(Object value, int depth) {
+        if (value == null || depth > 3) return null;
+
+        Double direct = extractHeading(value);
+        if (direct != null && !direct.isNaN()) return direct;
+
+        if (value instanceof Bundle) {
+            Bundle b = (Bundle) value;
+            String[] keys = new String[]{"heading", "direction", "bearing", "azimuth"};
+            for (String k : keys) {
+                try {
+                    Object v = b.get(k);
+                    if (v instanceof Number) return ((Number) v).doubleValue();
+                } catch (Throwable ignored) { }
+            }
+        }
+
+        if (value instanceof java.util.Map) {
+            java.util.Map<?, ?> map = (java.util.Map<?, ?>) value;
+            for (Object k : map.keySet()) {
+                if (k == null) continue;
+                String n = String.valueOf(k).toLowerCase(Locale.US);
+                if (n.contains("heading") || n.contains("direction") || n.contains("bearing") || n.contains("azimuth")) {
+                    Object v = map.get(k);
+                    if (v instanceof Number) return ((Number) v).doubleValue();
+                }
+            }
+        }
+
+        Class<?> c = value.getClass();
+        if (c.isArray()) {
+            int n = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < Math.min(n, 8); i++) {
+                Double h = extractHeadingDeep(java.lang.reflect.Array.get(value, i), depth + 1);
+                if (h != null) return h;
+            }
+        }
+        return null;
+    }
+
+    private void applyGwmNaviHeading(float rawHeading) {
+        if (Float.isNaN(rawHeading) || Float.isInfinite(rawHeading)) return;
+        final float h = normalize(rawHeading);
+        lastOemHeadingAt = System.currentTimeMillis();
+        lastHeadingAt = lastOemHeadingAt;
+        runOnUiThread(() -> {
+            if (qiblaView != null) qiblaView.setHeading(h, "اتجاه السيارة من بوصلة هافال");
+        });
     }
 
     private void startOemDrIntegration() {
