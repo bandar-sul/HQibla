@@ -10,13 +10,26 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 57
-        versionName '5.7-standstill-heading'
+        versionCode 58
+        versionName '5.8-ota-security'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    def expectedCert = project.findProperty("EXPECTED_CERT_SHA256") ?: ""
+
+    defaultConfig {
+        buildConfigField "String", "EXPECTED_CERT_SHA256", "\"" + expectedCert + "\""
+        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://h9-story.com/h9qibla/latest.json\""
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
+            signingConfig signingConfigs.debug
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -28,3 +41,8 @@ android {
 }
 
 // trigger 3.0 focused LocationServiceImpl build
+
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}
