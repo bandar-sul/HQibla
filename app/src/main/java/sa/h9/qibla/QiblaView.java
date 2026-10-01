@@ -31,7 +31,7 @@ public class QiblaView extends View {
     private double longitude;
     private String status = "بانتظار الموقع…";
     private String networkStatus = "فحص الإنترنت…";
-    private String headingSource = "بانتظار اتجاه GPS حي";
+    private String headingSource = "بانتظار اتجاه السيارة";
     private String prayerStatus = "بانتظار مواقيت الصلاة…";
     private String hijriDate = "";
     private String locationName = "الموقع الحالي";
@@ -126,7 +126,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("4.3 FINAL PROBE", w * .114f, h * .116f, p);
+        c.drawText("5.7 STANDSTILL HEADING", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -141,7 +141,7 @@ public class QiblaView extends View {
             float signed = rel > 180 ? rel - 360 : rel;
             deviation = String.format(Locale.US, "الانحراف عن اتجاه المركبة: %.0f° %s", Math.abs(signed), signed >= 0 ? "يمينًا" : "يسارًا");
         } else {
-            deviation = "تحرك قليلًا لتحديث اتجاه السهم الحي";
+            deviation = hasLocation ? "بانتظار اتجاه السيارة" : "بانتظار تحديد الموقع";
         }
         c.drawText(deviation, w * .50f, h * .105f, p);
 
@@ -188,7 +188,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.020f);
         p.setColor(0xFF9FB0B7);
-        c.drawText(hasHeading ? headingSource : (hasLocation ? "ثابت من الشمال • تحرك قليلًا إذا لم تتوفر بوصلة" : "بانتظار GPS"), x+cardW*.5f, h*.757f, p);
+        c.drawText(hasHeading ? headingSource : (hasLocation ? "بانتظار بوصلة السيارة" : "بانتظار GPS"), x+cardW*.5f, h*.757f, p);
     }
 
     private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
@@ -393,7 +393,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("H 9   Q i b l a   4.3 FINAL PROBE   •   GPS + حساسات + اتجاه جلسة عند الوقوف",w*.5f,h*.958f,p);
+        c.drawText("H 9   Q i b l a   5.7   •   Navi + OEM DR + حساسات + GPS احتياط",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {
