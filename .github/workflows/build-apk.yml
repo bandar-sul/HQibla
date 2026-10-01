@@ -1,4 +1,4 @@
-name: Build H9 Qibla 5.7 Standstill Heading APK
+name: Build H9 Qibla 5.8 OTA Security APK
 on:
   push:
     branches: [ main ]
@@ -24,14 +24,27 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: h9qibla-stable-signing-v1
+      - name: Prepare stable signing certificate
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 3072 -validity 10000 -dname "CN=H9 Qibla,OU=H9,O=H9,L=Buraydah,C=SA"
+          fi
+          CERT_SHA=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{gsub(":","",$2); print toupper($2); exit}')
+          echo "EXPECTED_CERT_SHA256=$CERT_SHA" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle clean assembleDebug --stacktrace
-      - run: mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/H9-Qibla-5.7-Standstill-Heading-Haval-H9.apk
+      - name: Build protected release
+        run: gradle clean assembleRelease -PEXPECTED_CERT_SHA256="$EXPECTED_CERT_SHA256" --stacktrace
+      - name: Package APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/H9-Qibla-5.8-OTA-Security-Haval-H9.apk
+          sha256sum dist/H9-Qibla-5.8-OTA-Security-Haval-H9.apk | tee dist/H9-Qibla-5.8-OTA-Security-Haval-H9.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-5.7-Standstill-Heading-Haval-H9
-          path: dist/H9-Qibla-5.7-Standstill-Heading-Haval-H9.apk
-
-# trigger-4.3-final-probe
+          name: H9-Qibla-5.8-OTA-Security-Haval-H9
+          path: |
+            dist/H9-Qibla-5.8-OTA-Security-Haval-H9.apk
+            dist/H9-Qibla-5.8-OTA-Security-Haval-H9.sha256
