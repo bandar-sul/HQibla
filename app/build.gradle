@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 50
-        versionName '5.0-dr-gate-decode'
+        versionCode 56
+        versionName '5.6-navi-heading'
     }
 
     buildTypes {
