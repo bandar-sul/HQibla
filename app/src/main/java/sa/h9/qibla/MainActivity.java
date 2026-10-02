@@ -179,7 +179,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         if (!AppSecurity.verifyOwnSignature(this)) {
             AppSecurity.showIntegrityFailureAndExit(this);
-            return;
         }
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
