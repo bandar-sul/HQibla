@@ -1,4 +1,4 @@
-name: Build H9 Qibla 6.2 OTA Compat APK
+name: Build H9 Qibla 6.3 Arabic Settings OTA APK
 on:
   push:
     branches: [ main ]
@@ -40,11 +40,11 @@ jobs:
       - name: Package APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/H9-Qibla-6.2-OTA-Compat-Haval-H9.apk
-          sha256sum dist/H9-Qibla-6.2-OTA-Compat-Haval-H9.apk | tee dist/H9-Qibla-6.2-OTA-Compat-Haval-H9.sha256
+          cp app/build/outputs/apk/release/app-release.apk dist/H9-Qibla-6.3-Arabic-Settings-Haval-H9.apk
+          sha256sum dist/H9-Qibla-6.3-Arabic-Settings-Haval-H9.apk | tee dist/H9-Qibla-6.3-Arabic-Settings-Haval-H9.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-6.2-OTA-Compat-Haval-H9
+          name: H9-Qibla-6.3-Arabic-Settings-Haval-H9
           path: |
-            dist/H9-Qibla-6.2-OTA-Compat-Haval-H9.apk
-            dist/H9-Qibla-6.2-OTA-Compat-Haval-H9.sha256
+            dist/H9-Qibla-6.3-Arabic-Settings-Haval-H9.apk
+            dist/H9-Qibla-6.3-Arabic-Settings-Haval-H9.sha256
