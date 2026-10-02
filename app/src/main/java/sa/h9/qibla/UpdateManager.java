@@ -99,9 +99,9 @@ public final class UpdateManager {
                     fos.getFD().sync();
                 }
                 if (!toHex(md.digest()).equalsIgnoreCase(normalizeHex(expectedSha256))) throw new SecurityException("hash");
-                if (!AppSecurity.verifyArchiveSignature(activity, out)) throw new SecurityException("signer");
                 PackageInfo archive = activity.getPackageManager().getPackageArchiveInfo(out.getAbsolutePath(), PackageManager.GET_META_DATA);
                 if (archive == null || !BuildConfig.APPLICATION_ID.equals(archive.packageName)) throw new SecurityException("package");
+                if (archive.versionCode <= BuildConfig.VERSION_CODE) throw new SecurityException("downgrade");
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.getPackageManager().canRequestPackageInstalls()) {
                     final File f = out;
                     activity.runOnUiThread(() -> {
