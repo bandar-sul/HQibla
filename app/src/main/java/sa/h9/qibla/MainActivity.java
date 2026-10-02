@@ -145,7 +145,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         locationDiagnosticText = null;
 
         Button aboutButton = new Button(this);
-        aboutButton.setText("حول");
+        aboutButton.setText("الإعدادات");
         aboutButton.setTextSize(18f);
         aboutButton.setTextColor(0xFFF1F7FA);
         aboutButton.setAllCaps(false);
@@ -155,7 +155,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         aboutBg.setCornerRadius(dp(18));
         aboutBg.setStroke(dp(1), 0xFF2FE0C7);
         aboutButton.setBackground(aboutBg);
-        aboutButton.setOnClickListener(v -> showAboutDialog());
+        aboutButton.setOnClickListener(v -> showSettingsDialog());
         FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(130), dp(52));
         aboutLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
         aboutLp.leftMargin = dp(24);
@@ -212,7 +212,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (hasFocus) applyImmersiveMode();
     }
 
-    private void showAboutDialog() {
+    private void showSettingsDialog() {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
@@ -227,20 +227,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText("H9 Qibla", 20f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(dp(44)));
-        TextView title = noteText("حول", 30f, 0xFFFFC857, true);
+        TextView appTitle = noteText("قبلة", 24f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(dp(48)));
+        TextView title = noteText("الإعدادات", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
-        TextView body = noteText("تم تطوير البرنامج بواسطة بندر بن سليمان حساب هافال H9 صدقة جارية عني وعنك وعن كل مسلم\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
-        body.setLineSpacing(dp(2), 1.08f);
-        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
-
-        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
-        store.setPadding(dp(8), dp(12), dp(8), dp(12));
-        store.setOnClickListener(v -> {
-            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
-        });
-        card.addView(store, matchWrap(dp(58)));
 
         Button update = new Button(this);
         update.setText("فحص التحديثات");
@@ -256,6 +246,22 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(250), dp(54));
         updateLp.bottomMargin = dp(12);
         card.addView(update, updateLp);
+
+        TextView aboutTitle = noteText("حول", 26f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams aboutTitleLp = matchWrap(dp(48));
+        aboutTitleLp.topMargin = dp(8);
+        card.addView(aboutTitle, aboutTitleLp);
+
+        TextView body = noteText("تم تطوير البرنامج بواسطة بندر بن سليمان حساب هافال H9 صدقة جارية عني وعنك وعن كل مسلم\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
+        body.setLineSpacing(dp(2), 1.08f);
+        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
+        store.setPadding(dp(8), dp(12), dp(8), dp(12));
+        store.setOnClickListener(v -> {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
+        });
+        card.addView(store, matchWrap(dp(58)));
 
         Button close = new Button(this);
         close.setText("إغلاق");
@@ -302,7 +308,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText("H9 Qibla", 20f, 0xFFE5B64A, true);
+        TextView appTitle = noteText("قبلة", 20f, 0xFFE5B64A, true);
         card.addView(appTitle, matchWrap(dp(46)));
 
         View divider = new View(this);
