@@ -125,7 +125,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("6.3 OTA + SECURITY", w * .114f, h * .116f, p);
+        c.drawText("7.0 PRODUCTION KEY", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -392,7 +392,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("قبلة   6.3   •   OTA آمن + SHA-256 + Navi/OEM",w*.5f,h*.958f,p);
+        c.drawText("قبلة   7.0   •   توقيع إنتاج ثابت + OTA آمن",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {
