@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 63
-        versionName '6.3-arabic-settings-ota'
+        versionCode 70
+        versionName '7.0-production-key'
     }
 
     buildFeatures {
@@ -25,11 +25,25 @@ android {
         buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json\""
     }
 
+    signingConfigs {
+        production {
+            def storePath = System.getenv("H9_SIGNING_STORE_FILE")
+            if (storePath != null && !storePath.isEmpty()) {
+                storeFile file(storePath)
+                storePassword System.getenv("H9_SIGNING_STORE_PASSWORD")
+                keyAlias System.getenv("H9_SIGNING_KEY_ALIAS")
+                keyPassword System.getenv("H9_SIGNING_KEY_PASSWORD")
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.production
             signingConfig.enableV1Signing = true
             signingConfig.enableV2Signing = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
