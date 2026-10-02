@@ -120,9 +120,8 @@ public class QiblaView extends View {
         p.setColor(0xFFF2F7F9);
         p.setTextSize(h * .046f);
         p.setFakeBoldText(true);
-        c.drawText("H9 ", w * .083f, h * .082f, p);
-        p.setColor(0xFFE5B64A);
-        c.drawText("Qibla", w * .126f, h * .082f, p);
+        p.setColor(0xFFF2F7F9);
+        c.drawText("قبلة", w * .083f, h * .082f, p);
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
@@ -393,7 +392,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(h*.018f);
         p.setColor(0xFF6F858E);
-        c.drawText("H 9   Q i b l a   6.2   •   OTA آمن + SHA-256 + Navi/OEM",w*.5f,h*.958f,p);
+        c.drawText("قبلة   6.2   •   OTA آمن + SHA-256 + Navi/OEM",w*.5f,h*.958f,p);
     }
 
     private static float calculateBearing(double lat,double lon) {
