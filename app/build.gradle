@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 61
-        versionName '6.1-silent-security'
+        versionCode 62
+        versionName '6.2-ota-compat'
     }
 
     buildFeatures {
