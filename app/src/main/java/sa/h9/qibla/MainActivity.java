@@ -177,9 +177,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         testGwmMapBinder();
         startGwmNaviHeadingIntegration();
 
-        if (!AppSecurity.verifyOwnSignature(this)) {
-            AppSecurity.showIntegrityFailureAndExit(this);
-        }
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
 
