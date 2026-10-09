@@ -247,10 +247,71 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         updateLp.bottomMargin = dp(12);
         card.addView(update, updateLp);
 
-        TextView aboutTitle = noteText("حول", 26f, 0xFFFFC857, true);
-        LinearLayout.LayoutParams aboutTitleLp = matchWrap(dp(48));
-        aboutTitleLp.topMargin = dp(8);
-        card.addView(aboutTitle, aboutTitleLp);
+        Button about = new Button(this);
+        about.setText("حول");
+        about.setTextSize(19f);
+        about.setTextColor(Color.WHITE);
+        about.setAllCaps(false);
+        GradientDrawable aboutSectionBg = new GradientDrawable();
+        aboutSectionBg.setColor(0xFF22323A);
+        aboutSectionBg.setCornerRadius(dp(22));
+        aboutSectionBg.setStroke(dp(1), 0xFFE5B64A);
+        about.setBackground(aboutSectionBg);
+        about.setOnClickListener(v -> {
+            dialog.dismiss();
+            handler.postDelayed(this::showAboutDetailsDialog, 120L);
+        });
+        LinearLayout.LayoutParams aboutSectionLp = new LinearLayout.LayoutParams(dp(250), dp(54));
+        aboutSectionLp.bottomMargin = dp(12);
+        card.addView(about, aboutSectionLp);
+
+        Button close = new Button(this);
+        close.setText("إغلاق");
+        close.setTextSize(20f);
+        close.setTextColor(Color.WHITE);
+        close.setAllCaps(false);
+        GradientDrawable closeBg = new GradientDrawable();
+        closeBg.setColor(0xFF117A7C);
+        closeBg.setCornerRadius(dp(24));
+        closeBg.setStroke(dp(1), 0xFF2FE0C7);
+        close.setBackground(closeBg);
+        close.setOnClickListener(v -> dialog.dismiss());
+        card.addView(close, new LinearLayout.LayoutParams(dp(220), dp(56)));
+
+        dialog.setContentView(card);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.72f;
+            window.setAttributes(attrs);
+        }
+        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
+        dialog.show();
+        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
+    }
+
+    private void showAboutDetailsDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(0xF2171D23);
+        cardBg.setCornerRadius(dp(28));
+        cardBg.setStroke(dp(2), 0xFFE5B64A);
+        card.setBackground(cardBg);
+
+        TextView appTitle = noteText("قبلة", 24f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(dp(48)));
+
+        TextView title = noteText("حول", 30f, 0xFFFFC857, true);
+        card.addView(title, matchWrap(dp(58)));
 
         TextView body = noteText("تم تطوير البرنامج بواسطة بندر بن سليمان حساب هافال H9 صدقة جارية عني وعنك وعن كل مسلم\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
         body.setLineSpacing(dp(2), 1.08f);
@@ -287,7 +348,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
         dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
-        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
+        if (window != null) {
+            window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT);
+            window.setGravity(Gravity.CENTER);
+        }
     }
 
     private void showDeveloperNoticeOnce() {
