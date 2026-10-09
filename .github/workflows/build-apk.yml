@@ -57,3 +57,5 @@ jobs:
           path: |
             dist/H9-Qibla-7.0-Production-Key-Haval-H9.apk
             dist/H9-Qibla-7.0-Production-Key-Haval-H9.sha256
+
+# secrets-ready-trigger
