@@ -32,7 +32,7 @@ android {
                 storeFile file(storePath)
                 storePassword System.getenv("H9_SIGNING_STORE_PASSWORD")
                 keyAlias System.getenv("H9_SIGNING_KEY_ALIAS")
-                keyPassword System.getenv("H9_SIGNING_KEY_PASSWORD")
+                keyPassword System.getenv("H9_SIGNING_STORE_PASSWORD")
                 enableV1Signing true
                 enableV2Signing true
             }
