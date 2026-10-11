@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 74
-        versionName '7.4-region-update-dialog-hotfix'
+        versionCode 75
+        versionName '7.5-manual-microg-guide-fajr'
     }
 
     buildFeatures {
