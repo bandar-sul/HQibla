@@ -127,7 +127,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("7.4 OTA", w * .114f, h * .116f, p);
+        c.drawText("7.5 MANUAL", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
