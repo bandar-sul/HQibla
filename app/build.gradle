@@ -11,7 +11,7 @@ android {
         minSdk 28
         targetSdk 28
         versionCode 75
-        versionName '7.5-manual-microg-guide-fajr'
+        versionName '7.5-manual-guide-microg-fajr'
     }
 
     buildFeatures {
