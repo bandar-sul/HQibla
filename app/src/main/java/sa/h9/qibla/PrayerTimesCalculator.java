@@ -12,6 +12,7 @@ import java.util.TimeZone;
  */
 public final class PrayerTimesCalculator {
     private static final int FAJR_UMM_AL_QURA_CORRECTION_MINUTES = 2;
+    private static final int UMM_AL_QURA_FAJR_CORRECTION_MINUTES = 2;
     private PrayerTimesCalculator() { }
 
     public static final class Result {
