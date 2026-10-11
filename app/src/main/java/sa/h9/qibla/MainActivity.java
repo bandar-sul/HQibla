@@ -56,6 +56,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String HEADING_PREFS = "h9_qibla_heading";
     private static final String KEY_LAST_HEADING = "last_heading";
     private static final String KEY_LAST_HEADING_SOURCE = "last_heading_source";
+    private static final String UI_PREFS = "h9_qibla_ui";
+    private static final String KEY_THEME_MODE = "theme_mode";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -139,6 +141,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
+        qiblaView.setThemeMode(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
@@ -249,6 +252,30 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(250), dp(54));
         updateLp.bottomMargin = dp(12);
         card.addView(update, updateLp);
+
+        TextView appearanceTitle = noteText("المظهر", 19f, 0xFFFFC857, true);
+        card.addView(appearanceTitle, matchWrap(dp(36)));
+
+        Button theme = new Button(this);
+        theme.setText("المظهر: " + themeModeLabel(qiblaView.getThemeMode()));
+        theme.setTextSize(18f);
+        theme.setTextColor(Color.WHITE);
+        theme.setAllCaps(false);
+        GradientDrawable themeBg = new GradientDrawable();
+        themeBg.setColor(0xFF22323A);
+        themeBg.setCornerRadius(dp(22));
+        themeBg.setStroke(dp(1), 0xFFE5B64A);
+        theme.setBackground(themeBg);
+        theme.setOnClickListener(v -> {
+            int next = qiblaView.getThemeMode() == QiblaView.THEME_AUTO ? QiblaView.THEME_DAY
+                    : (qiblaView.getThemeMode() == QiblaView.THEME_DAY ? QiblaView.THEME_NIGHT : QiblaView.THEME_AUTO);
+            qiblaView.setThemeMode(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME_MODE, next).apply();
+            theme.setText("المظهر: " + themeModeLabel(next));
+        });
+        LinearLayout.LayoutParams themeLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        themeLp.bottomMargin = dp(12);
+        card.addView(theme, themeLp);
 
         Button guide = new Button(this);
         guide.setText("طريقة استخدام البرنامج");
@@ -451,6 +478,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             window.setLayout(dp(760), WindowManager.LayoutParams.WRAP_CONTENT);
             window.setGravity(Gravity.CENTER);
         }
+    }
+
+    private String themeModeLabel(int mode) {
+        if (mode == QiblaView.THEME_DAY) return "نهاري";
+        if (mode == QiblaView.THEME_NIGHT) return "ليلي";
+        return "تلقائي";
     }
 
     private TextView noteText(String text, float sizeSp, int color, boolean bold) {
@@ -3434,32 +3467,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void resolveLocationName(double lat, double lon) {
+        String city = null;
+        String region = null;
+        boolean sa = true;
         try {
             Geocoder geocoder = new Geocoder(this, new Locale("ar"));
             List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
             if (results != null && !results.isEmpty()) {
                 android.location.Address a = results.get(0);
-                String city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
-                String region = firstNonEmpty(a.getAdminArea(), extractSaudiRegionFromAddress(a));
-                region = normalizeSaudiRegionName(region);
-
-                if ((region == null || region.trim().isEmpty()) && "SA".equalsIgnoreCase(a.getCountryCode())) {
-                    region = regionFromSaudiCoordinates(lat, lon);
-                }
-
-                StringBuilder place = new StringBuilder();
-                if (city != null && !city.trim().isEmpty()) place.append(city.trim());
-                if (region != null && !region.trim().isEmpty()
-                        && (city == null || !region.trim().equalsIgnoreCase(city.trim()))) {
-                    if (place.length() > 0) place.append(" • ");
-                    place.append(region.trim());
-                }
-                if (place.length() > 0) {
-                    final String finalName = place.toString();
-                    runOnUiThread(() -> qiblaView.setLocationName(finalName));
-                }
+                city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
+                String countryCode = a.getCountryCode();
+                sa = countryCode == null || countryCode.trim().isEmpty() || "SA".equalsIgnoreCase(countryCode);
+                region = normalizeSaudiRegionName(a.getAdminArea());
+                if (region == null) region = extractSaudiRegionFromAddress(a);
             }
         } catch (Exception ignored) { }
+
+        // The province must not depend on Android Geocoder. Some Haval/Tank units return
+        // only the city, an English/unknown adminArea, or no address at all.
+        if (sa && region == null) region = regionFromSaudiCoordinates(lat, lon);
+
+        final String finalCity = city == null || city.trim().isEmpty() ? "الموقع الحالي" : city.trim();
+        final String finalRegion = region == null ? "" : region.trim();
+        runOnUiThread(() -> {
+            qiblaView.setLocationName(finalCity);
+            qiblaView.setRegionName(finalRegion);
+        });
     }
 
     private String firstNonEmpty(String... values) {
@@ -3489,7 +3522,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (s.contains("الرياض") || low.contains("riyadh")) return "الرياض";
         if (s.contains("مكة") || low.contains("makkah") || low.contains("mecca")) return "مكة المكرمة";
         if (s.contains("المدينة") || low.contains("madinah") || low.contains("medina")) return "المدينة المنورة";
-        if (s.contains("الشرقية") || low.contains("eastern province") || low.contains("ash sharqiyah")) return "المنطقة الشرقية";
+        if (s.contains("الشرقية") || low.contains("eastern province") || low.contains("ash sharqiyah") || low.contains("sharqiyah")) return "المنطقة الشرقية";
         if (s.contains("عسير") || low.contains("asir")) return "عسير";
         if (s.contains("تبوك") || low.contains("tabuk")) return "تبوك";
         if (s.contains("حائل") || low.contains("hail") || low.contains("ha'il")) return "حائل";
@@ -3498,7 +3531,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (s.contains("نجران") || low.contains("najran")) return "نجران";
         if (s.contains("الباحة") || low.contains("al baha") || low.contains("bahah")) return "الباحة";
         if (s.contains("الجوف") || low.contains("al jawf") || low.contains("jawf")) return "الجوف";
-        return s.isEmpty() ? null : s;
+        return null;
     }
 
     private String regionFromSaudiCoordinates(double lat, double lon) {
