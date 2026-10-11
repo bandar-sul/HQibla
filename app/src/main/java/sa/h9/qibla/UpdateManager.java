@@ -5,6 +5,11 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Window;
+import android.widget.Button;
+import android.widget.TextView;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -70,9 +75,35 @@ public final class UpdateManager {
         if (activity.isFinishing()) return;
         String message = "الإصدار الجديد: " + name + (notes == null || notes.trim().isEmpty() ? "" : "\n\n" + notes)
                 + "\n\nسيتم التحقق من SHA-256 وشهادة التوقيع قبل التثبيت.";
-        new AlertDialog.Builder(activity).setTitle("يتوفر تحديث H9 Qibla").setMessage(message)
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("يتوفر تحديث قبلة")
+                .setMessage(message)
                 .setNegativeButton("لاحقًا", null)
-                .setPositiveButton("تنزيل وتثبيت", (d, w) -> downloadAndInstall(activity, code, apkUrl, sha256)).show();
+                .setPositiveButton("تنزيل وتثبيت", (d, w) -> downloadAndInstall(activity, code, apkUrl, sha256))
+                .create();
+        dialog.setOnShowListener(d -> {
+            Window window = dialog.getWindow();
+            if (window != null) {
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(0xFF171D23);
+                bg.setCornerRadius(28f);
+                bg.setStroke(2, 0xFFE5B64A);
+                window.setBackgroundDrawable(bg);
+            }
+            int titleId = activity.getResources().getIdentifier("alertTitle", "id", "android");
+            TextView titleView = dialog.findViewById(titleId);
+            if (titleView != null) titleView.setTextColor(0xFFFFC857);
+            TextView messageView = dialog.findViewById(android.R.id.message);
+            if (messageView != null) {
+                messageView.setTextColor(0xFFF1F5F6);
+                messageView.setTextSize(18f);
+            }
+            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            if (positive != null) positive.setTextColor(0xFF2FE0C7);
+            if (negative != null) negative.setTextColor(0xFFFFC857);
+        });
+        dialog.show();
     }
 
     private static void downloadAndInstall(Activity activity, int code, String apkUrl, String expectedSha256) {
