@@ -35,6 +35,7 @@ public class QiblaView extends View {
     private String prayerStatus = "بانتظار مواقيت الصلاة…";
     private String hijriDate = "";
     private String locationName = "الموقع الحالي";
+    private String regionName = "";
     private String[] prayerNames = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
     private String[] prayerTimes = {"--:--", "--:--", "--:--", "--:--", "--:--", "--:--"};
     private boolean hasLocation;
@@ -81,6 +82,7 @@ public class QiblaView extends View {
     public void setNetworkStatus(String text) { networkStatus = text; invalidate(); }
     public void setPrayerStatus(String text) { prayerStatus = text; invalidate(); }
     public void setLocationName(String text) { locationName = text; invalidate(); }
+    public void setRegionName(String text) { regionName = text == null ? "" : text; invalidate(); }
 
     public void setPrayerTimes(String[] names, String[] times, String hijri) {
         if (names != null && names.length == 6) prayerNames = names;
@@ -100,7 +102,7 @@ public class QiblaView extends View {
         drawCompass(c, w * .50f, h * .53f, Math.min(h * .34f, w * .205f));
         drawLeftCards(c, w, h);
         drawPrayerPanel(c, w, h);
-        drawFooter(c, w, h);
+
     }
 
     private void drawBackground(Canvas c, float w, float h) {
@@ -333,7 +335,8 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.RIGHT);
         p.setTextSize(h*.018f);
         p.setColor(0xFF2FE0C7);
-        c.drawText("الموقع: "+locationName,x+cw*.90f,ly+h*.035f,p);
+        String placeLine = "الموقع: " + locationName + (regionName.isEmpty() || regionName.equals(locationName) ? "" : " • " + regionName);
+        c.drawText(placeLine,x+cw*.90f,ly+h*.035f,p);
         p.setColor(0xFFB6C4CA);
         p.setTextSize(h*.016f);
         String coords = hasLocation ? String.format(Locale.US,"%.5f, %.5f",latitude,longitude) : "بانتظار الإحداثيات";
