@@ -75,6 +75,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private volatile boolean gwmNaviHeadingStarted;
     private volatile Object gwmNaviControl;
     private volatile Object gwmNaviDataListener;
+    private volatile boolean microGLocationRunning;
+    private volatile Object microGFusedClient;
     private QiblaView qiblaView;
     private TextView middlewareDiagnosticText;
     private TextView binderDiagnosticText;
@@ -176,6 +178,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         ensureLocationPermission();
         testGwmMapBinder();
         startGwmNaviHeadingIntegration();
+        startMicroGLocationSupport();
 
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
@@ -247,6 +250,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         updateLp.bottomMargin = dp(12);
         card.addView(update, updateLp);
 
+        Button guide = new Button(this);
+        guide.setText("طريقة استخدام البرنامج");
+        guide.setTextSize(19f);
+        guide.setTextColor(Color.WHITE);
+        guide.setAllCaps(false);
+        GradientDrawable guideBg = new GradientDrawable();
+        guideBg.setColor(0xFF165B63);
+        guideBg.setCornerRadius(dp(22));
+        guideBg.setStroke(dp(1), 0xFF2FE0C7);
+        guide.setBackground(guideBg);
+        guide.setOnClickListener(v -> {
+            dialog.dismiss();
+            handler.postDelayed(this::showUserGuideDialog, 120L);
+        });
+        LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        guideLp.bottomMargin = dp(12);
+        card.addView(guide, guideLp);
+
         Button about = new Button(this);
         about.setText("حول");
         about.setTextSize(19f);
@@ -313,7 +334,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         TextView title = noteText("حول", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
 
-        TextView body = noteText("تم تطوير البرنامج بواسطة بندر بن سليمان حساب هافال H9 صدقة جارية عني وعنك وعن كل مسلم\n\nللتواصل عبر الواتساب\n0539100194\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
+        TextView body = noteText("تم تطوير تطبيق قبلة بواسطة بندر بن سليمان لخدمة مستخدمي هافال وتانك.\n\nالتطبيق يعرض اتجاه القبلة، اتجاه المركبة، الموقع، ومواقيت الصلاة، مع دعم التحديثات عبر الإنترنت.\n\nهذا العمل صدقة جارية عني وعنك وعن كل مسلم.\n\nحساب تيك توك وسناب شات: h9_haval\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
         body.setLineSpacing(dp(2), 1.08f);
         card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
@@ -357,80 +378,62 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void showDeveloperNoticeOnce() {
         final SharedPreferences prefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
         if (prefs.getBoolean(KEY_NOTICE_SHOWN, false)) return;
+        showUserGuideDialog(() -> prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply(), true);
+    }
 
+    private void showUserGuideDialog() {
+        showUserGuideDialog(null, false);
+    }
+
+    private void showUserGuideDialog(final Runnable onContinue, boolean firstRun) {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(false);
+        dialog.setCancelable(!firstRun);
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        card.setPadding(dp(38), dp(22), dp(38), dp(26));
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(0xF2171D23);
         cardBg.setCornerRadius(dp(28));
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText("قبلة", 20f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(dp(46)));
-
-        View divider = new View(this);
-        GradientDrawable dividerBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0x001E4F54, 0xFFE5B64A, 0x001E4F54});
-        divider.setBackground(dividerBg);
-        LinearLayout.LayoutParams dividerLp = new LinearLayout.LayoutParams(dp(320), dp(1));
-        dividerLp.bottomMargin = dp(14);
-        card.addView(divider, dividerLp);
-
-        TextView title = noteText("ملاحظة", 30f, 0xFFFFC857, true);
-        LinearLayout.LayoutParams titleLp = matchWrap(dp(58));
-        titleLp.bottomMargin = dp(8);
-        card.addView(title, titleLp);
+        TextView title = noteText(firstRun ? "مرحبًا بك في قبلة" : "طريقة استخدام البرنامج", 29f, 0xFFFFC857, true);
+        card.addView(title, matchWrap(dp(58)));
 
         TextView body = noteText(
-                "تم تطوير هذا البرنامج بواسطة / بندر بن سليمان\n\n" +
-                "هذا العمل أجر عني وعنك وعن كل مسلم\n\n" +
-                "حساب تيك توك و سناب شات : h9_haval\n\n" +
-                "لا تنسون زيارة متجرنا",
-                20f, 0xFFF1F5F6, false);
-        body.setLineSpacing(dp(2), 1.08f);
-        LinearLayout.LayoutParams bodyLp = matchWrap(WindowManager.LayoutParams.WRAP_CONTENT);
-        bodyLp.bottomMargin = dp(10);
-        card.addView(body, bodyLp);
-
-        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
-        store.setPadding(dp(12), dp(8), dp(12), dp(12));
-        store.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com")));
-            } catch (Exception ignored) { }
-        });
-        LinearLayout.LayoutParams storeLp = matchWrap(dp(52));
-        storeLp.bottomMargin = dp(14);
-        card.addView(store, storeLp);
+                "وصف البرنامج\n" +
+                "تطبيق قبلة لمستخدمي هافال وتانك، يعرض اتجاه القبلة بالنسبة لاتجاه المركبة، الموقع، المنطقة، ومواقيت الصلاة.\n\n" +
+                "طريقة الاستخدام\n" +
+                "فعّل GPS وانتظر عدة ثوانٍ حتى يتم تحديد الموقع واستقرار اتجاه المركبة. السهم داخل البوصلة يوضح اتجاه القبلة بالنسبة لاتجاه السيارة.\n\n" +
+                "الموقع والمنطقة\n" +
+                "يعرض التطبيق اسم المدينة والمنطقة عند توفر بيانات الموقع.\n\n" +
+                "التحديث\n" +
+                "من الإعدادات اختر «فحص التحديثات». إذا توفر إصدار جديد اختر «تنزيل وتثبيت».\n\n" +
+                "نصيحة\n" +
+                "لأفضل دقة للبوصلة اترك التطبيق عدة ثوانٍ بعد التشغيل حتى يستقر الاتجاه.",
+                18f, 0xFFF1F5F6, false);
+        body.setLineSpacing(dp(2), 1.07f);
+        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
         Button continueButton = new Button(this);
-        continueButton.setText("متابعة");
-        continueButton.setTextSize(21f);
+        continueButton.setText(firstRun ? "بدء الاستخدام" : "إغلاق");
+        continueButton.setTextSize(20f);
         continueButton.setTextColor(Color.WHITE);
         continueButton.setAllCaps(false);
-        continueButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        continueButton.setGravity(Gravity.CENTER);
-        continueButton.setPadding(0, 0, 0, 0);
-        GradientDrawable buttonBg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xFF0B5960, 0xFF117A7C, 0xFF0B5960});
+        GradientDrawable buttonBg = new GradientDrawable();
+        buttonBg.setColor(0xFF117A7C);
         buttonBg.setCornerRadius(dp(24));
         buttonBg.setStroke(dp(1), 0xFF2FE0C7);
         continueButton.setBackground(buttonBg);
         continueButton.setOnClickListener(v -> {
-            prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
+            if (onContinue != null) onContinue.run();
             dialog.dismiss();
-            handler.postDelayed(this::applyImmersiveMode, 120L);
         });
-        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(230), dp(58));
+        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(250), dp(56));
+        buttonLp.topMargin = dp(16);
         card.addView(continueButton, buttonLp);
 
         dialog.setContentView(card);
@@ -442,9 +445,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             attrs.dimAmount = 0.72f;
             window.setAttributes(attrs);
         }
+        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
         if (window != null) {
-            window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT);
+            window.setLayout(dp(760), WindowManager.LayoutParams.WRAP_CONTENT);
             window.setGravity(Gravity.CENTER);
         }
     }
@@ -466,6 +470,67 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void startMicroGLocationSupport() {
+        if (microGLocationRunning) return;
+        microGLocationRunning = true;
+        handler.post(microGPollRunnable);
+    }
+
+    private final Runnable microGPollRunnable = new Runnable() {
+        @Override public void run() {
+            if (!microGLocationRunning) return;
+            requestMicroGLastLocation();
+            handler.postDelayed(this, 1500L);
+        }
+    };
+
+    private void requestMicroGLastLocation() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
+        try {
+            Context gmsContext = createPackageContext("com.google.android.gms",
+                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
+            ClassLoader cl = gmsContext.getClassLoader();
+
+            if (microGFusedClient == null) {
+                Class<?> locationServices = Class.forName("com.google.android.gms.location.LocationServices", true, cl);
+                java.lang.reflect.Method getter = locationServices.getMethod("getFusedLocationProviderClient", Context.class);
+                microGFusedClient = getter.invoke(null, this);
+            }
+            if (microGFusedClient == null) return;
+
+            java.lang.reflect.Method getLastLocation = microGFusedClient.getClass().getMethod("getLastLocation");
+            Object task = getLastLocation.invoke(microGFusedClient);
+            if (task == null) return;
+
+            Class<?> listenerClass = Class.forName("com.google.android.gms.tasks.OnSuccessListener", true, cl);
+            Object listener = java.lang.reflect.Proxy.newProxyInstance(cl, new Class[]{listenerClass},
+                    (proxy, method, args) -> {
+                        if ("onSuccess".equals(method.getName()) && args != null && args.length > 0 && args[0] instanceof Location) {
+                            Location loc = (Location) args[0];
+                            runOnUiThread(() -> {
+                                if (isBetterLocation(loc, lastLocation)) updateLocation(loc);
+                                updateLocationDiagnosticText("microG fused متصل");
+                            });
+                        }
+                        return null;
+                    });
+
+            java.lang.reflect.Method addSuccess = null;
+            for (java.lang.reflect.Method method : task.getClass().getMethods()) {
+                if ("addOnSuccessListener".equals(method.getName()) && method.getParameterTypes().length == 1
+                        && method.getParameterTypes()[0].getName().equals("com.google.android.gms.tasks.OnSuccessListener")) {
+                    addSuccess = method;
+                    break;
+                }
+            }
+            if (addSuccess != null) addSuccess.invoke(task, listener);
+        } catch (PackageManager.NameNotFoundException ignored) {
+            // microG / Google Play Services not installed: normal Android GPS/network path remains active.
+        } catch (Throwable ignored) {
+            // Optional integration must never break the native location path.
+        }
     }
 
     private void ensureLocationPermission() {
@@ -3516,6 +3581,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     @Override
     protected void onDestroy() {
+        microGLocationRunning = false;
+        handler.removeCallbacks(microGPollRunnable);
         oemDrRunning = false;
         oemLocationService = null;
         if (gwmBinderBound) {
