@@ -3374,11 +3374,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
             if (results != null && !results.isEmpty()) {
                 android.location.Address a = results.get(0);
-                String name = a.getLocality();
-                if (name == null || name.trim().isEmpty()) name = a.getSubAdminArea();
-                if (name == null || name.trim().isEmpty()) name = a.getAdminArea();
-                if (name != null && !name.trim().isEmpty()) {
-                    final String finalName = name;
+                String city = a.getLocality();
+                if (city == null || city.trim().isEmpty()) city = a.getSubAdminArea();
+                String region = a.getAdminArea();
+                if ((region == null || region.trim().isEmpty()) && a.getSubAdminArea() != null) {
+                    region = a.getSubAdminArea();
+                }
+                StringBuilder place = new StringBuilder();
+                if (city != null && !city.trim().isEmpty()) place.append(city.trim());
+                if (region != null && !region.trim().isEmpty()
+                        && (city == null || !region.trim().equalsIgnoreCase(city.trim()))) {
+                    if (place.length() > 0) place.append(" • ");
+                    place.append(region.trim());
+                }
+                if (place.length() > 0) {
+                    final String finalName = place.toString();
                     runOnUiThread(() -> qiblaView.setLocationName(finalName));
                 }
             }
@@ -3389,10 +3399,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (sensorManager == null) return;
         sensorManager.unregisterListener(this);
         if (rotationVectorSensor != null) {
-            sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI);
+            sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_GAME);
         } else {
-            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_UI);
-            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_UI);
+            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
+            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_GAME);
         }
     }
 
