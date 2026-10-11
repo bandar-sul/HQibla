@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 72
-        versionName '7.2-region-compass-ui'
+        versionCode 73
+        versionName '7.3-region-update-dialog-fix'
     }
 
     buildFeatures {
