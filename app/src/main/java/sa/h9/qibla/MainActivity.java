@@ -3374,12 +3374,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
             if (results != null && !results.isEmpty()) {
                 android.location.Address a = results.get(0);
-                String city = a.getLocality();
-                if (city == null || city.trim().isEmpty()) city = a.getSubAdminArea();
-                String region = a.getAdminArea();
-                if ((region == null || region.trim().isEmpty()) && a.getSubAdminArea() != null) {
-                    region = a.getSubAdminArea();
+                String city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
+                String region = firstNonEmpty(a.getAdminArea(), extractSaudiRegionFromAddress(a));
+                region = normalizeSaudiRegionName(region);
+
+                if ((region == null || region.trim().isEmpty()) && "SA".equalsIgnoreCase(a.getCountryCode())) {
+                    region = regionFromSaudiCoordinates(lat, lon);
                 }
+
                 StringBuilder place = new StringBuilder();
                 if (city != null && !city.trim().isEmpty()) place.append(city.trim());
                 if (region != null && !region.trim().isEmpty()
@@ -3393,6 +3395,63 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             }
         } catch (Exception ignored) { }
+    }
+
+    private String firstNonEmpty(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.trim().isEmpty()) return v.trim();
+        }
+        return null;
+    }
+
+    private String extractSaudiRegionFromAddress(android.location.Address a) {
+        StringBuilder all = new StringBuilder();
+        for (int i = 0; i <= a.getMaxAddressLineIndex(); i++) {
+            String line = a.getAddressLine(i);
+            if (line != null) all.append(' ').append(line);
+        }
+        all.append(' ').append(String.valueOf(a.getAdminArea()));
+        all.append(' ').append(String.valueOf(a.getSubAdminArea()));
+        return normalizeSaudiRegionName(all.toString());
+    }
+
+    private String normalizeSaudiRegionName(String value) {
+        if (value == null) return null;
+        String s = value.trim();
+        String low = s.toLowerCase(Locale.US);
+        if (s.contains("القصيم") || low.contains("qassim") || low.contains("qasim")) return "القصيم";
+        if (s.contains("الرياض") || low.contains("riyadh")) return "الرياض";
+        if (s.contains("مكة") || low.contains("makkah") || low.contains("mecca")) return "مكة المكرمة";
+        if (s.contains("المدينة") || low.contains("madinah") || low.contains("medina")) return "المدينة المنورة";
+        if (s.contains("الشرقية") || low.contains("eastern province") || low.contains("ash sharqiyah")) return "المنطقة الشرقية";
+        if (s.contains("عسير") || low.contains("asir")) return "عسير";
+        if (s.contains("تبوك") || low.contains("tabuk")) return "تبوك";
+        if (s.contains("حائل") || low.contains("hail") || low.contains("ha'il")) return "حائل";
+        if (s.contains("الحدود الشمالية") || low.contains("northern borders")) return "الحدود الشمالية";
+        if (s.contains("جازان") || low.contains("jazan") || low.contains("jizan")) return "جازان";
+        if (s.contains("نجران") || low.contains("najran")) return "نجران";
+        if (s.contains("الباحة") || low.contains("al baha") || low.contains("bahah")) return "الباحة";
+        if (s.contains("الجوف") || low.contains("al jawf") || low.contains("jawf")) return "الجوف";
+        return s.isEmpty() ? null : s;
+    }
+
+    private String regionFromSaudiCoordinates(double lat, double lon) {
+        // Fallback only when Android Geocoder omits the province.
+        if (lat >= 24.0 && lat <= 28.6 && lon >= 41.0 && lon <= 45.8) return "القصيم";
+        if (lat >= 22.0 && lat <= 27.8 && lon >= 44.0 && lon <= 48.8) return "الرياض";
+        if (lat >= 19.0 && lat <= 24.8 && lon >= 38.0 && lon <= 43.8) return "مكة المكرمة";
+        if (lat >= 22.0 && lat <= 27.5 && lon >= 37.0 && lon <= 42.5) return "المدينة المنورة";
+        if (lat >= 23.0 && lat <= 29.9 && lon >= 47.0 && lon <= 55.7) return "المنطقة الشرقية";
+        if (lat >= 17.0 && lat <= 21.8 && lon >= 40.5 && lon <= 44.5) return "عسير";
+        if (lat >= 26.0 && lat <= 30.5 && lon >= 34.5 && lon <= 39.8) return "تبوك";
+        if (lat >= 25.5 && lat <= 29.0 && lon >= 39.0 && lon <= 43.5) return "حائل";
+        if (lat >= 28.0 && lat <= 32.2 && lon >= 39.0 && lon <= 46.0) return "الحدود الشمالية";
+        if (lat >= 16.0 && lat <= 18.3 && lon >= 41.5 && lon <= 43.7) return "جازان";
+        if (lat >= 16.5 && lat <= 20.3 && lon >= 43.5 && lon <= 47.0) return "نجران";
+        if (lat >= 19.0 && lat <= 21.5 && lon >= 40.5 && lon <= 42.8) return "الباحة";
+        if (lat >= 28.5 && lat <= 32.5 && lon >= 35.5 && lon <= 41.5) return "الجوف";
+        return null;
     }
 
     private void registerHeadingSensors() {
