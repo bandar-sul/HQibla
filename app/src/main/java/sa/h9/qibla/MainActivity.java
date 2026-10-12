@@ -48,7 +48,7 @@ import java.util.Locale;
 public class MainActivity extends Activity implements LocationListener, SensorEventListener {
     private static final int REQ_LOCATION = 1001;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
-    private static final float COURSE_MIN_DISTANCE_M = 3.0f;
+    private static final float COURSE_MIN_DISTANCE_M = 2.0f;
     private static final long HEADING_STALE_MS = 7000L;
     private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
     private static final String NOTICE_PREFS = "h9_qibla_notice";
@@ -3564,10 +3564,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (sensorManager == null) return;
         sensorManager.unregisterListener(this);
         if (rotationVectorSensor != null) {
-            sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_GAME);
+            sensorManager.registerListener(this, rotationVectorSensor, 20000);
         } else {
-            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
-            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_GAME);
+            if (accelerometerSensor != null) sensorManager.registerListener(this, accelerometerSensor, 20000);
+            if (magneticSensor != null) sensorManager.registerListener(this, magneticSensor, 20000);
         }
     }
 
