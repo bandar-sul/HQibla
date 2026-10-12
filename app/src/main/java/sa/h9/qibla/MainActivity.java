@@ -448,13 +448,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 "فعّل GPS وانتظر عدة ثوانٍ حتى يتم تحديد الموقع واستقرار اتجاه المركبة. السهم داخل البوصلة يوضح اتجاه القبلة بالنسبة لاتجاه السيارة.\n\n" +
                 "الموقع والمنطقة\n" +
                 "يعرض التطبيق اسم المدينة والمنطقة عند توفر بيانات الموقع.\n\n" +
-                "التحديث\n" +
-                "من الإعدادات اختر «فحص التحديثات». إذا توفر إصدار جديد اختر «تنزيل وتثبيت».\n\n" +
+                "التثبيت\n" +
+                "هذه النسخة مخصصة للتحميل والتثبيت اليدوي فقط.\n\n" +
                 "نصيحة\n" +
                 "لأفضل دقة للبوصلة اترك التطبيق عدة ثوانٍ بعد التشغيل حتى يستقر الاتجاه.",
                 18f, 0xFFF1F5F6, false);
         body.setLineSpacing(dp(2), 1.07f);
         card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        TextView followTitle = noteText("تابعني على تيك توك وسناب شات", 19f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams followLp = matchWrap(dp(36));
+        followLp.topMargin = dp(12);
+        card.addView(followTitle, followLp);
+
+        TextView socialLink = noteText("@h9_haval  •  تيك توك", 19f, 0xFF65E8D6, true);
+        socialLink.setOnClickListener(v -> openWelcomeUrl("https://www.tiktok.com/@h9_haval"));
+        card.addView(socialLink, matchWrap(dp(40)));
+
+        TextView snapLink = noteText("@h9_haval  •  سناب شات", 19f, 0xFF65E8D6, true);
+        snapLink.setOnClickListener(v -> openWelcomeUrl("https://www.snapchat.com/add/h9_haval"));
+        card.addView(snapLink, matchWrap(dp(40)));
+
+        TextView storeTitle = noteText("متجر H9 – اضغط لزيارة المتجر", 19f, 0xFFFFC857, true);
+        storeTitle.setOnClickListener(v -> openWelcomeUrl("https://h9-story.com"));
+        LinearLayout.LayoutParams storeLp = matchWrap(dp(44));
+        storeLp.topMargin = dp(4);
+        card.addView(storeTitle, storeLp);
 
         Button continueButton = new Button(this);
         continueButton.setText(firstRun ? "بدء الاستخدام" : "إغلاق");
@@ -488,6 +507,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (window != null) {
             window.setLayout(dp(760), WindowManager.LayoutParams.WRAP_CONTENT);
             window.setGravity(Gravity.CENTER);
+        }
+    }
+
+    private void openWelcomeUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception ignored) {
+            android.widget.Toast.makeText(this, "تعذر فتح الرابط", android.widget.Toast.LENGTH_SHORT).show();
         }
     }
 
