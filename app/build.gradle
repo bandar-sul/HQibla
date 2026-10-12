@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 80
-        versionName '8.0-manual-ui-location'
+        versionCode 81
+        versionName '8.1-manual'
     }
 
     buildFeatures {
