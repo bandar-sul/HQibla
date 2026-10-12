@@ -50,7 +50,7 @@ public class QiblaView extends View {
 
     public QiblaView(Context context) {
         super(context);
-        p.setTypeface(android.graphics.Typeface.create("sans", android.graphics.Typeface.NORMAL));
+        p.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL));
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         setLayerType(LAYER_TYPE_SOFTWARE, null);
@@ -130,7 +130,7 @@ public class QiblaView extends View {
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
         drawTopBar(c, w, h);
-        drawCompass(c, w * .425f, h * .53f, Math.min(h * .215f, w * .126f));
+        drawCompass(c, w * .427f, h * .53f, Math.min(h * .236f, w * .132f));
         drawLeftCards(c, w, h);
         drawPrayerPanel(c, w, h);
 
@@ -162,7 +162,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         ts(h * .020f);
         p.setColor(goldColor());
-        c.drawText("8.0 MANUAL", w * .114f, h * .116f, p);
+        c.drawText("8.1 MANUAL", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(primaryTextColor());
@@ -214,7 +214,7 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h) {
-        float x = w * .018f, cardW = w * .158f, cardH = h * .116f;
+        float x = w * .018f, cardW = w * .178f, cardH = h * .116f;
         drawInfoCard(c, x, h*.205f, cardW, cardH, "زاوية القبلة", hasLocation ? String.format(Locale.US,"%.0f°", qiblaBearing) : "—", "◈", 0xFF2FE0C7);
         drawInfoCard(c, x, h*.342f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
         String accuracy = gpsAccuracy < 0 ? "—" : gpsAccuracy <= 12 ? "ممتازة" : gpsAccuracy <= 25 ? "جيدة" : String.format(Locale.US,"%.0f م", gpsAccuracy);
@@ -255,13 +255,13 @@ public class QiblaView extends View {
     private void drawCompass(Canvas c, float cx, float cy, float r) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
-        c.drawCircle(cx, cy, r*1.42f, p);
+        c.drawCircle(cx, cy, r*1.49f, p);
         stroke.setStrokeWidth(r*.012f);
         stroke.setColor(isNightTheme() ? 0x5530D9C4 : 0x55466F7B);
-        c.drawCircle(cx, cy, r*1.28f, stroke);
+        c.drawCircle(cx, cy, r*1.36f, stroke);
         stroke.setStrokeWidth(r*.006f);
         stroke.setColor(isNightTheme() ? 0x3348A8FF : 0x335D7E86);
-        c.drawCircle(cx, cy, r*1.12f, stroke);
+        c.drawCircle(cx, cy, r*1.18f, stroke);
         stroke.setStrokeWidth(r*.010f);
         stroke.setColor(0xAA25D9C4);
         p.setShadowLayer(24f, 0, 0, 0x9925D9C4);
