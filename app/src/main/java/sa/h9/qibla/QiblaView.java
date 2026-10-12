@@ -47,7 +47,6 @@ public class QiblaView extends View {
     public static final int THEME_NIGHT = 2;
     private int themeMode = THEME_AUTO;
     private float fontScale = 1.0f;
-    private float fontScale = 1.0f;
 
     public QiblaView(Context context) {
         super(context);
@@ -65,13 +64,6 @@ public class QiblaView extends View {
     }
 
     public int getThemeMode() { return themeMode; }
-
-    public void setFontScale(float scale) {
-        fontScale = Math.max(0.85f, Math.min(1.30f, scale));
-        invalidate();
-    }
-
-    public float getFontScale() { return fontScale; }
 
     public void setFontScale(float scale) {
         fontScale = Math.max(0.85f, Math.min(1.30f, scale));
@@ -264,14 +256,12 @@ public class QiblaView extends View {
         p.setStyle(Paint.Style.FILL);
         p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
         c.drawCircle(cx, cy, r*1.42f, p);
-        p.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(r*.012f);
         stroke.setColor(isNightTheme() ? 0x5530D9C4 : 0x55466F7B);
         c.drawCircle(cx, cy, r*1.28f, stroke);
         stroke.setStrokeWidth(r*.006f);
         stroke.setColor(isNightTheme() ? 0x3348A8FF : 0x335D7E86);
         c.drawCircle(cx, cy, r*1.12f, stroke);
-        p.setStyle(Paint.Style.FILL);
         stroke.setStrokeWidth(r*.010f);
         stroke.setColor(0xAA25D9C4);
         p.setShadowLayer(24f, 0, 0, 0x9925D9C4);
@@ -448,7 +438,7 @@ public class QiblaView extends View {
         p.setColor(0xFF6F858E);
         }
 
-    private void ts(float size) { ts(size * fontScale); }
+    private void ts(float size) { p.setTextSize(size * fontScale); }
 
     private int primaryTextColor() { return isNightTheme() ? 0xFFF4F7F8 : 0xFF102E38; }
     private int secondaryTextColor() { return isNightTheme() ? 0xFFB8C4C9 : 0xFF31545F; }
