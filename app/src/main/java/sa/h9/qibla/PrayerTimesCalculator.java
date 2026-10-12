@@ -6,14 +6,14 @@ import java.util.TimeZone;
 
 /**
  * Offline prayer-time calculator tuned for the Umm al-Qura convention:
- * Fajr = 18.5 degrees following the Umm al-Qura convention with a small +1 minute calibration,
- * Sunrise = standard -0.833 degree horizon with the same +1 minute calibration,
+ * Fajr = 18.5 degrees following the Umm al-Qura convention with a +2 minute calibration,
+ * Sunrise = standard -0.833 degree horizon without a blanket offset,
  * Isha = 90 minutes after Maghrib (120 in Ramadan),
  * Asr = standard Shafi/Maliki/Hanbali shadow factor 1.
  */
 public final class PrayerTimesCalculator {
-    private static final int FAJR_UMM_AL_QURA_CORRECTION_MINUTES = 1;
-    private static final int SUNRISE_CORRECTION_MINUTES = 1;
+    private static final int FAJR_UMM_AL_QURA_CORRECTION_MINUTES = 2;
+    private static final int SUNRISE_CORRECTION_MINUTES = 0;
     private PrayerTimesCalculator() { }
 
     public static final class Result {
