@@ -66,3 +66,5 @@ android {
 dependencies {
     implementation 'androidx.core:core:1.13.1'
 }
+
+// manual 8.1 release build trigger
