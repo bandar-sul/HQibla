@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 78
-        versionName '7.8-layout-compass-response'
+        versionCode 79
+        versionName '7.9-ui-true-north-compass'
     }
 
     buildFeatures {
