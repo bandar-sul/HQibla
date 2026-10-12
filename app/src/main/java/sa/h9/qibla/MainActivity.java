@@ -119,6 +119,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private long lastHeadingAt;
     private long lastPrayerCalcAt;
     private Location lastPrayerLocation;
+    private long lastPlaceResolveAt;
+    private Location lastPlaceResolveLocation;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final Runnable uiTick = new Runnable() {
@@ -679,7 +681,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             updateLiveCourse(location);
         }
         maybeRefreshPrayerTimes(location);
-        if (isNetworkConnected()) maybeResolveLocationName(location);
+        maybeResolveLocationName(location);
     }
 
     private void updateFusedCourse(Location location) {
@@ -3463,29 +3465,35 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void maybeResolveLocationName(Location location) {
         final double lat = location.getLatitude();
         final double lon = location.getLongitude();
-        new Thread(() -> resolveLocationName(lat, lon)).start();
+
+        // Province is available offline from coordinates and must not wait for Geocoder/network.
+        String offlineRegion = regionFromSaudiCoordinates(lat, lon);
+        if (offlineRegion != null && !offlineRegion.isEmpty()) qiblaView.setRegionName(offlineRegion);
+
+        long now = System.currentTimeMillis();
+        boolean movedEnough = lastPlaceResolveLocation == null || location.distanceTo(lastPlaceResolveLocation) >= 1500f;
+        if (!movedEnough && now - lastPlaceResolveAt < 10L * 60L * 1000L) return;
+        lastPlaceResolveAt = now;
+        lastPlaceResolveLocation = new Location(location);
+        new Thread(() -> resolveLocationName(lat, lon), "H9-Place-Resolve").start();
     }
 
     private void resolveLocationName(double lat, double lon) {
         String city = null;
-        String region = null;
-        boolean sa = true;
+        String region = regionFromSaudiCoordinates(lat, lon);
         try {
-            Geocoder geocoder = new Geocoder(this, new Locale("ar"));
-            List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
-            if (results != null && !results.isEmpty()) {
-                android.location.Address a = results.get(0);
-                city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
-                String countryCode = a.getCountryCode();
-                sa = countryCode == null || countryCode.trim().isEmpty() || "SA".equalsIgnoreCase(countryCode);
-                region = normalizeSaudiRegionName(a.getAdminArea());
-                if (region == null) region = extractSaudiRegionFromAddress(a);
+            if (Geocoder.isPresent()) {
+                Geocoder geocoder = new Geocoder(this, new Locale("ar"));
+                List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
+                if (results != null && !results.isEmpty()) {
+                    android.location.Address a = results.get(0);
+                    city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
+                    String geocoderRegion = normalizeSaudiRegionName(a.getAdminArea());
+                    if (geocoderRegion == null) geocoderRegion = extractSaudiRegionFromAddress(a);
+                    if (geocoderRegion != null) region = geocoderRegion;
+                }
             }
         } catch (Exception ignored) { }
-
-        // The province must not depend on Android Geocoder. Some Haval/Tank units return
-        // only the city, an English/unknown adminArea, or no address at all.
-        if (sa && region == null) region = regionFromSaudiCoordinates(lat, lon);
 
         final String finalCity = city == null || city.trim().isEmpty() ? "الموقع الحالي" : city.trim();
         final String finalRegion = region == null ? "" : region.trim();
