@@ -188,7 +188,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         startGwmNaviHeadingIntegration();
         startMicroGLocationSupport();
 
-        handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
+        // Manual distribution: never poll OTA manifest or prompt for updates.
     }
 
     private TextView createDiagnosticText(String text) {
@@ -242,21 +242,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         card.addView(appTitle, matchWrap(dp(48)));
         TextView title = noteText("الإعدادات", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
-
-        Button update = new Button(this);
-        update.setText("فحص التحديثات");
-        update.setTextSize(19f);
-        update.setTextColor(Color.WHITE);
-        update.setAllCaps(false);
-        GradientDrawable updateBg = new GradientDrawable();
-        updateBg.setColor(0xFF165B63);
-        updateBg.setCornerRadius(dp(22));
-        updateBg.setStroke(dp(1), 0xFF2FE0C7);
-        update.setBackground(updateBg);
-        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(250), dp(54));
-        updateLp.bottomMargin = dp(12);
-        card.addView(update, updateLp);
 
         TextView appearanceTitle = noteText("المظهر", 19f, 0xFFFFC857, true);
         card.addView(appearanceTitle, matchWrap(dp(36)));
@@ -3497,8 +3482,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         final double lon = location.getLongitude();
 
         // Province is available offline from coordinates and must not wait for Geocoder/network.
-        String offlineRegion = regionFromSaudiCoordinates(lat, lon);
-        if (offlineRegion != null && !offlineRegion.isEmpty()) qiblaView.setRegionName(offlineRegion);
+        String municipality = municipalityFromCoordinates(lat, lon);
+        if (municipality != null) qiblaView.setLocationName(municipality);
 
         long now = System.currentTimeMillis();
         boolean movedEnough = lastPlaceResolveLocation == null || location.distanceTo(lastPlaceResolveLocation) >= 1500f;
@@ -3518,7 +3503,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 if (results != null && !results.isEmpty()) {
                     android.location.Address a = results.get(0);
                     String geocoderCity = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
-                    if (geocoderCity != null && !geocoderCity.trim().isEmpty()) city = geocoderCity.trim();
+                    if (geocoderCity != null && !geocoderCity.trim().isEmpty()) {
+                        String candidate = geocoderCity.trim();
+                        // Prefer verified municipality over a broad province-level response.
+                        if (municipalityFromCoordinates(lat, lon) == null || normalizeSaudiRegionName(candidate) == null) city = candidate;
+                    }
                     String geocoderRegion = normalizeSaudiRegionName(a.getAdminArea());
                     if (geocoderRegion == null) geocoderRegion = extractSaudiRegionFromAddress(a);
                     if (geocoderRegion != null) region = geocoderRegion;
