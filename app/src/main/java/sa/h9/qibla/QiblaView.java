@@ -46,6 +46,7 @@ public class QiblaView extends View {
     public static final int THEME_DAY = 1;
     public static final int THEME_NIGHT = 2;
     private int themeMode = THEME_AUTO;
+    private float fontScale = 1.0f;
 
     public QiblaView(Context context) {
         super(context);
@@ -63,6 +64,13 @@ public class QiblaView extends View {
     }
 
     public int getThemeMode() { return themeMode; }
+
+    public void setFontScale(float scale) {
+        fontScale = Math.max(0.85f, Math.min(1.30f, scale));
+        invalidate();
+    }
+
+    public float getFontScale() { return fontScale; }
 
     public void setHeading(float value, String source) {
         float target = normalize(value);
@@ -138,7 +146,7 @@ public class QiblaView extends View {
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
         p.setColor(isNightTheme() ? 0x1500E4D0 : 0x2200D7C2);
-        c.drawCircle(w * .425f, h * .52f, h * .305f, p);
+        c.drawCircle(w * .425f, h * .52f, h * .365f, p);
         p.setColor(isNightTheme() ? 0x0D3E8CFF : 0x1837678E);
         c.drawCircle(w * .88f, h * .15f, h * .34f, p);
     }
@@ -147,21 +155,21 @@ public class QiblaView extends View {
         drawLogo(c, w * .045f, h * .072f, h * .046f);
         p.setTextAlign(Paint.Align.LEFT);
         p.setColor(primaryTextColor());
-        p.setTextSize(h * .046f);
+        ts(h * .046f);
         p.setFakeBoldText(true);
         p.setColor(primaryTextColor());
         c.drawText("قبلة", w * .083f, h * .082f, p);
         p.setFakeBoldText(false);
-        p.setTextSize(h * .020f);
+        ts(h * .020f);
         p.setColor(goldColor());
-        c.drawText("7.9", w * .114f, h * .116f, p);
+        c.drawText("8.0 MANUAL", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(primaryTextColor());
-        p.setTextSize(h * .031f);
+        ts(h * .031f);
         String qibla = hasLocation ? String.format(Locale.US, "اتجاه القبلة: %.0f° من الشمال", qiblaBearing) : "اتجاه القبلة: بانتظار الموقع";
         c.drawText(qibla, w * .50f, h * .064f, p);
-        p.setTextSize(h * .023f);
+        ts(h * .023f);
         p.setColor(secondaryTextColor());
         String deviation;
         if (hasLocation && hasHeading) {
@@ -176,11 +184,11 @@ public class QiblaView extends View {
         Date now = new Date();
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(primaryTextColor());
-        p.setTextSize(h * .048f);
+        ts(h * .048f);
         p.setFakeBoldText(true);
         c.drawText(new SimpleDateFormat("hh:mm a", Locale.US).format(now), w * .955f, h * .070f, p);
         p.setFakeBoldText(false);
-        p.setTextSize(h * .020f);
+        ts(h * .020f);
         p.setColor(secondaryTextColor());
         c.drawText(new SimpleDateFormat("EEEE d MMMM", ar).format(now), w * .955f, h * .105f, p);
         p.setColor(mutedTextColor());
@@ -206,30 +214,30 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h) {
-        float x = w * .018f, cardW = w * .126f, cardH = h * .094f;
+        float x = w * .018f, cardW = w * .158f, cardH = h * .116f;
         drawInfoCard(c, x, h*.205f, cardW, cardH, "زاوية القبلة", hasLocation ? String.format(Locale.US,"%.0f°", qiblaBearing) : "—", "◈", 0xFF2FE0C7);
-        drawInfoCard(c, x, h*.318f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
+        drawInfoCard(c, x, h*.342f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
         String accuracy = gpsAccuracy < 0 ? "—" : gpsAccuracy <= 12 ? "ممتازة" : gpsAccuracy <= 25 ? "جيدة" : String.format(Locale.US,"%.0f م", gpsAccuracy);
-        drawInfoCard(c, x, h*.431f, cardW, cardH, "دقة GPS", accuracy, "◎", 0xFF2FE0C7);
+        drawInfoCard(c, x, h*.479f, cardW, cardH, "دقة GPS", accuracy, "◎", 0xFF2FE0C7);
 
-        roundCard(c, new RectF(x, h*.544f, x+cardW, h*.594f));
+        roundCard(c, new RectF(x, h*.616f, x+cardW, h*.680f));
         p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(h*.013f);
+        ts(h*.013f);
         p.setColor(0xFF9FB0B7);
-        c.drawText(hasHeading ? headingSource : (hasLocation ? "بانتظار بوصلة السيارة" : "بانتظار GPS"), x+cardW*.5f, h*.577f, p);
+        c.drawText(hasHeading ? headingSource : (hasLocation ? "بانتظار بوصلة السيارة" : "بانتظار GPS"), x+cardW*.5f, h*.657f, p);
     }
 
     private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
         roundCard(c, new RectF(x, y, x+cw, y+ch));
         p.setTextAlign(Paint.Align.LEFT);
-        p.setTextSize(ch*.16f);
+        ts(ch*.16f);
         p.setColor(accent);
         c.drawText(icon, x+cw*.09f, y+ch*.53f, p);
         p.setColor(mutedTextColor());
-        p.setTextSize(ch*.125f);
+        ts(ch*.125f);
         c.drawText(label, x+cw*.45f, y+ch*.31f, p);
         p.setColor(primaryTextColor());
-        p.setTextSize(ch*.245f);
+        ts(ch*.245f);
         p.setFakeBoldText(true);
         c.drawText(value, x+cw*.45f, y+ch*.72f, p);
         p.setFakeBoldText(false);
@@ -246,8 +254,16 @@ public class QiblaView extends View {
 
     private void drawCompass(Canvas c, float cx, float cy, float r) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0x1200E8D0);
-        c.drawCircle(cx, cy, r*1.12f, p);
+        p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
+        c.drawCircle(cx, cy, r*1.42f, p);
+        p.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(r*.012f);
+        stroke.setColor(isNightTheme() ? 0x5530D9C4 : 0x55466F7B);
+        c.drawCircle(cx, cy, r*1.28f, stroke);
+        stroke.setStrokeWidth(r*.006f);
+        stroke.setColor(isNightTheme() ? 0x3348A8FF : 0x335D7E86);
+        c.drawCircle(cx, cy, r*1.12f, stroke);
+        p.setStyle(Paint.Style.FILL);
         stroke.setStrokeWidth(r*.010f);
         stroke.setColor(0xAA25D9C4);
         p.setShadowLayer(24f, 0, 0, 0x9925D9C4);
@@ -278,15 +294,15 @@ public class QiblaView extends View {
             c.save();
             c.rotate(angle,cx,cy);
             stroke.setStrokeWidth(r*.035f);
-            stroke.setColor(0xFF29E3C7);
+            stroke.setColor(0xFFE53935);
             c.drawLine(cx,cy+r*.02f,cx,cy-r*.49f,stroke);
             Path head = new Path();
             head.moveTo(cx,cy-r*.71f);
             head.lineTo(cx-r*.115f,cy-r*.47f);
             head.lineTo(cx+r*.115f,cy-r*.47f);
             head.close();
-            p.setColor(0xFF29E3C7);
-            p.setShadowLayer(20f,0,0,0xCC29E3C7);
+            p.setColor(0xFFE53935);
+            p.setShadowLayer(20f,0,0,0x99E53935);
             c.drawPath(head,p);
             p.clearShadowLayer();
             c.restore();
@@ -306,7 +322,7 @@ public class QiblaView extends View {
         c.drawRect(cx-r*.18f,cy-r*.045f,cx+r*.18f,cy+r*.015f,p);
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFFFE4A2);
-        p.setTextSize(r*.075f);
+        ts(r*.075f);
         c.drawText("الكعبة",cx,cy+r*.105f,p);
     }
 
@@ -314,7 +330,7 @@ public class QiblaView extends View {
         double a=Math.toRadians(deg-90);
         float x=cx+(float)Math.cos(a)*rr, y=cy+(float)Math.sin(a)*rr;
         p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(rr*.105f);
+        ts(rr*.105f);
         p.setColor(color);
         p.setFakeBoldText(true);
         Paint.FontMetrics fm=p.getFontMetrics();
@@ -327,7 +343,7 @@ public class QiblaView extends View {
         roundCard(c,new RectF(x,y,x+cw,y+ch));
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(goldColor());
-        p.setTextSize(h*.038f);
+        ts(h*.038f);
         p.setFakeBoldText(true);
         c.drawText("مواقيت الصلاة",x+cw*.90f,y+ch*.12f,p);
         p.setFakeBoldText(false);
@@ -342,7 +358,7 @@ public class QiblaView extends View {
                 stroke.setStrokeWidth(1.2f); stroke.setColor(0x88E5B64A);
                 c.drawRoundRect(new RectF(x+cw*.04f,ry-rowH*.72f,x+cw*.96f,ry+rowH*.25f),14f,14f,stroke);
             }
-            p.setTextSize(h*.031f);
+            ts(h*.031f);
             p.setTextAlign(Paint.Align.LEFT);
             p.setColor(i==next ? goldColor() : prayerPrimaryColor());
             c.drawText(prayerNames[i],x+cw*.10f,ry,p);
@@ -353,26 +369,26 @@ public class QiblaView extends View {
         float ny=h*.600f;
         roundCard(c,new RectF(x,ny,x+cw,ny+h*.075f));
         p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(h*.025f);
+        ts(h*.025f);
         p.setColor(goldColor());
         c.drawText(nextPrayerText(),x+cw*.5f,ny+h*.046f,p);
 
         float ly=h*.690f;
         roundCard(c,new RectF(x,ly,x+cw,ly+h*.125f));
         p.setTextAlign(Paint.Align.RIGHT);
-        p.setTextSize(h*.022f);
+        ts(h*.022f);
         p.setColor(prayerAccentColor());
-        String placeLine = "الموقع: " + locationName + (regionName.isEmpty() || regionName.equals(locationName) ? "" : " • " + regionName);
+        String placeLine = "الموقع: " + locationName;
         c.drawText(placeLine,x+cw*.90f,ly+h*.035f,p);
         p.setColor(prayerSecondaryColor());
-        p.setTextSize(h*.016f);
+        ts(h*.016f);
         String coords = hasLocation ? String.format(Locale.US,"%.5f, %.5f",latitude,longitude) : "بانتظار الإحداثيات";
         c.drawText(coords,x+cw*.90f,ly+h*.063f,p);
         p.setColor(isNightTheme() ? 0xFF7ED9EA : 0xFFCBEFF5);
         c.drawText((hasLocation?"GPS + الشبكة":"بانتظار GPS")+"  •  "+networkStatus,x+cw*.90f,ly+h*.090f,p);
         p.setTextAlign(Paint.Align.LEFT);
         p.setColor(prayerSecondaryColor());
-        p.setTextSize(h*.014f);
+        ts(h*.014f);
         c.drawText(prayerStatus,x+cw*.07f,ly+h*.111f,p);
     }
 
@@ -420,9 +436,11 @@ public class QiblaView extends View {
         stroke.setStrokeWidth(1f); stroke.setColor(0x334A6B75);
         c.drawLine(w*.025f,h*.91f,w*.975f,h*.91f,stroke);
         p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(h*.018f);
+        ts(h*.018f);
         p.setColor(0xFF6F858E);
         }
+
+    private void ts(float size) { p.setTextSize(size * fontScale); }
 
     private int primaryTextColor() { return isNightTheme() ? 0xFFF4F7F8 : 0xFF102E38; }
     private int secondaryTextColor() { return isNightTheme() ? 0xFFB8C4C9 : 0xFF31545F; }
