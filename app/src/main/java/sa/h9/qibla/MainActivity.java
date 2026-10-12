@@ -59,6 +59,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String KEY_LAST_HEADING_SOURCE = "last_heading_source";
     private static final String UI_PREFS = "h9_qibla_ui";
     private static final String KEY_THEME_MODE = "theme_mode";
+    private static final String KEY_FONT_SCALE = "font_scale";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -145,6 +146,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
         qiblaView.setThemeMode(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
+        qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
@@ -279,6 +281,27 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams themeLp = new LinearLayout.LayoutParams(dp(300), dp(54));
         themeLp.bottomMargin = dp(12);
         card.addView(theme, themeLp);
+
+        Button fontSize = new Button(this);
+        fontSize.setText("حجم الخط: " + fontScaleLabel(qiblaView.getFontScale()));
+        fontSize.setTextSize(18f);
+        fontSize.setTextColor(Color.WHITE);
+        fontSize.setAllCaps(false);
+        GradientDrawable fontBg = new GradientDrawable();
+        fontBg.setColor(0xFF22323A);
+        fontBg.setCornerRadius(dp(22));
+        fontBg.setStroke(dp(1), 0xFFE5B64A);
+        fontSize.setBackground(fontBg);
+        fontSize.setOnClickListener(v -> {
+            float current = qiblaView.getFontScale();
+            float next = current < 0.95f ? 1.0f : (current < 1.10f ? 1.18f : 0.90f);
+            qiblaView.setFontScale(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
+            fontSize.setText("حجم الخط: " + fontScaleLabel(next));
+        });
+        LinearLayout.LayoutParams fontLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        fontLp.bottomMargin = dp(12);
+        card.addView(fontSize, fontLp);
 
         Button guide = new Button(this);
         guide.setText("طريقة استخدام البرنامج");
@@ -481,6 +504,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             window.setLayout(dp(760), WindowManager.LayoutParams.WRAP_CONTENT);
             window.setGravity(Gravity.CENTER);
         }
+    }
+
+    private String fontScaleLabel(float scale) {
+        if (scale >= 1.10f) return "كبير";
+        if (scale <= 0.95f) return "صغير";
+        return "متوسط";
     }
 
     private String themeModeLabel(int mode) {
@@ -3448,7 +3477,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private void maybeRefreshPrayerTimes(Location location) {
         long now = System.currentTimeMillis();
-        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 10000f;
+        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 3000f;
         if (!movedFar && now - lastPrayerCalcAt < PRAYER_REFRESH_MS) return;
 
         lastPrayerCalcAt = now;
@@ -3480,7 +3509,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void resolveLocationName(double lat, double lon) {
-        String city = null;
+        String city = municipalityFromCoordinates(lat, lon);
         String region = regionFromSaudiCoordinates(lat, lon);
         try {
             if (Geocoder.isPresent()) {
@@ -3488,7 +3517,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
                 if (results != null && !results.isEmpty()) {
                     android.location.Address a = results.get(0);
-                    city = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
+                    String geocoderCity = firstNonEmpty(a.getLocality(), a.getSubLocality(), a.getSubAdminArea());
+                    if (geocoderCity != null && !geocoderCity.trim().isEmpty()) city = geocoderCity.trim();
                     String geocoderRegion = normalizeSaudiRegionName(a.getAdminArea());
                     if (geocoderRegion == null) geocoderRegion = extractSaudiRegionFromAddress(a);
                     if (geocoderRegion != null) region = geocoderRegion;
@@ -3500,7 +3530,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         final String finalRegion = region == null ? "" : region.trim();
         runOnUiThread(() -> {
             qiblaView.setLocationName(finalCity);
-            qiblaView.setRegionName(finalRegion);
+            qiblaView.setRegionName("");
         });
     }
 
@@ -3541,6 +3571,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (s.contains("الباحة") || low.contains("al baha") || low.contains("bahah")) return "الباحة";
         if (s.contains("الجوف") || low.contains("al jawf") || low.contains("jawf")) return "الجوف";
         return null;
+    }
+
+    private String municipalityFromCoordinates(double lat, double lon) {
+        String[] names = {"بريدة","عنيزة","الرس","البكيرية","البدائع","المذنب","رياض الخبراء","عيون الجواء","الأسياح","النبهانية","عقلة الصقور","الشماسية"};
+        double[][] pts = {{26.3592,43.9818},{26.0843,43.9936},{25.8694,43.4973},{26.1392,43.6578},{25.9946,43.7338},{25.8601,44.2223},{26.0560,43.5480},{26.4995,43.6290},{26.6084,44.2226},{25.8567,43.5861},{25.8344,42.8807},{26.3198,44.2552}};
+        float[] out = new float[1];
+        String best = null;
+        float bestM = Float.MAX_VALUE;
+        for (int i = 0; i < names.length; i++) {
+            Location.distanceBetween(lat, lon, pts[i][0], pts[i][1], out);
+            if (out[0] < bestM) { bestM = out[0]; best = names[i]; }
+        }
+        return bestM <= 45000f ? best : null;
     }
 
     private String regionFromSaudiCoordinates(double lat, double lon) {

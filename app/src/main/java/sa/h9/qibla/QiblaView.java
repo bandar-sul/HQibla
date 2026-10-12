@@ -47,6 +47,7 @@ public class QiblaView extends View {
     public static final int THEME_NIGHT = 2;
     private int themeMode = THEME_AUTO;
     private float fontScale = 1.0f;
+    private float fontScale = 1.0f;
 
     public QiblaView(Context context) {
         super(context);
@@ -64,6 +65,13 @@ public class QiblaView extends View {
     }
 
     public int getThemeMode() { return themeMode; }
+
+    public void setFontScale(float scale) {
+        fontScale = Math.max(0.85f, Math.min(1.30f, scale));
+        invalidate();
+    }
+
+    public float getFontScale() { return fontScale; }
 
     public void setFontScale(float scale) {
         fontScale = Math.max(0.85f, Math.min(1.30f, scale));
@@ -440,7 +448,7 @@ public class QiblaView extends View {
         p.setColor(0xFF6F858E);
         }
 
-    private void ts(float size) { p.setTextSize(size * fontScale); }
+    private void ts(float size) { ts(size * fontScale); }
 
     private int primaryTextColor() { return isNightTheme() ? 0xFFF4F7F8 : 0xFF102E38; }
     private int secondaryTextColor() { return isNightTheme() ? 0xFFB8C4C9 : 0xFF31545F; }

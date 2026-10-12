@@ -14,6 +14,7 @@ import java.util.TimeZone;
 public final class PrayerTimesCalculator {
     private static final int FAJR_UMM_AL_QURA_CORRECTION_MINUTES = 2;
     private static final int SUNRISE_CORRECTION_MINUTES = 0;
+    private static final int NOON_CORRECTION_MINUTES = 1;
     private PrayerTimesCalculator() { }
 
     public static final class Result {
@@ -61,7 +62,7 @@ public final class PrayerTimesCalculator {
                 + FAJR_UMM_AL_QURA_CORRECTION_MINUTES);
         int sunrise = normalizeMinute((int) Math.round(solarNoon - sunriseHourAngle)
                 + SUNRISE_CORRECTION_MINUTES);
-        int dhuhr = normalizeMinute((int) Math.round(solarNoon));
+        int dhuhr = normalizeMinute((int) Math.round(solarNoon) + NOON_CORRECTION_MINUTES);
         int asr = normalizeMinute((int) Math.round(solarNoon + asrHourAngle));
         int maghrib = normalizeMinute((int) Math.round(solarNoon + sunriseHourAngle));
 
