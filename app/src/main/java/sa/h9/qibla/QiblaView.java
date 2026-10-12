@@ -110,7 +110,7 @@ public class QiblaView extends View {
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
         drawTopBar(c, w, h);
-        drawCompass(c, w * .50f, h * .53f, Math.min(h * .29f, w * .175f));
+        drawCompass(c, w * .50f, h * .53f, Math.min(h * .235f, w * .140f));
         drawLeftCards(c, w, h);
         drawPrayerPanel(c, w, h);
 
@@ -121,7 +121,7 @@ public class QiblaView extends View {
         if (isNightTheme()) {
             p.setShader(new LinearGradient(0, 0, w, h, 0xFF04101B, 0xFF01060B, Shader.TileMode.CLAMP));
         } else {
-            p.setShader(new LinearGradient(0, 0, w, h, 0xFF527585, 0xFF9BB4BC, Shader.TileMode.CLAMP));
+            p.setShader(new LinearGradient(0, 0, w, h, 0xFF1E5667, 0xFF477B86, Shader.TileMode.CLAMP));
         }
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
@@ -142,7 +142,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         p.setTextSize(h * .020f);
         p.setColor(0xFFE5B64A);
-        c.drawText("7.6", w * .114f, h * .116f, p);
+        c.drawText("7.7", w * .114f, h * .116f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(0xFFF4F7F8);
@@ -225,7 +225,7 @@ public class QiblaView extends View {
 
     private void roundCard(Canvas c, RectF r) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(isNightTheme() ? 0xA80A1822 : 0xC8243943);
+        p.setColor(isNightTheme() ? 0xA80A1822 : 0xE014303B);
         c.drawRoundRect(r, 24f, 24f, p);
         stroke.setStrokeWidth(1.5f);
         stroke.setColor(0x334B7180);
