@@ -23,6 +23,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.hardware.GeomagneticField;
 import android.view.Surface;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -3587,12 +3588,23 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void applySensorHeading(float headingValue) {
         if (Float.isNaN(headingValue)) return;
         long now = System.currentTimeMillis();
-        if (now - lastOemHeadingAt < 2500L) return;
+        if (now - lastOemHeadingAt < 1500L) return;
         boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
         if (!gpsFreshAndMoving) {
+            float trueHeading = headingValue;
+            if (lastLocation != null) {
+                try {
+                    GeomagneticField field = new GeomagneticField(
+                            (float) lastLocation.getLatitude(),
+                            (float) lastLocation.getLongitude(),
+                            lastLocation.hasAltitude() ? (float) lastLocation.getAltitude() : 0f,
+                            now);
+                    trueHeading = normalize(headingValue + field.getDeclination());
+                } catch (Throwable ignored) { }
+            }
             lastHeadingAt = now;
-            saveHeading(headingValue, "بوصلة الشاشة / الحساس");
-            qiblaView.setHeading(headingValue, "بوصلة الشاشة / الحساس");
+            saveHeading(trueHeading, "بوصلة الشاشة • شمال حقيقي");
+            qiblaView.setHeading(trueHeading, "بوصلة الشاشة • شمال حقيقي");
         }
     }
 
