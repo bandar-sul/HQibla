@@ -188,7 +188,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         startGwmNaviHeadingIntegration();
         startMicroGLocationSupport();
 
-        handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
+        // Automatic OTA checks run while the app is visible; offline launches retry when connectivity returns.
     }
 
     private TextView createDiagnosticText(String text) {
@@ -694,11 +694,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView.setNetworkStatus(isNetworkConnected() ? "الإنترنت متصل" : "بدون إنترنت");
     }
 
+    private final Runnable autoOtaCheck = new Runnable() {
+        @Override public void run() {
+            if (isFinishing() || isDestroyed() || UpdateManager.hasCompletedAutomaticCheck()) return;
+            UpdateManager.checkForUpdates(MainActivity.this, false);
+            handler.postDelayed(this, 30000L);
+        }
+    };
+
     @Override
     protected void onResume() {
         super.onResume();
         applyImmersiveMode();
         updateNetworkStatus();
+        handler.removeCallbacks(autoOtaCheck);
+        if (!UpdateManager.hasCompletedAutomaticCheck()) handler.postDelayed(autoOtaCheck, 1500L);
         handler.removeCallbacks(uiTick);
         handler.post(uiTick);
         registerHeadingSensors();
@@ -710,6 +720,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(uiTick);
+        handler.removeCallbacks(autoOtaCheck);
         if (sensorManager != null) sensorManager.unregisterListener(this);
         try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
     }
@@ -3714,6 +3725,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     protected void onDestroy() {
         microGLocationRunning = false;
         handler.removeCallbacks(microGPollRunnable);
+        handler.removeCallbacks(autoOtaCheck);
         oemDrRunning = false;
         oemLocationService = null;
         if (gwmBinderBound) {
