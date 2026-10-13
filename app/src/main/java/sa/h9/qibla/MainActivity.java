@@ -244,14 +244,17 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         card.addView(title, matchWrap(dp(58)));
 
         Button update = new Button(this);
-        update.setText("فحص التحديثات");
-        update.setTextSize(19f);
+        update.setText("فحص التحديثات OTA");
+        update.setTextSize(21f);
         update.setTextColor(Color.WHITE);
         update.setAllCaps(false);
         update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
         LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(300), dp(54));
         updateLp.bottomMargin = dp(12);
         card.addView(update, updateLp);
+
+        TextView buildVersion = noteText("الإصدار المثبت: " + BuildConfig.VERSION_NAME, 16f, 0xFFB9DBE0, false);
+        card.addView(buildVersion, matchWrap(dp(32)));
 
         TextView appearanceTitle = noteText("المظهر", 19f, 0xFFFFC857, true);
         card.addView(appearanceTitle, matchWrap(dp(36)));
