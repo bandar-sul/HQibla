@@ -243,16 +243,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         TextView title = noteText("الإعدادات", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
 
-        Button update = new Button(this);
-        update.setText("فحص التحديثات OTA");
-        update.setTextSize(21f);
-        update.setTextColor(Color.WHITE);
-        update.setAllCaps(false);
-        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(300), dp(54));
-        updateLp.bottomMargin = dp(12);
-        card.addView(update, updateLp);
-
         TextView buildVersion = noteText("الإصدار المثبت: " + BuildConfig.VERSION_NAME, 16f, 0xFFB9DBE0, false);
         card.addView(buildVersion, matchWrap(dp(32)));
 
@@ -318,6 +308,22 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(dp(300), dp(54));
         guideLp.bottomMargin = dp(12);
         card.addView(guide, guideLp);
+
+        Button update = new Button(this);
+        update.setText("فحص تحديثات OTA");
+        update.setTextSize(19f);
+        update.setTextColor(Color.WHITE);
+        update.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        update.setAllCaps(false);
+        GradientDrawable updateBg = new GradientDrawable();
+        updateBg.setColor(0xFF22323A);
+        updateBg.setCornerRadius(dp(22));
+        updateBg.setStroke(dp(1), 0xFFE5B64A);
+        update.setBackground(updateBg);
+        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
+        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        updateLp.bottomMargin = dp(12);
+        card.addView(update, updateLp);
 
         Button about = new Button(this);
         about.setText("حول");
