@@ -14,6 +14,9 @@ import android.widget.LinearLayout;
 import android.widget.Button;
 import android.widget.TextView;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.content.Context;
 import android.os.Build;
 import android.provider.Settings;
 import android.widget.Toast;
@@ -31,17 +34,26 @@ import java.security.MessageDigest;
 import java.util.Locale;
 
 public final class UpdateManager {
-    private static final String PREFS = "h9_qibla_ota";
-    private static final String KEY_LAST_AUTO_CHECK = "last_auto_check";
-    private static final long AUTO_CHECK_INTERVAL = 24L * 60L * 60L * 1000L;
+    private static volatile boolean autoCheckCompleted;
+    private static volatile boolean autoCheckInFlight;
+    private static volatile int promptedVersion = -1;
+
+    public static boolean hasCompletedAutomaticCheck() { return autoCheckCompleted; }
+
+    private static boolean hasInternet(Activity activity) {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo info = cm == null ? null : cm.getActiveNetworkInfo();
+            return info != null && info.isConnected();
+        } catch (Exception ignored) { return false; }
+    }
     private UpdateManager() { }
 
     public static void checkForUpdates(Activity activity, boolean manual) {
         if (activity == null || activity.isFinishing()) return;
         if (!manual) {
-            long last = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).getLong(KEY_LAST_AUTO_CHECK, 0L);
-            if (System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL) return;
-            activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).edit().putLong(KEY_LAST_AUTO_CHECK, System.currentTimeMillis()).apply();
+            if (autoCheckCompleted || autoCheckInFlight || !hasInternet(activity)) return;
+            autoCheckInFlight = true;
         }
         if (manual) Toast.makeText(activity, "جاري فحص التحديثات…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
@@ -59,6 +71,7 @@ public final class UpdateManager {
                 }
                 JSONObject j = new JSONObject(body.toString());
                 int remoteCode = j.getInt("versionCode");
+                if (!manual) autoCheckCompleted = true;
                 String remoteName = j.optString("versionName", String.valueOf(remoteCode));
                 String apkUrl = j.getString("apkUrl");
                 String sha256 = normalizeHex(j.getString("sha256"));
@@ -67,10 +80,17 @@ public final class UpdateManager {
                     if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, "أنت على أحدث إصدار", Toast.LENGTH_LONG).show());
                     return;
                 }
-                activity.runOnUiThread(() -> showUpdateDialog(activity, remoteCode, remoteName, apkUrl, sha256, notes));
+                activity.runOnUiThread(() -> {
+                    if (!manual && promptedVersion == remoteCode) return;
+                    promptedVersion = remoteCode;
+                    if (!activity.isFinishing() && !activity.isDestroyed()) showUpdateDialog(activity, remoteCode, remoteName, apkUrl, sha256, notes);
+                });
             } catch (Throwable e) {
                 if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, "تعذر فحص التحديثات الآن", Toast.LENGTH_LONG).show());
-            } finally { if (c != null) c.disconnect(); }
+            } finally {
+                if (!manual) autoCheckInFlight = false;
+                if (c != null) c.disconnect();
+            }
         }, "H9-OTA-Check").start();
     }
 
