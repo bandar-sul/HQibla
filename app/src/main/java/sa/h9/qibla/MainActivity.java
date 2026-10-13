@@ -188,7 +188,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         startGwmNaviHeadingIntegration();
         startMicroGLocationSupport();
 
-        // Manual distribution: never poll OTA manifest or prompt for updates.
+        handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
 
     private TextView createDiagnosticText(String text) {
@@ -242,6 +242,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         card.addView(appTitle, matchWrap(dp(48)));
         TextView title = noteText("الإعدادات", 30f, 0xFFFFC857, true);
         card.addView(title, matchWrap(dp(58)));
+
+        Button update = new Button(this);
+        update.setText("فحص التحديثات");
+        update.setTextSize(19f);
+        update.setTextColor(Color.WHITE);
+        update.setAllCaps(false);
+        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
+        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        updateLp.bottomMargin = dp(12);
+        card.addView(update, updateLp);
 
         TextView appearanceTitle = noteText("المظهر", 19f, 0xFFFFC857, true);
         card.addView(appearanceTitle, matchWrap(dp(36)));
