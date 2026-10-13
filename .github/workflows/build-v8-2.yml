@@ -2,11 +2,11 @@ name: H9 Qibla 8.2 Auto OTA APK
 on:
   workflow_dispatch:
   push:
-    branches: [ manual-v8-2-prayer-ui ]
+    branches: [ v8-2-auto-ota ]
     paths:
       - 'app/**'
       - 'build.gradle'
-      - '.github/workflows/manual-v8-2.yml'
+      - '.github/workflows/build-v8-2.yml'
 permissions:
   contents: write
 jobs:
