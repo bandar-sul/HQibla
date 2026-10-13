@@ -60,13 +60,9 @@ jobs:
             dist/H9-Qibla-8.1-Manual-Haval-H9.apk
             dist/H9-Qibla-8.1-Manual-Haval-H9.sha256
 
-# secrets-ready-trigger
-
-# secrets-ready-trigger-3
-
-      - name: Publish manual-only APK (not OTA)
+      - name: Publish signed 8.1 APK for manual download and verified OTA
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v8.1-manual >/dev/null 2>&1 || gh release create v8.1-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.1 Manual" --notes "Manual APK download only; no OTA manifest updated." --prerelease
+          gh release view v8.1-manual >/dev/null 2>&1 || gh release create v8.1-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.1 Manual" --notes "Signed APK for manual download; OTA manifest updated separately after signature verification." --prerelease
           gh release upload v8.1-manual dist/H9-Qibla-8.1-Manual-Haval-H9.apk dist/H9-Qibla-8.1-Manual-Haval-H9.sha256 --clobber
