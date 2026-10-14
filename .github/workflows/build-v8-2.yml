@@ -55,14 +55,14 @@ jobs:
           sha256sum dist/H9-Qibla-8.2.1-Prayer-Audit.apk | tee dist/H9-Qibla-8.2.1-Prayer-Audit.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: H9-Qibla-8.2-Manual-Haval-H9
+          name: H9-Qibla-8.2.1-Prayer-Audit
           path: |
-            dist/H9-Qibla-8.2-Manual-Haval-H9.apk
-            dist/H9-Qibla-8.2-Manual-Haval-H9.sha256
+            dist/H9-Qibla-8.2.1-Prayer-Audit.apk
+            dist/H9-Qibla-8.2.1-Prayer-Audit.sha256
 
-      - name: Publish signed 8.2 APK for manual download and verified OTA
+      - name: Publish signed 8.2.1 APK for manual download only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v8.2.1-manual >/dev/null 2>&1 || gh release create v8.2-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.2.1 Manual Prayer Audit" --notes "Manual APK with prayer-time calibration and Buraydah reference regression test. OTA manifest is not modified by this workflow." --prerelease
-          gh release upload v8.2-manual dist/H9-Qibla-8.2-Manual-Haval-H9.apk dist/H9-Qibla-8.2-Manual-Haval-H9.sha256 --clobber
+          gh release view v8.2.1-manual >/dev/null 2>&1 || gh release create v8.2.1-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.2.1 Manual Prayer Audit" --notes "Manual APK with prayer-time calibration and Buraydah reference regression test. OTA manifest is not modified by this workflow." --prerelease
+          gh release upload v8.2.1-manual dist/H9-Qibla-8.2.1-Prayer-Audit.apk dist/H9-Qibla-8.2.1-Prayer-Audit.sha256 --clobber
