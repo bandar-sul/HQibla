@@ -46,7 +46,8 @@ public class QiblaView extends View {
     public static final int THEME_DAY = 1;
     public static final int THEME_NIGHT = 2;
     private int themeMode = THEME_AUTO;
-    private float fontScale = 1.0f;
+    private float fontScale = 1.15f;
+    private String fontFamily = "sans-serif";
 
     public QiblaView(Context context) {
         super(context);
@@ -66,11 +67,28 @@ public class QiblaView extends View {
     public int getThemeMode() { return themeMode; }
 
     public void setFontScale(float scale) {
-        fontScale = Math.max(0.85f, Math.min(1.30f, scale));
+        fontScale = Math.max(0.85f, Math.min(1.45f, scale));
         invalidate();
     }
 
     public float getFontScale() { return fontScale; }
+
+    public void setFontFamily(String family) {
+        String[] allowed = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
+        for (String candidate : allowed) {
+            if (candidate.equals(family)) {
+                fontFamily = candidate;
+                p.setTypeface(android.graphics.Typeface.create(candidate, android.graphics.Typeface.NORMAL));
+                invalidate();
+                return;
+            }
+        }
+        fontFamily = "sans-serif";
+        p.setTypeface(android.graphics.Typeface.create(fontFamily, android.graphics.Typeface.NORMAL));
+        invalidate();
+    }
+
+    public String getFontFamily() { return fontFamily; }
 
     public void setHeading(float value, String source) {
         float target = normalize(value);

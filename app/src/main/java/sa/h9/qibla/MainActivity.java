@@ -60,6 +60,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String UI_PREFS = "h9_qibla_ui";
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_FONT_SCALE = "font_scale";
+    private static final String KEY_FONT_FAMILY = "font_family";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -147,6 +148,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView = new QiblaView(this);
         qiblaView.setThemeMode(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
         qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));
+        qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
@@ -281,8 +283,13 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         fontBg.setStroke(dp(1), 0xFFE5B64A);
         fontSize.setBackground(fontBg);
         fontSize.setOnClickListener(v -> {
+            float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};
             float current = qiblaView.getFontScale();
-            float next = current < 0.95f ? 1.0f : (current < 1.10f ? 1.18f : 0.90f);
+            int currentIndex = 0;
+            for (int i = 0; i < sizes.length; i++) {
+                if (Math.abs(sizes[i] - current) < 0.04f) currentIndex = i;
+            }
+            float next = sizes[(currentIndex + 1) % sizes.length];
             qiblaView.setFontScale(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
             fontSize.setText("حجم الخط: " + fontScaleLabel(next));
@@ -290,6 +297,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams fontLp = new LinearLayout.LayoutParams(dp(300), dp(54));
         fontLp.bottomMargin = dp(12);
         card.addView(fontSize, fontLp);
+
+        Button fontFamily = new Button(this);
+        String[] fontNames = {"نسخ عربي", "نسخ متوسط", "نسخ كلاسيكي", "نسخ مضغوط", "نسخ حر"};
+        String[] fontValues = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
+        fontFamily.setText("نوع الخط: " + fontName(qiblaView.getFontFamily(), fontValues, fontNames));
+        fontFamily.setTextSize(18f);
+        fontFamily.setTextColor(Color.WHITE);
+        fontFamily.setAllCaps(false);
+        GradientDrawable familyBg = new GradientDrawable();
+        familyBg.setColor(0xFF22323A);
+        familyBg.setCornerRadius(dp(22));
+        familyBg.setStroke(dp(1), 0xFFE5B64A);
+        fontFamily.setBackground(familyBg);
+        fontFamily.setOnClickListener(v -> {
+            int index = 0;
+            for (int i = 0; i < fontValues.length; i++) {
+                if (fontValues[i].equals(qiblaView.getFontFamily())) index = i;
+            }
+            String next = fontValues[(index + 1) % fontValues.length];
+            qiblaView.setFontFamily(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putString(KEY_FONT_FAMILY, next).apply();
+            fontFamily.setText("نوع الخط: " + fontName(next, fontValues, fontNames));
+        });
+        LinearLayout.LayoutParams familyLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        familyLp.bottomMargin = dp(12);
+        card.addView(fontFamily, familyLp);
 
         Button guide = new Button(this);
         guide.setText("طريقة استخدام البرنامج");
@@ -368,6 +401,13 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
         if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
+    }
+
+    private String fontName(String value, String[] values, String[] labels) {
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(value)) return labels[i];
+        }
+        return labels[0];
     }
 
     private void showAboutDetailsDialog() {
