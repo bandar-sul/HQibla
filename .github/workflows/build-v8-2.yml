@@ -1,8 +1,8 @@
-name: H9 Qibla 8.2 Auto OTA APK
+name: H9 Qibla 8.2.1 Manual Prayer Audit APK
 on:
   workflow_dispatch:
   push:
-    branches: [ v8-2-auto-ota ]
+    branches: [ v8-2-prayer-audit ]
     paths:
       - 'app/**'
       - 'build.gradle'
@@ -39,7 +39,7 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build signed production release
-        run: gradle clean assembleRelease --stacktrace
+        run: gradle clean testReleaseUnitTest assembleRelease --stacktrace
       - name: Verify APK signature
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
@@ -51,8 +51,8 @@ jobs:
       - name: Package APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/H9-Qibla-8.2-Manual-Haval-H9.apk
-          sha256sum dist/H9-Qibla-8.2-Manual-Haval-H9.apk | tee dist/H9-Qibla-8.2-Manual-Haval-H9.sha256
+          cp app/build/outputs/apk/release/app-release.apk dist/H9-Qibla-8.2.1-Prayer-Audit.apk
+          sha256sum dist/H9-Qibla-8.2.1-Prayer-Audit.apk | tee dist/H9-Qibla-8.2.1-Prayer-Audit.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: H9-Qibla-8.2-Manual-Haval-H9
@@ -64,5 +64,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v8.2-manual >/dev/null 2>&1 || gh release create v8.2-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.2 Manual" --notes "Signed APK for manual download; OTA manifest updated separately after signature verification." --prerelease
+          gh release view v8.2.1-manual >/dev/null 2>&1 || gh release create v8.2-manual --target "$GITHUB_SHA" --title "H9 Qibla 8.2.1 Manual Prayer Audit" --notes "Manual APK with prayer-time calibration and Buraydah reference regression test. OTA manifest is not modified by this workflow." --prerelease
           gh release upload v8.2-manual dist/H9-Qibla-8.2-Manual-Haval-H9.apk dist/H9-Qibla-8.2-Manual-Haval-H9.sha256 --clobber
