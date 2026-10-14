@@ -9,12 +9,14 @@ import java.util.TimeZone;
  * Fajr = 18.5 degrees following the Umm al-Qura convention with a +2 minute calibration,
  * Sunrise = standard -0.833 degree horizon without a blanket offset,
  * Isha = 90 minutes after Maghrib (120 in Ramadan),
- * Asr = standard Shafi/Maliki/Hanbali shadow factor 1.
+ * Asr = standard Shafi/Maliki/Hanbali shadow factor 1, with a one-minute
+ * rounding calibration against the published Buraydah Umm al-Qura reference.
  */
 public final class PrayerTimesCalculator {
     private static final int FAJR_UMM_AL_QURA_CORRECTION_MINUTES = 2;
     private static final int SUNRISE_CORRECTION_MINUTES = 0;
     private static final int NOON_CORRECTION_MINUTES = 1;
+    private static final int ASR_UMM_AL_QURA_CORRECTION_MINUTES = 1;
     private PrayerTimesCalculator() { }
 
     public static final class Result {
@@ -63,7 +65,8 @@ public final class PrayerTimesCalculator {
         int sunrise = normalizeMinute((int) Math.round(solarNoon - sunriseHourAngle)
                 + SUNRISE_CORRECTION_MINUTES);
         int dhuhr = normalizeMinute((int) Math.round(solarNoon) + NOON_CORRECTION_MINUTES);
-        int asr = normalizeMinute((int) Math.round(solarNoon + asrHourAngle));
+        int asr = normalizeMinute((int) Math.round(solarNoon + asrHourAngle)
+                + ASR_UMM_AL_QURA_CORRECTION_MINUTES);
         int maghrib = normalizeMinute((int) Math.round(solarNoon + sunriseHourAngle));
 
         int[] hijri = gregorianToHijri(
