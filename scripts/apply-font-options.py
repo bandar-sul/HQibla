@@ -113,4 +113,32 @@ helper = """    private String fontName(String value, String[] values, String[] 
     private void showAboutDetailsDialog() {"""
 assert anchor in activity, "helper insertion point not found"
 activity_path.write_text(activity.replace(anchor, helper, 1))
-print("Applied five typeface choices and five persistent size levels.")
+
+# Apply requested dashboard layout: prayer/location panel left, compass centered, sensor cards right.
+view_path = Path("app/src/main/java/sa/h9/qibla/QiblaView.java")
+view = view_path.read_text()
+replacements = [
+    ('drawCompass(c, w * .427f, h * .53f, Math.min(h * .236f, w * .132f));',
+     'drawCompass(c, w * .50f, h * .53f, Math.min(h * .236f, w * .132f));'),
+    ('c.drawText("8.1 MANUAL", w * .114f, h * .116f, p);', '// Removed legacy build label as requested.'),
+    ('float x = w * .018f, cardW = w * .178f, cardH = h * .116f;',
+     'float x = w * .804f, cardW = w * .178f, cardH = h * .116f;'),
+    ('float x=w*.715f, y=h*.175f, cw=w*.265f, ch=h*.405f;',
+     'float x=w*.018f, y=h*.175f, cw=w*.265f, ch=h*.405f;'),
+    ('fontScale = Math.max(0.85f, Math.min(1.45f, scale));',
+     'fontScale = Math.max(0.85f, Math.min(1.90f, scale));'),
+]
+for old, new in replacements:
+    assert old in view, "Layout patch anchor not found: " + old
+    view = view.replace(old, new, 1)
+view_path.write_text(view)
+
+# Offer larger sizes suitable for the vehicle display, retaining saved selection.
+activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
+activity = activity_path.read_text()
+old = 'float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};'
+new = 'float[] sizes = {0.85f, 1.0f, 1.15f, 1.35f, 1.55f, 1.75f, 1.90f};'
+assert old in activity, "font size list not found"
+activity_path.write_text(activity.replace(old, new, 1))
+
+print("Applied font choices, larger font sizes, removed legacy label, centered compass, and moved prayer/location panel left.")
