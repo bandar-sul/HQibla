@@ -1,0 +1,177 @@
+name: H9 Qibla 8.3 Font Options Manual APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ v8-3-font-options ]
+    paths:
+      - '.github/workflows/build-v8-3-font-options.yml'
+      - 'app/**'
+      - 'build.gradle'
+permissions:
+  contents: write
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-24.04
+    env:
+      H9_SIGNING_STORE_FILE: /home/runner/work/_temp/H9-Qibla-Production.jks
+      H9_SIGNING_STORE_PASSWORD: ${{ secrets.H9_SIGNING_STORE_PASSWORD }}
+      H9_SIGNING_KEY_ALIAS: ${{ secrets.H9_SIGNING_KEY_ALIAS }}
+      H9_SIGNING_KEY_PASSWORD: ${{ secrets.H9_SIGNING_KEY_PASSWORD }}
+      EXPECTED_CERT_SHA256: 0EF79FA3FC09DC6C6E0FD5ECA1ABB58CC4219DB2E5DF3BEF4623EE9B89655676
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Apply font family and size preferences
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/sa/h9/qibla/QiblaView.java')
+          s = p.read_text()
+          old = '    private float fontScale = 1.0f;'
+          new = '''    private float fontScale = 1.15f;
+              private String fontFamily = "sans-serif";'''
+          assert old in s, 'fontScale field not found'
+          s = s.replace(old, new, 1)
+          old = '''    public void setFontScale(float scale) {
+          fontScale = Math.max(0.85f, Math.min(1.30f, scale));
+          invalidate();
+      }
+
+      public float getFontScale() { return fontScale; }'''
+          new = '''    public void setFontScale(float scale) {
+          fontScale = Math.max(0.85f, Math.min(1.45f, scale));
+          invalidate();
+      }
+
+      public float getFontScale() { return fontScale; }
+
+      public void setFontFamily(String family) {
+          String[] allowed = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
+          for (String candidate : allowed) {
+              if (candidate.equals(family)) {
+                  fontFamily = candidate;
+                  p.setTypeface(android.graphics.Typeface.create(candidate, android.graphics.Typeface.NORMAL));
+                  invalidate();
+                  return;
+              }
+          }
+          fontFamily = "sans-serif";
+          p.setTypeface(android.graphics.Typeface.create(fontFamily, android.graphics.Typeface.NORMAL));
+          invalidate();
+      }
+
+      public String getFontFamily() { return fontFamily; }'''
+          assert old in s, 'fontScale methods not found'
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/sa/h9/qibla/MainActivity.java')
+          s = p.read_text()
+          old = '    private static final String KEY_FONT_SCALE = "font_scale";'
+          new = old + '\n    private static final String KEY_FONT_FAMILY = "font_family";'
+          assert old in s, 'font preference key not found'
+          s = s.replace(old, new, 1)
+          old = '        qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));'
+          new = old + '\n        qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));'
+          assert old in s, 'font initialization not found'
+          s = s.replace(old, new, 1)
+          old = '''            float current = qiblaView.getFontScale();
+              float next = current < 0.95f ? 1.0f : (current < 1.10f ? 1.18f : 0.90f);
+              qiblaView.setFontScale(next);
+              getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
+              fontSize.setText("حجم الخط: " + fontScaleLabel(next));'''
+          new = '''            float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};
+              float current = qiblaView.getFontScale();
+              int currentIndex = 0;
+              for (int i = 0; i < sizes.length; i++) if (Math.abs(sizes[i] - current) < 0.04f) currentIndex = i;
+              float next = sizes[(currentIndex + 1) % sizes.length];
+              qiblaView.setFontScale(next);
+              getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
+              fontSize.setText("حجم الخط: " + fontScaleLabel(next));'''
+          assert old in s, 'font size click block not found'
+          s = s.replace(old, new, 1)
+          anchor = '''        card.addView(fontSize, fontLp);
+
+          Button guide = new Button(this);'''
+          insertion = '''        card.addView(fontSize, fontLp);
+
+          Button fontFamily = new Button(this);
+          String[] fontNames = {"نسخ عربي", "نسخ متوسط", "نسخ كلاسيكي", "نسخ مضغوط", "نسخ حر"};
+          String[] fontValues = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
+          fontFamily.setText("نوع الخط: " + fontName(qiblaView.getFontFamily(), fontValues, fontNames));
+          fontFamily.setTextSize(18f);
+          fontFamily.setTextColor(Color.WHITE);
+          fontFamily.setAllCaps(false);
+          GradientDrawable familyBg = new GradientDrawable();
+          familyBg.setColor(0xFF22323A);
+          familyBg.setCornerRadius(dp(22));
+          familyBg.setStroke(dp(1), 0xFFE5B64A);
+          fontFamily.setBackground(familyBg);
+          fontFamily.setOnClickListener(v -> {
+              int index = 0;
+              for (int i = 0; i < fontValues.length; i++) if (fontValues[i].equals(qiblaView.getFontFamily())) index = i;
+              String next = fontValues[(index + 1) % fontValues.length];
+              qiblaView.setFontFamily(next);
+              getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putString(KEY_FONT_FAMILY, next).apply();
+              fontFamily.setText("نوع الخط: " + fontName(next, fontValues, fontNames));
+          });
+          LinearLayout.LayoutParams familyLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+          familyLp.bottomMargin = dp(12);
+          card.addView(fontFamily, familyLp);
+
+          Button guide = new Button(this);'''
+          assert anchor in s, 'settings insertion point not found'
+          s = s.replace(anchor, insertion, 1)
+          anchor = '    private void showAboutDetailsDialog() {'
+          helper = '''    private String fontName(String value, String[] values, String[] labels) {
+          for (int i = 0; i < values.length; i++) if (values[i].equals(value)) return labels[i];
+          return labels[0];
+      }
+
+      private void showAboutDetailsDialog() {'''
+          assert anchor in s, 'helper insertion point not found'
+          s = s.replace(anchor, helper, 1)
+          p.write_text(s)
+          PY
+      - name: Commit source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java
+          git diff --cached --quiet || git commit -m "Add five font choices and persistent font sizing"
+          git push
+      - name: Restore production signing key
+        env:
+          H9_SIGNING_KEY_B64: ${{ secrets.H9_SIGNING_KEY_B64 }}
+        run: |
+          test -n "$H9_SIGNING_KEY_B64"
+          printf '%s' "$H9_SIGNING_KEY_B64" | base64 -d > "$H9_SIGNING_STORE_FILE"
+          chmod 600 "$H9_SIGNING_STORE_FILE"
+      - name: Verify production signing certificate
+        run: |
+          CERT_SHA=$(keytool -list -v -keystore "$H9_SIGNING_STORE_FILE" -storepass "$H9_SIGNING_STORE_PASSWORD" -alias "$H9_SIGNING_KEY_ALIAS" | awk -F': ' '/SHA256:/{gsub(":","",$2); print toupper($2); exit}')
+          test "$CERT_SHA" = "$EXPECTED_CERT_SHA256"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build signed manual APK
+        run: gradle clean testReleaseUnitTest assembleRelease --stacktrace
+      - name: Verify APK signature and package
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          CERT_SHA=$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/{gsub(/[[:space:]:]/,"",$NF); print toupper($NF); exit}')
+          test "$CERT_SHA" = "$EXPECTED_CERT_SHA256"
+          mkdir -p dist
+          cp "$APK" dist/H9-Qibla-8.3-Fonts-Manual.apk
+          sha256sum dist/H9-Qibla-8.3-Fonts-Manual.apk | tee dist/H9-Qibla-8.3-Fonts-Manual.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: H9-Qibla-8.3-Fonts-Manual
+          path: |
+            dist/H9-Qibla-8.3-Fonts-Manual.apk
+            dist/H9-Qibla-8.3-Fonts-Manual.sha256
