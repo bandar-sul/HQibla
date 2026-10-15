@@ -1,26 +1,21 @@
 from pathlib import Path
 
+
+def replace_once(text, old, new, description):
+    if new in text:
+        return text
+    if old in text:
+        return text.replace(old, new, 1)
+    raise AssertionError(description)
+
+
 view_path = Path("app/src/main/java/sa/h9/qibla/QiblaView.java")
 view = view_path.read_text()
 old = '    private float fontScale = 1.0f;'
 new = '    private float fontScale = 1.15f;\n    private String fontFamily = "sans-serif";'
-assert old in view, "fontScale field not found"
-view = view.replace(old, new, 1)
+view = replace_once(view, old, new, "fontScale field not found")
 
-old = """    public void setFontScale(float scale) {
-        fontScale = Math.max(0.85f, Math.min(1.30f, scale));
-        invalidate();
-    }
-
-    public float getFontScale() { return fontScale; }"""
-new = """    public void setFontScale(float scale) {
-        fontScale = Math.max(0.85f, Math.min(1.45f, scale));
-        invalidate();
-    }
-
-    public float getFontScale() { return fontScale; }
-
-    public void setFontFamily(String family) {
+font_family_methods = """    public void setFontFamily(String family) {
         String[] allowed = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
         for (String candidate : allowed) {
             if (candidate.equals(family)) {
@@ -36,25 +31,28 @@ new = """    public void setFontScale(float scale) {
     }
 
     public String getFontFamily() { return fontFamily; }"""
-assert old in view, "fontScale methods not found"
-view_path.write_text(view.replace(old, new, 1))
+if "public void setFontFamily(" not in view:
+    anchor = "    public float getFontScale() { return fontScale; }"
+    assert anchor in view, "fontScale methods not found"
+    view = view.replace(anchor, anchor + "\n\n" + font_family_methods, 1)
+view_path.write_text(view)
 
 activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
 activity = activity_path.read_text()
 old = '    private static final String KEY_FONT_SCALE = "font_scale";'
-assert old in activity, "font preference key not found"
-activity = activity.replace(old, old + '\n    private static final String KEY_FONT_FAMILY = "font_family";', 1)
+new = old + '\n    private static final String KEY_FONT_FAMILY = "font_family";'
+activity = replace_once(activity, old, new, "font preference key not found")
 
 old = '        qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));'
-assert old in activity, "font initialization not found"
-activity = activity.replace(old, old + '\n        qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));', 1)
+new = old + '\n        qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));'
+activity = replace_once(activity, old, new, "font initialization not found")
 
 old = """            float current = qiblaView.getFontScale();
             float next = current < 0.95f ? 1.0f : (current < 1.10f ? 1.18f : 0.90f);
             qiblaView.setFontScale(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
             fontSize.setText("حجم الخط: " + fontScaleLabel(next));"""
-new = """            float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};
+new = """            float[] sizes = {0.85f, 1.0f, 1.15f, 1.35f, 1.55f, 1.75f, 1.90f};
             float current = qiblaView.getFontScale();
             int currentIndex = 0;
             for (int i = 0; i < sizes.length; i++) {
@@ -64,8 +62,7 @@ new = """            float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};
             qiblaView.setFontScale(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
             fontSize.setText("حجم الخط: " + fontScaleLabel(next));"""
-assert old in activity, "font size click block not found"
-activity = activity.replace(old, new, 1)
+activity = replace_once(activity, old, new, "font size click block not found")
 
 anchor = """        card.addView(fontSize, fontLp);
 
@@ -99,8 +96,9 @@ insertion = """        card.addView(fontSize, fontLp);
         card.addView(fontFamily, familyLp);
 
         Button guide = new Button(this);"""
-assert anchor in activity, "settings insertion point not found"
-activity = activity.replace(anchor, insertion, 1)
+if "Button fontFamily = new Button(this);" not in activity:
+    assert anchor in activity, "settings insertion point not found"
+    activity = activity.replace(anchor, insertion, 1)
 
 anchor = '    private void showAboutDetailsDialog() {'
 helper = """    private String fontName(String value, String[] values, String[] labels) {
@@ -111,8 +109,10 @@ helper = """    private String fontName(String value, String[] values, String[] 
     }
 
     private void showAboutDetailsDialog() {"""
-assert anchor in activity, "helper insertion point not found"
-activity_path.write_text(activity.replace(anchor, helper, 1))
+if "private String fontName(" not in activity:
+    assert anchor in activity, "helper insertion point not found"
+    activity = activity.replace(anchor, helper, 1)
+activity_path.write_text(activity)
 
 # Apply requested dashboard layout: prayer/location panel left, compass centered, sensor cards right.
 view_path = Path("app/src/main/java/sa/h9/qibla/QiblaView.java")
@@ -129,8 +129,7 @@ replacements = [
      'fontScale = Math.max(0.85f, Math.min(1.90f, scale));'),
 ]
 for old, new in replacements:
-    assert old in view, "Layout patch anchor not found: " + old
-    view = view.replace(old, new, 1)
+    view = replace_once(view, old, new, "Layout patch anchor not found: " + old)
 view_path.write_text(view)
 
 # Offer larger sizes suitable for the vehicle display, retaining saved selection.
@@ -138,7 +137,7 @@ activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
 activity = activity_path.read_text()
 old = 'float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};'
 new = 'float[] sizes = {0.85f, 1.0f, 1.15f, 1.35f, 1.55f, 1.75f, 1.90f};'
-assert old in activity, "font size list not found"
-activity_path.write_text(activity.replace(old, new, 1))
+activity = replace_once(activity, old, new, "font size list not found")
+activity_path.write_text(activity)
 
 print("Applied font choices, larger font sizes, removed legacy label, centered compass, and moved prayer/location panel left.")

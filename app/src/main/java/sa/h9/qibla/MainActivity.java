@@ -283,7 +283,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         fontBg.setStroke(dp(1), 0xFFE5B64A);
         fontSize.setBackground(fontBg);
         fontSize.setOnClickListener(v -> {
-            float[] sizes = {0.85f, 1.0f, 1.15f, 1.30f, 1.45f};
+            float[] sizes = {0.85f, 1.0f, 1.15f, 1.35f, 1.55f, 1.75f, 1.90f};
             float current = qiblaView.getFontScale();
             int currentIndex = 0;
             for (int i = 0; i < sizes.length; i++) {
