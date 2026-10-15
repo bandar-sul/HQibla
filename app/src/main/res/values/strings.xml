@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">H9 Qibla</string>
+    <string name="app_name">Qibla</string>
     <string name="permission_message">يحتاج التطبيق إلى إذن الموقع لحساب اتجاه القبلة.</string>
 </resources>
