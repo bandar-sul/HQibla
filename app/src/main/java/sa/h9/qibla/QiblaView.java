@@ -48,8 +48,8 @@ public class QiblaView extends View {
     private int themeMode = THEME_AUTO;
     private float fontScale = 1.15f;
     private boolean swapPanels = false;
-    private boolean swapPanels = false;
-    private boolean swapPanels = false;
+
+
     private String fontFamily = "sans-serif";
 
     public QiblaView(Context context) {
@@ -79,11 +79,11 @@ public class QiblaView extends View {
     public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
     public boolean getSwapPanels() { return swapPanels; }
 
-    public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
-    public boolean getSwapPanels() { return swapPanels; }
 
-    public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
-    public boolean getSwapPanels() { return swapPanels; }
+
+
+
+
 
     public void setFontFamily(String family) {
         String[] allowed = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
