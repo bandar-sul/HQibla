@@ -67,7 +67,7 @@ public class QiblaView extends View {
     public int getThemeMode() { return themeMode; }
 
     public void setFontScale(float scale) {
-        fontScale = Math.max(0.85f, Math.min(1.45f, scale));
+        fontScale = Math.max(0.85f, Math.min(1.90f, scale));
         invalidate();
     }
 
@@ -148,7 +148,7 @@ public class QiblaView extends View {
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
         drawTopBar(c, w, h);
-        drawCompass(c, w * .427f, h * .53f, Math.min(h * .236f, w * .132f));
+        drawCompass(c, w * .50f, h * .53f, Math.min(h * .236f, w * .132f));
         drawLeftCards(c, w, h);
         drawPrayerPanel(c, w, h);
 
@@ -180,7 +180,7 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
         ts(h * .020f);
         p.setColor(goldColor());
-        c.drawText("8.1 MANUAL", w * .114f, h * .116f, p);
+        // Removed legacy build label as requested.
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(primaryTextColor());
@@ -232,7 +232,7 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h) {
-        float x = w * .018f, cardW = w * .178f, cardH = h * .116f;
+        float x = w * .804f, cardW = w * .178f, cardH = h * .116f;
         drawInfoCard(c, x, h*.205f, cardW, cardH, "زاوية القبلة", hasLocation ? String.format(Locale.US,"%.0f°", qiblaBearing) : "—", "◈", 0xFF2FE0C7);
         drawInfoCard(c, x, h*.342f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
         String accuracy = gpsAccuracy < 0 ? "—" : gpsAccuracy <= 12 ? "ممتازة" : gpsAccuracy <= 25 ? "جيدة" : String.format(Locale.US,"%.0f م", gpsAccuracy);
@@ -355,7 +355,7 @@ public class QiblaView extends View {
     }
 
     private void drawPrayerPanel(Canvas c, float w, float h) {
-        float x=w*.715f, y=h*.175f, cw=w*.265f, ch=h*.405f;
+        float x=w*.018f, y=h*.175f, cw=w*.265f, ch=h*.405f;
         roundCard(c,new RectF(x,y,x+cw,y+ch));
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(goldColor());
