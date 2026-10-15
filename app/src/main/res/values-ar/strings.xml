@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">قبلة</string>
+    <string name="permission_message">يحتاج التطبيق إلى إذن الموقع لحساب اتجاه القبلة.</string>
+</resources>
