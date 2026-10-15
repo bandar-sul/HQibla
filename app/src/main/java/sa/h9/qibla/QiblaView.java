@@ -48,6 +48,7 @@ public class QiblaView extends View {
     private int themeMode = THEME_AUTO;
     private float fontScale = 1.15f;
     private boolean swapPanels = false;
+    private boolean swapPanels = false;
     private String fontFamily = "sans-serif";
 
     public QiblaView(Context context) {
@@ -73,6 +74,9 @@ public class QiblaView extends View {
     }
 
     public float getFontScale() { return fontScale; }
+
+    public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
+    public boolean getSwapPanels() { return swapPanels; }
 
     public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
     public boolean getSwapPanels() { return swapPanels; }
@@ -167,10 +171,9 @@ public class QiblaView extends View {
         }
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
-        p.setColor(isNightTheme() ? 0x1500E4D0 : 0x2200D7C2);
-        c.drawCircle(w * .425f, h * .52f, h * .365f, p);
-        p.setColor(isNightTheme() ? 0x0D3E8CFF : 0x1837678E);
-        c.drawCircle(w * .88f, h * .15f, h * .34f, p);
+        // Compact, centered ambient glow so it does not overwhelm the compass.
+        p.setColor(isNightTheme() ? 0x0D00E4D0 : 0x0A00D7C2);
+        c.drawCircle(w * .50f, h * .53f, h * .285f, p);
     }
 
     private void drawTopBar(Canvas c, float w, float h) {
