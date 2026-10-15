@@ -4,10 +4,11 @@ view_path = Path("app/src/main/java/sa/h9/qibla/QiblaView.java")
 view = view_path.read_text()
 
 def replace_once(text, old, new, description):
-    if old in text:
-        return text.replace(old, new, 1)
+    # Idempotent: do not re-apply a patch that is already present.
     if new in text:
         return text
+    if old in text:
+        return text.replace(old, new, 1)
     raise SystemExit("Expected anchor missing: " + description)
 
 view = replace_once(view,
