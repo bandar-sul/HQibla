@@ -1,4 +1,4 @@
-name: H9 Qibla 8.3 Font Options Manual APK
+name: H9 Qibla 8.3 Corrected UI Manual APK
 on:
   workflow_dispatch:
   push:
@@ -25,14 +25,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Apply five font choices and size levels
+      - name: Apply corrected layout and font options
         run: python3 scripts/apply-font-options.py
       - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/sa/h9/qibla/MainActivity.java app/src/main/java/sa/h9/qibla/QiblaView.java
-          git diff --cached --quiet || git commit -m "Add five font choices and persistent font sizing"
+          git diff --cached --quiet || git commit -m "Apply corrected H9 Qibla layout and font controls"
           git push
       - name: Restore production signing key
         env:
