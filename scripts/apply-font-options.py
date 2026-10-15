@@ -52,6 +52,15 @@ new_rings = '''stroke.setStrokeWidth(r*.012f);
         stroke.setColor(isNightTheme() ? 0x3348A8FF : 0x335D7E86);
         c.drawCircle(cx, cy, r*1.08f, stroke);'''
 view = replace_once(view, old_rings, new_rings, 'compass ring block')
+view = replace_once(view,
+    '''        p.setColor(isNightTheme() ? 0x1500E4D0 : 0x2200D7C2);
+        c.drawCircle(w * .425f, h * .52f, h * .365f, p);
+        p.setColor(isNightTheme() ? 0x0D3E8CFF : 0x1837678E);
+        c.drawCircle(w * .88f, h * .15f, h * .34f, p);''',
+    '''        // Compact, centered ambient glow so it does not overwhelm the compass.
+        p.setColor(isNightTheme() ? 0x0D00E4D0 : 0x0A00D7C2);
+        c.drawCircle(w * .50f, h * .53f, h * .285f, p);''',
+    'balanced background glow')
 view_path.write_text(view)
 
 activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
