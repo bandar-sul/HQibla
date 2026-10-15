@@ -19,7 +19,7 @@ view = replace_once(view,
     '// Removed legacy build label as requested.',
     'legacy label')
 view = replace_once(view,
-    'float x = w * .018f, cardW = w * .178f, cardH = h * .116f;',
+    'float x = w * .804f, cardW = w * .178f, cardH = h * .116f;',
     'float cardW = w * .178f, cardH = h * .116f;\n        float x = w * (swapPanels ? .018f : .804f);',
     'information panel position')
 view = replace_once(view,
