@@ -47,6 +47,7 @@ public class QiblaView extends View {
     public static final int THEME_NIGHT = 2;
     private int themeMode = THEME_AUTO;
     private float fontScale = 1.15f;
+    private boolean swapPanels = false;
     private String fontFamily = "sans-serif";
 
     public QiblaView(Context context) {
@@ -72,6 +73,9 @@ public class QiblaView extends View {
     }
 
     public float getFontScale() { return fontScale; }
+
+    public void setSwapPanels(boolean swap) { swapPanels = swap; invalidate(); }
+    public boolean getSwapPanels() { return swapPanels; }
 
     public void setFontFamily(String family) {
         String[] allowed = {"sans-serif", "sans-serif-medium", "serif", "sans-serif-condensed", "casual"};
@@ -232,7 +236,8 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h) {
-        float x = w * .804f, cardW = w * .178f, cardH = h * .116f;
+        float cardW = w * .178f, cardH = h * .116f;
+        float x = w * (swapPanels ? .018f : .804f);
         drawInfoCard(c, x, h*.205f, cardW, cardH, "زاوية القبلة", hasLocation ? String.format(Locale.US,"%.0f°", qiblaBearing) : "—", "◈", 0xFF2FE0C7);
         drawInfoCard(c, x, h*.342f, cardW, cardH, "اتجاه المركبة", hasHeading ? String.format(Locale.US,"%.0f°", heading) : "—", "↗", hasHeading ? 0xFF2FE0C7 : 0xFFE5B64A);
         String accuracy = gpsAccuracy < 0 ? "—" : gpsAccuracy <= 12 ? "ممتازة" : gpsAccuracy <= 25 ? "جيدة" : String.format(Locale.US,"%.0f م", gpsAccuracy);
@@ -273,13 +278,13 @@ public class QiblaView extends View {
     private void drawCompass(Canvas c, float cx, float cy, float r) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
-        c.drawCircle(cx, cy, r*1.49f, p);
+        c.drawCircle(cx, cy, r*1.28f, p);
         stroke.setStrokeWidth(r*.012f);
         stroke.setColor(isNightTheme() ? 0x5530D9C4 : 0x55466F7B);
-        c.drawCircle(cx, cy, r*1.36f, stroke);
+        c.drawCircle(cx, cy, r*1.18f, stroke);
         stroke.setStrokeWidth(r*.006f);
         stroke.setColor(isNightTheme() ? 0x3348A8FF : 0x335D7E86);
-        c.drawCircle(cx, cy, r*1.18f, stroke);
+        c.drawCircle(cx, cy, r*1.08f, stroke);
         stroke.setStrokeWidth(r*.010f);
         stroke.setColor(0xAA25D9C4);
         p.setShadowLayer(24f, 0, 0, 0x9925D9C4);
@@ -355,7 +360,7 @@ public class QiblaView extends View {
     }
 
     private void drawPrayerPanel(Canvas c, float w, float h) {
-        float x=w*.018f, y=h*.175f, cw=w*.265f, ch=h*.405f;
+        float x=w*(swapPanels ? .715f : .018f), y=h*.175f, cw=w*.265f, ch=h*.405f;
         roundCard(c,new RectF(x,y,x+cw,y+ch));
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(goldColor());

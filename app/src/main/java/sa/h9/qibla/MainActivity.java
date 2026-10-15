@@ -61,6 +61,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_FONT_SCALE = "font_scale";
     private static final String KEY_FONT_FAMILY = "font_family";
+    private static final String KEY_SWAP_PANELS = "swap_panels";
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -149,6 +150,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView.setThemeMode(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
         qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));
         qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));
+        qiblaView.setSwapPanels(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_SWAP_PANELS, false));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
@@ -323,6 +325,27 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams familyLp = new LinearLayout.LayoutParams(dp(300), dp(54));
         familyLp.bottomMargin = dp(12);
         card.addView(fontFamily, familyLp);
+
+        Button swapPanels = new Button(this);
+        boolean panelsSwapped = qiblaView.getSwapPanels();
+        swapPanels.setText("مواضع القوائم: " + (panelsSwapped ? "معكوسة" : "الافتراضي"));
+        swapPanels.setTextSize(18f);
+        swapPanels.setTextColor(Color.WHITE);
+        swapPanels.setAllCaps(false);
+        GradientDrawable swapBg = new GradientDrawable();
+        swapBg.setColor(0xFF165B63);
+        swapBg.setCornerRadius(dp(22));
+        swapBg.setStroke(dp(1), 0xFF2FE0C7);
+        swapPanels.setBackground(swapBg);
+        swapPanels.setOnClickListener(v -> {
+            boolean next = !qiblaView.getSwapPanels();
+            qiblaView.setSwapPanels(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_SWAP_PANELS, next).apply();
+            swapPanels.setText("مواضع القوائم: " + (next ? "معكوسة" : "الافتراضي"));
+        });
+        LinearLayout.LayoutParams swapLp = new LinearLayout.LayoutParams(dp(300), dp(54));
+        swapLp.bottomMargin = dp(12);
+        card.addView(swapPanels, swapLp);
 
         Button guide = new Button(this);
         guide.setText("طريقة استخدام البرنامج");
