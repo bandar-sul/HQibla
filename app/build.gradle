@@ -10,8 +10,8 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 28
-        versionCode 83
-        versionName '8.2.1-manual'
+        versionCode 84
+        versionName '8.3.0-multicar-manual'
     }
 
     buildFeatures {
@@ -60,12 +60,9 @@ android {
     }
 }
 
-// trigger 3.0 focused LocationServiceImpl build
-
+// manual multi-vehicle release: Haval, Tank, BYD Leopard 5
 
 dependencies {
     implementation 'androidx.core:core:1.13.1'
     testImplementation 'junit:junit:4.13.2'
 }
-
-// manual 8.1 release build trigger
