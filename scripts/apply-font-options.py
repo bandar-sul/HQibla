@@ -23,7 +23,7 @@ view = replace_once(view,
     'float cardW = w * .178f, cardH = h * .116f;\n        float x = w * (swapPanels ? .018f : .804f);',
     'information panel position')
 view = replace_once(view,
-    'float x=w*.715f, y=h*.175f, cw=w*.265f, ch=h*.405f;',
+    'float x=w*.018f, y=h*.175f, cw=w*.265f, ch=h*.405f;',
     'float x=w*(swapPanels ? .715f : .018f), y=h*.175f, cw=w*.265f, ch=h*.405f;',
     'prayer panel position')
 view = replace_once(view,
