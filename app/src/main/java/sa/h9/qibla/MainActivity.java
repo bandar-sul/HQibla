@@ -62,8 +62,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String KEY_FONT_SCALE = "font_scale";
     private static final String KEY_FONT_FAMILY = "font_family";
     private static final String KEY_SWAP_PANELS = "swap_panels";
-    private static final String KEY_SWAP_PANELS = "swap_panels";
-    private static final String KEY_SWAP_PANELS = "swap_panels";
+
+
 
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
@@ -153,8 +153,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));
         qiblaView.setFontFamily(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getString(KEY_FONT_FAMILY, "sans-serif"));
         qiblaView.setSwapPanels(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_SWAP_PANELS, false));
-        qiblaView.setSwapPanels(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_SWAP_PANELS, false));
-        qiblaView.setSwapPanels(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_SWAP_PANELS, false));
+
+
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
