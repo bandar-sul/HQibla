@@ -62,6 +62,20 @@ view = replace_once(view,
         p.setColor(isNightTheme() ? 0x0D00E4D0 : 0x0A00D7C2);
         c.drawCircle(w * .50f, h * .53f, h * .285f, p);''',
     'balanced background glow')
+# Make text sizing respond to the actual view dimensions and aspect ratio.
+view = replace_once(view,
+    '    private void ts(float size) { p.setTextSize(size * fontScale); }',
+    '''    private void ts(float size) {
+        float width = Math.max(1f, getWidth());
+        float height = Math.max(1f, getHeight());
+        float aspect = width / height;
+        // Keep text balanced on unusually narrow/tall and ultra-wide displays.
+        float aspectScale = aspect < 1.45f
+                ? Math.max(0.78f, aspect / 1.45f)
+                : Math.min(1.08f, 1.0f + (aspect - 1.78f) * 0.08f);
+        p.setTextSize(size * fontScale * aspectScale);
+    }''',
+    'adaptive text scaling')
 view_path.write_text(view)
 
 activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
