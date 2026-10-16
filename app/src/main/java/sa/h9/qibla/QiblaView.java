@@ -468,7 +468,16 @@ public class QiblaView extends View {
         p.setColor(0xFF6F858E);
         }
 
-    private void ts(float size) { p.setTextSize(size * fontScale); }
+    private void ts(float size) {
+        float width = Math.max(1f, getWidth());
+        float height = Math.max(1f, getHeight());
+        float aspect = width / height;
+        // Keep text balanced on unusually narrow/tall and ultra-wide displays.
+        float aspectScale = aspect < 1.45f
+                ? Math.max(0.78f, aspect / 1.45f)
+                : Math.min(1.08f, 1.0f + (aspect - 1.78f) * 0.08f);
+        p.setTextSize(size * fontScale * aspectScale);
+    }
 
     private int primaryTextColor() { return isNightTheme() ? 0xFFF4F7F8 : 0xFF102E38; }
     private int secondaryTextColor() { return isNightTheme() ? 0xFFB8C4C9 : 0xFF31545F; }
