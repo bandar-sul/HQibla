@@ -64,7 +64,6 @@ view = replace_once(view,
     'balanced background glow')
 # Make text sizing respond to the actual view dimensions and aspect ratio.
 view = replace_once(view,
-    '    private void ts(float size) { p.setTextSize(size * fontScale); }',
     '''    private void ts(float size) {
         float width = Math.max(1f, getWidth());
         float height = Math.max(1f, getHeight());
@@ -75,7 +74,8 @@ view = replace_once(view,
                 : Math.min(1.08f, 1.0f + (aspect - 1.78f) * 0.08f);
         p.setTextSize(size * fontScale * aspectScale);
     }''',
-    'adaptive text scaling')
+    '    private void ts(float size) { p.setTextSize(size * fontScale); }',
+    'restore original Haval text sizing')
 view_path.write_text(view)
 
 activity_path = Path("app/src/main/java/sa/h9/qibla/MainActivity.java")
