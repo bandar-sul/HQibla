@@ -524,8 +524,28 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
+        // Close control at the top-right; closing the welcome notice counts as acknowledgement.
+        FrameLayout header = new FrameLayout(this);
+        LinearLayout.LayoutParams headerLp = matchWrap(dp(58));
+        card.addView(header, headerLp);
+
         TextView title = noteText(firstRun ? "مرحبًا بك في قبلة" : "طريقة استخدام البرنامج", 29f, 0xFFFFC857, true);
-        card.addView(title, matchWrap(dp(58)));
+        FrameLayout.LayoutParams titleLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+        header.addView(title, titleLp);
+
+        TextView closeX = noteText("×", 34f, 0xFFFFC857, true);
+        closeX.setContentDescription("إغلاق");
+        closeX.setClickable(true);
+        closeX.setFocusable(true);
+        closeX.setOnClickListener(v -> {
+            if (firstRun) {
+                getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
+            }
+            dialog.dismiss();
+        });
+        FrameLayout.LayoutParams closeLp = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.RIGHT | Gravity.TOP);
+        header.addView(closeX, closeLp);
 
         TextView body = noteText(
                 "وصف البرنامج\n" +
@@ -560,24 +580,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams storeLp = matchWrap(dp(44));
         storeLp.topMargin = dp(4);
         card.addView(storeTitle, storeLp);
-
-        Button continueButton = new Button(this);
-        continueButton.setText(firstRun ? "بدء الاستخدام" : "إغلاق");
-        continueButton.setTextSize(20f);
-        continueButton.setTextColor(Color.WHITE);
-        continueButton.setAllCaps(false);
-        GradientDrawable buttonBg = new GradientDrawable();
-        buttonBg.setColor(0xFF117A7C);
-        buttonBg.setCornerRadius(dp(24));
-        buttonBg.setStroke(dp(1), 0xFF2FE0C7);
-        continueButton.setBackground(buttonBg);
-        continueButton.setOnClickListener(v -> {
-            if (onContinue != null) onContinue.run();
-            dialog.dismiss();
-        });
-        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(250), dp(56));
-        buttonLp.topMargin = dp(16);
-        card.addView(continueButton, buttonLp);
 
         dialog.setContentView(card);
         Window window = dialog.getWindow();
