@@ -204,7 +204,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         mainSettingsButton.setOnClickListener(v -> showSettingsDialog());
         FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(105), dp(38));
         aboutLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
-        aboutLp.leftMargin = dp(18);
+        aboutLp.leftMargin = dp(36);
         aboutLp.bottomMargin = dp(18);
         root.addView(mainSettingsButton, aboutLp);
 
@@ -225,9 +225,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PANEL_SWAPPED, next).apply();
             mainSwapButton.setText(swapButtonLabel(next, isEn()));
         });
-        FrameLayout.LayoutParams swapLp = new FrameLayout.LayoutParams(dp(130), dp(38));
+        FrameLayout.LayoutParams swapLp = new FrameLayout.LayoutParams(dp(135), dp(38));
         swapLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
-        swapLp.leftMargin = dp(18) + dp(105) + dp(10);
+        swapLp.leftMargin = dp(36) + dp(105) + dp(12);
         swapLp.bottomMargin = dp(18);
         root.addView(mainSwapButton, swapLp);
 

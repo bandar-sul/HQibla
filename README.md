@@ -1,8 +1,12 @@
-# H9 Qibla — قبلة
+# H9 Qibla — تطبيق قبلة ومواقيت الصلاة
 
-الإصدار المعتمد للتحميل اليدوي: **8.1 Manual**.
+أحدث إصدار: **الإصدار 8.8**
 
-- [ملفات الإصدار 8.1](https://github.com/bandar-sul/HQibla/releases/tag/v8.1-manual)
-- [كود إصدار 8.1](https://github.com/bandar-sul/HQibla/tree/manual-v8-1-prayer-ui)
+- رابط تحميل التحديث المباشر: [Qibla-v8.8.apk](https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v8.8.apk)
+- ملف التحديث الهوائي (OTA): [latest.json](https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json)
 
-لا تُستخدم ملفات تحديث OTA لهذه النسخة. رابط الإصدار لا يعني توفر APK حتى يكتمل بناؤه ونشره.
+### مميزات الإصدار 8.8:
+1. إضافة 5 خطوط عربية متميزة قابلة للاختيار من الإعدادات (الافتراضي، القاهرة Cairo، تجوال Tajawal، المراعي Almarai، ريديكس Readex Pro، الأميري Amiri).
+2. إضافة خيار حجم الخط "كبير جداً" لقراءة ممتازة وسهلة أثناء القيادة.
+3. زر سريع لتبديل مكان بطاقات مواقيت الصلاة (يمين / يسار) مباشرة من الشاشة الرئيسية والإعدادات.
+4. تناسق تلقائي عالي الدقة لشاشات السيارات والشاشات العريضة لمنع أي تداخل أو قص في النصوص (Auto-fitted text).

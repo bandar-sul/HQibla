@@ -371,17 +371,23 @@ public class QiblaView extends View {
         }
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
+
+        boolean landscape = w >= h;
+        float compassCx = landscape ? (panelSwapped ? (w * .570f) : (w * .430f)) : (w * .50f);
+        float compassCy = landscape ? (h * .53f) : (h * .31f);
         p.setColor(isNightTheme() ? 0x1500E4D0 : 0x2200D7C2);
-        c.drawCircle(w * .425f, h * .52f, h * .365f, p);
+        c.drawCircle(compassCx, compassCy, h * .365f, p);
+
+        float secondCx = landscape ? (panelSwapped ? (w * .18f) : (w * .84f)) : (w * .88f);
         p.setColor(isNightTheme() ? 0x0D3E8CFF : 0x1837678E);
-        c.drawCircle(w * .88f, h * .15f, h * .34f, p);
+        c.drawCircle(secondCx, h * .15f, h * .34f, p);
     }
 
     private void drawTopBar(Canvas c, float w, float h) {
         float minDim = Math.min(w, h);
         boolean landscape = w >= h;
         float logoR = minDim * (landscape ? .062f : .058f);
-        float logoCx = landscape ? Math.max(w * .048f, logoR + w * .018f) : (logoR + w * .038f);
+        float logoCx = landscape ? Math.max(w * .060f, logoR + w * .035f) : (logoR + w * .042f);
         float logoCy = h * (landscape ? .074f : .068f);
         drawLogo(c, logoCx, logoCy, logoR);
 
@@ -641,8 +647,9 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h, boolean onRight) {
+        float margin = w * .045f;
         float cardW = w * .175f, cardH = h * .120f;
-        float x = onRight ? (w * .982f - cardW) : (w * .018f);
+        float x = onRight ? (w - margin - cardW) : margin;
         drawInfoCard(c, x, h * .205f, cardW, cardH,
                 englishMode ? "Qibla Angle" : "زاوية القبلة",
                 hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—",
@@ -772,15 +779,16 @@ public class QiblaView extends View {
     }
 
     private void drawPrayerPanel(Canvas c, float w, float h, boolean onLeft) {
-        float cw = w * .285f, ch = h * .415f, y = h * .175f;
-        float x = onLeft ? (w * .018f) : (w * .982f - cw);
+        float margin = w * .045f;
+        float cw = w * .305f, ch = h * .415f, y = h * .175f;
+        float x = onLeft ? margin : (w - margin - cw);
         roundCard(c, new RectF(x, y, x + cw, y + ch));
         p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
         p.setColor(goldColor());
         ts(h * .035f);
         p.setFakeBoldText(true);
         c.drawText(englishMode ? "Prayer Times" : "مواقيت الصلاة",
-                englishMode ? (x + cw * .10f) : (x + cw * .90f), y + ch * .12f, p);
+                englishMode ? (x + cw * .08f) : (x + cw * .92f), y + ch * .12f, p);
         p.setFakeBoldText(false);
 
         String[] names = activePrayerNames();
@@ -790,23 +798,23 @@ public class QiblaView extends View {
             float ry = rowStart + i * rowH;
             if (i == next) {
                 p.setColor(0x16E5B64A);
-                c.drawRoundRect(new RectF(x + cw * .04f, ry - rowH * .72f, x + cw * .96f, ry + rowH * .25f), 14f, 14f, p);
+                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .72f, x + cw * .97f, ry + rowH * .25f), 14f, 14f, p);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0x88E5B64A);
-                c.drawRoundRect(new RectF(x + cw * .04f, ry - rowH * .72f, x + cw * .96f, ry + rowH * .25f), 14f, 14f, stroke);
+                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .72f, x + cw * .97f, ry + rowH * .25f), 14f, 14f, stroke);
             }
             ts(Math.min(h * .030f, ch * .085f));
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             if (englishMode) {
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(names[i], x + cw * .10f, ry, p);
+                c.drawText(names[i], x + cw * .08f, ry, p);
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(format12Hour(prayerTimes[i]), x + cw * .90f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), x + cw * .92f, ry, p);
             } else {
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(names[i], x + cw * .90f, ry, p);
+                c.drawText(names[i], x + cw * .92f, ry, p);
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(format12Hour(prayerTimes[i]), x + cw * .10f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), x + cw * .08f, ry, p);
             }
         }
 
@@ -815,7 +823,7 @@ public class QiblaView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         ts(h * .022f);
         p.setColor(goldColor());
-        drawFittedText(c, nextPrayerText(), x + cw * .5f, ny + h * .046f, cw * .90f);
+        drawFittedText(c, nextPrayerText(), x + cw * .5f, ny + h * .046f, cw * .92f);
 
         float ly = h * .695f;
         roundCard(c, new RectF(x, ly, x + cw, ly + h * .125f));
@@ -880,7 +888,7 @@ public class QiblaView extends View {
         if (minutes < 0) return value;
         int hour24 = minutes / 60;
         int minute = minutes % 60;
-        String ampm = hour24 >= 12 ? "PM" : "AM";
+        String ampm = englishMode ? (hour24 >= 12 ? "PM" : "AM") : (hour24 >= 12 ? "م" : "ص");
         int hour12 = hour24 % 12;
         if (hour12 == 0) hour12 = 12;
         return String.format(Locale.US, "%02d:%02d %s", hour12, minute, ampm);
