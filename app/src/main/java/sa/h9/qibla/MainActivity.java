@@ -35,11 +35,13 @@ import android.os.IBinder;
 import android.os.Parcel;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.Calendar;
@@ -53,14 +55,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final long HEADING_STALE_MS = 7000L;
     private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
     private static final String NOTICE_PREFS = "h9_qibla_notice";
-    private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v2";
+    private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v3";
     private static final String HEADING_PREFS = "h9_qibla_heading";
     private static final String KEY_LAST_HEADING = "last_heading";
     private static final String KEY_LAST_HEADING_SOURCE = "last_heading_source";
     private static final String UI_PREFS = "h9_qibla_ui";
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_FONT_SCALE = "font_scale";
+    private static final String KEY_ENGLISH_MODE = "english_mode";
+    private static final String KEY_FONT_INDEX = "font_index";
+    private static final String KEY_PANEL_SWAPPED = "panel_swapped";
 
+    private Button mainSettingsButton;
+    private Button mainSwapButton;
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
     private SensorManager sensorManager;
@@ -82,6 +89,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private volatile boolean microGLocationRunning;
     private volatile Object microGFusedClient;
     private QiblaView qiblaView;
+    private QiblaSensorHelper qiblaSensorHelper;
     private TextView middlewareDiagnosticText;
     private TextView binderDiagnosticText;
     private TextView locationDiagnosticText;
@@ -135,18 +143,46 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     };
 
+    private boolean isEn() {
+        return qiblaView != null && qiblaView.isEnglishMode();
+    }
+
+    private void applyLanguageMode(boolean english) {
+        if (qiblaView != null) {
+            qiblaView.setEnglishMode(english);
+        }
+        getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENGLISH_MODE, english).apply();
+        if (mainSettingsButton != null) {
+            mainSettingsButton.setText(english ? "Settings" : "الإعدادات");
+        }
+        if (mainSwapButton != null) {
+            mainSwapButton.setText(swapButtonLabel(qiblaView != null && qiblaView.isPanelSwapped(), english));
+        }
+        if (lastLocation != null) {
+            lastPlaceResolveAt = 0L;
+            maybeResolveLocationName(lastLocation);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         applyImmersiveMode();
 
+        SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        boolean defaultEnglish = Locale.getDefault().getLanguage().toLowerCase(Locale.US).startsWith("en");
+        boolean englishMode = uiPrefs.getBoolean(KEY_ENGLISH_MODE, defaultEnglish);
+
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
-        qiblaView.setThemeMode(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
-        qiblaView.setFontScale(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getFloat(KEY_FONT_SCALE, 1.0f));
+        qiblaView.setThemeMode(uiPrefs.getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
+        qiblaView.setFontScale(uiPrefs.getFloat(KEY_FONT_SCALE, 1.0f));
+        qiblaView.setFontIndex(uiPrefs.getInt(KEY_FONT_INDEX, QiblaView.FONT_DEFAULT));
+        qiblaView.setPanelSwapped(uiPrefs.getBoolean(KEY_PANEL_SWAPPED, false));
+        qiblaView.setEnglishMode(englishMode);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
 
@@ -154,23 +190,47 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         binderDiagnosticText = null;
         locationDiagnosticText = null;
 
-        Button aboutButton = new Button(this);
-        aboutButton.setText("الإعدادات");
-        aboutButton.setTextSize(18f);
-        aboutButton.setTextColor(0xFFF1F7FA);
-        aboutButton.setAllCaps(false);
-        aboutButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mainSettingsButton = new Button(this);
+        mainSettingsButton.setText(englishMode ? "Settings" : "الإعدادات");
+        mainSettingsButton.setTextSize(14.5f);
+        mainSettingsButton.setTextColor(0xFFF1F7FA);
+        mainSettingsButton.setAllCaps(false);
+        mainSettingsButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         GradientDrawable aboutBg = new GradientDrawable();
         aboutBg.setColor(0xCC0B1B24);
-        aboutBg.setCornerRadius(dp(18));
+        aboutBg.setCornerRadius(dp(14));
         aboutBg.setStroke(dp(1), 0xFF2FE0C7);
-        aboutButton.setBackground(aboutBg);
-        aboutButton.setOnClickListener(v -> showSettingsDialog());
-        FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(130), dp(52));
+        mainSettingsButton.setBackground(aboutBg);
+        mainSettingsButton.setOnClickListener(v -> showSettingsDialog());
+        FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(105), dp(38));
         aboutLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
-        aboutLp.leftMargin = dp(24);
-        aboutLp.bottomMargin = dp(24);
-        root.addView(aboutButton, aboutLp);
+        aboutLp.leftMargin = dp(18);
+        aboutLp.bottomMargin = dp(18);
+        root.addView(mainSettingsButton, aboutLp);
+
+        mainSwapButton = new Button(this);
+        mainSwapButton.setText(swapButtonLabel(qiblaView.isPanelSwapped(), englishMode));
+        mainSwapButton.setTextSize(13.5f);
+        mainSwapButton.setTextColor(0xFFF1F7FA);
+        mainSwapButton.setAllCaps(false);
+        mainSwapButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        GradientDrawable swapBg = new GradientDrawable();
+        swapBg.setColor(0xCC0B1B24);
+        swapBg.setCornerRadius(dp(14));
+        swapBg.setStroke(dp(1), 0xFFE5B64A);
+        mainSwapButton.setBackground(swapBg);
+        mainSwapButton.setOnClickListener(v -> {
+            boolean next = !qiblaView.isPanelSwapped();
+            qiblaView.setPanelSwapped(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PANEL_SWAPPED, next).apply();
+            mainSwapButton.setText(swapButtonLabel(next, isEn()));
+        });
+        FrameLayout.LayoutParams swapLp = new FrameLayout.LayoutParams(dp(130), dp(38));
+        swapLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+        swapLp.leftMargin = dp(18) + dp(105) + dp(10);
+        swapLp.bottomMargin = dp(18);
+        root.addView(mainSwapButton, swapLp);
+
         setContentView(root);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -181,12 +241,26 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
         }
+        qiblaSensorHelper = new QiblaSensorHelper(this, (deviceAzimuth, qiblaBearing, relativeAngle, distanceMeters, accuracy) -> {
+            applyTrueSensorHeading(deviceAzimuth);
+        });
         updateNetworkStatus();
         showDeveloperNoticeOnce();
         ensureLocationPermission();
         testGwmMapBinder();
         startGwmNaviHeadingIntegration();
         startMicroGLocationSupport();
+
+        handler.postDelayed(() -> {
+            if (lastLocation == null) {
+                Location fallback = new Location("default");
+                fallback.setLatitude(24.7136);
+                fallback.setLongitude(46.6753);
+                fallback.setAccuracy(15f);
+                fallback.setTime(System.currentTimeMillis());
+                updateLocation(fallback);
+            }
+        }, 2000L);
 
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
@@ -207,14 +281,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void applyImmersiveMode() {
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decor = getWindow().getDecorView();
+        if (decor != null) {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
     }
 
     @Override
@@ -227,48 +298,78 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(true);
+
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int targetWidth = Math.min(dp(650), (int) (screenWidth * 0.90f));
+        int targetHeight = Math.min(dp(460), (int) (screenHeight * 0.86f));
+        int scrollHeight = Math.max(dp(140), targetHeight - dp(165));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        card.setPadding(dp(28), dp(14), dp(28), dp(14));
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(0xF2171D23);
-        cardBg.setCornerRadius(dp(28));
+        cardBg.setCornerRadius(dp(26));
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText("قبلة", 24f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(dp(48)));
-        TextView title = noteText("الإعدادات", 30f, 0xFFFFC857, true);
-        card.addView(title, matchWrap(dp(58)));
+        final TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 18f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        final TextView title = noteText(isEn() ? "Settings" : "الإعدادات", 24f, 0xFFFFC857, true);
+        title.setPadding(0, dp(2), 0, dp(8));
+        card.addView(title, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
-        Button update = new Button(this);
-        update.setText("فحص التحديثات");
-        update.setTextSize(19f);
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setVerticalScrollBarEnabled(true);
+        scrollView.setScrollbarFadingEnabled(false);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        final Button update = new Button(this);
+        update.setText(isEn() ? "Check for Updates" : "فحص التحديثات");
+        update.setTextSize(15f);
         update.setTextColor(Color.WHITE);
         update.setAllCaps(false);
         GradientDrawable updateBg = new GradientDrawable();
         updateBg.setColor(0xFF165B63);
-        updateBg.setCornerRadius(dp(22));
+        updateBg.setCornerRadius(dp(16));
         updateBg.setStroke(dp(1), 0xFF2FE0C7);
         update.setBackground(updateBg);
         update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(250), dp(54));
-        updateLp.bottomMargin = dp(12);
-        card.addView(update, updateLp);
+        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(dp(220), dp(40));
+        updateLp.bottomMargin = dp(8);
+        content.addView(update, updateLp);
 
-        TextView appearanceTitle = noteText("المظهر", 19f, 0xFFFFC857, true);
-        card.addView(appearanceTitle, matchWrap(dp(36)));
+        final TextView appearanceTitle = noteText(isEn() ? "Appearance & Language" : "المظهر واللغة", 16f, 0xFFFFC857, true);
+        content.addView(appearanceTitle, matchWrap(dp(26)));
 
-        Button theme = new Button(this);
-        theme.setText("المظهر: " + themeModeLabel(qiblaView.getThemeMode()));
-        theme.setTextSize(18f);
+        final Button langBtn = new Button(this);
+        langBtn.setText(isEn() ? "Language: EN  ⇄  عربي" : "اللغة: العربية  ⇄  EN");
+        langBtn.setTextSize(15f);
+        langBtn.setTextColor(0xFFFFC857);
+        langBtn.setAllCaps(false);
+        langBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        GradientDrawable langBtnBg = new GradientDrawable();
+        langBtnBg.setColor(0xFF22323A);
+        langBtnBg.setCornerRadius(dp(16));
+        langBtnBg.setStroke(dp(1), 0xFFE5B64A);
+        langBtn.setBackground(langBtnBg);
+        LinearLayout.LayoutParams langBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        langBtnLp.bottomMargin = dp(8);
+        content.addView(langBtn, langBtnLp);
+
+        final Button theme = new Button(this);
+        theme.setText((isEn() ? "Theme: " : "المظهر: ") + themeModeLabel(qiblaView.getThemeMode()));
+        theme.setTextSize(15f);
         theme.setTextColor(Color.WHITE);
         theme.setAllCaps(false);
         GradientDrawable themeBg = new GradientDrawable();
         themeBg.setColor(0xFF22323A);
-        themeBg.setCornerRadius(dp(22));
+        themeBg.setCornerRadius(dp(16));
         themeBg.setStroke(dp(1), 0xFFE5B64A);
         theme.setBackground(themeBg);
         theme.setOnClickListener(v -> {
@@ -276,156 +377,269 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     : (qiblaView.getThemeMode() == QiblaView.THEME_DAY ? QiblaView.THEME_NIGHT : QiblaView.THEME_AUTO);
             qiblaView.setThemeMode(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME_MODE, next).apply();
-            theme.setText("المظهر: " + themeModeLabel(next));
+            theme.setText((isEn() ? "Theme: " : "المظهر: ") + themeModeLabel(next));
         });
-        LinearLayout.LayoutParams themeLp = new LinearLayout.LayoutParams(dp(300), dp(54));
-        themeLp.bottomMargin = dp(12);
-        card.addView(theme, themeLp);
+        LinearLayout.LayoutParams themeLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        themeLp.bottomMargin = dp(8);
+        content.addView(theme, themeLp);
 
-        Button fontSize = new Button(this);
-        fontSize.setText("حجم الخط: " + fontScaleLabel(qiblaView.getFontScale()));
-        fontSize.setTextSize(18f);
+        final Button fontSize = new Button(this);
+        fontSize.setText((isEn() ? "Font Size: " : "حجم الخط: ") + fontScaleLabel(qiblaView.getFontScale()));
+        fontSize.setTextSize(15f);
         fontSize.setTextColor(Color.WHITE);
         fontSize.setAllCaps(false);
         GradientDrawable fontBg = new GradientDrawable();
         fontBg.setColor(0xFF22323A);
-        fontBg.setCornerRadius(dp(22));
+        fontBg.setCornerRadius(dp(16));
         fontBg.setStroke(dp(1), 0xFFE5B64A);
         fontSize.setBackground(fontBg);
         fontSize.setOnClickListener(v -> {
             float current = qiblaView.getFontScale();
-            float next = current < 0.95f ? 1.0f : (current < 1.10f ? 1.18f : 0.90f);
+            float next;
+            if (current < 0.95f) {
+                next = 1.0f;
+            } else if (current < 1.08f) {
+                next = 1.16f;
+            } else if (current < 1.25f) {
+                next = 1.34f;
+            } else {
+                next = 0.88f;
+            }
             qiblaView.setFontScale(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
-            fontSize.setText("حجم الخط: " + fontScaleLabel(next));
+            fontSize.setText((isEn() ? "Font Size: " : "حجم الخط: ") + fontScaleLabel(next));
         });
-        LinearLayout.LayoutParams fontLp = new LinearLayout.LayoutParams(dp(300), dp(54));
-        fontLp.bottomMargin = dp(12);
-        card.addView(fontSize, fontLp);
+        LinearLayout.LayoutParams fontLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        fontLp.bottomMargin = dp(8);
+        content.addView(fontSize, fontLp);
 
-        Button guide = new Button(this);
-        guide.setText("طريقة استخدام البرنامج");
-        guide.setTextSize(19f);
+        final Button fontBtn = new Button(this);
+        fontBtn.setText((isEn() ? "Font: " : "الخط: ") + QiblaView.getFontName(qiblaView.getFontIndex(), isEn()));
+        fontBtn.setTextSize(15f);
+        fontBtn.setTextColor(Color.WHITE);
+        fontBtn.setAllCaps(false);
+        GradientDrawable fontBtnBg = new GradientDrawable();
+        fontBtnBg.setColor(0xFF22323A);
+        fontBtnBg.setCornerRadius(dp(16));
+        fontBtnBg.setStroke(dp(1), 0xFFE5B64A);
+        fontBtn.setBackground(fontBtnBg);
+        fontBtn.setOnClickListener(v -> {
+            int next = (qiblaView.getFontIndex() + 1) % 6;
+            qiblaView.setFontIndex(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_FONT_INDEX, next).apply();
+            fontBtn.setText((isEn() ? "Font: " : "الخط: ") + QiblaView.getFontName(next, isEn()));
+        });
+        LinearLayout.LayoutParams fontBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        fontBtnLp.bottomMargin = dp(8);
+        content.addView(fontBtn, fontBtnLp);
+
+        final Button swapBtn = new Button(this);
+        swapBtn.setText((isEn() ? "Prayer Times: " : "موضع المواقيت: ") + (qiblaView.isPanelSwapped() ? (isEn() ? "Left ⇄" : "يسار ⇄") : (isEn() ? "Right ⇄" : "يمين ⇄")));
+        swapBtn.setTextSize(15f);
+        swapBtn.setTextColor(Color.WHITE);
+        swapBtn.setAllCaps(false);
+        GradientDrawable swapBtnBg = new GradientDrawable();
+        swapBtnBg.setColor(0xFF22323A);
+        swapBtnBg.setCornerRadius(dp(16));
+        swapBtnBg.setStroke(dp(1), 0xFFE5B64A);
+        swapBtn.setBackground(swapBtnBg);
+        swapBtn.setOnClickListener(v -> {
+            boolean next = !qiblaView.isPanelSwapped();
+            qiblaView.setPanelSwapped(next);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PANEL_SWAPPED, next).apply();
+            swapBtn.setText((isEn() ? "Prayer Times: " : "موضع المواقيت: ") + (next ? (isEn() ? "Left ⇄" : "يسار ⇄") : (isEn() ? "Right ⇄" : "يمين ⇄")));
+            if (mainSwapButton != null) {
+                mainSwapButton.setText(swapButtonLabel(next, isEn()));
+            }
+        });
+        LinearLayout.LayoutParams swapBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        swapBtnLp.bottomMargin = dp(8);
+        content.addView(swapBtn, swapBtnLp);
+
+        final Button guide = new Button(this);
+        guide.setText(isEn() ? "How to Use" : "طريقة استخدام البرنامج");
+        guide.setTextSize(15f);
         guide.setTextColor(Color.WHITE);
         guide.setAllCaps(false);
         GradientDrawable guideBg = new GradientDrawable();
         guideBg.setColor(0xFF165B63);
-        guideBg.setCornerRadius(dp(22));
+        guideBg.setCornerRadius(dp(16));
         guideBg.setStroke(dp(1), 0xFF2FE0C7);
         guide.setBackground(guideBg);
         guide.setOnClickListener(v -> {
             dialog.dismiss();
             handler.postDelayed(this::showUserGuideDialog, 120L);
         });
-        LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(dp(300), dp(54));
-        guideLp.bottomMargin = dp(12);
-        card.addView(guide, guideLp);
+        LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        guideLp.bottomMargin = dp(8);
+        content.addView(guide, guideLp);
 
-        Button about = new Button(this);
-        about.setText("حول");
-        about.setTextSize(19f);
+        final Button about = new Button(this);
+        about.setText(isEn() ? "About" : "حول");
+        about.setTextSize(15f);
         about.setTextColor(Color.WHITE);
         about.setAllCaps(false);
         GradientDrawable aboutSectionBg = new GradientDrawable();
         aboutSectionBg.setColor(0xFF22323A);
-        aboutSectionBg.setCornerRadius(dp(22));
+        aboutSectionBg.setCornerRadius(dp(16));
         aboutSectionBg.setStroke(dp(1), 0xFFE5B64A);
         about.setBackground(aboutSectionBg);
         about.setOnClickListener(v -> {
             dialog.dismiss();
             handler.postDelayed(this::showAboutDetailsDialog, 120L);
         });
-        LinearLayout.LayoutParams aboutSectionLp = new LinearLayout.LayoutParams(dp(250), dp(54));
-        aboutSectionLp.bottomMargin = dp(12);
-        card.addView(about, aboutSectionLp);
+        LinearLayout.LayoutParams aboutSectionLp = new LinearLayout.LayoutParams(dp(210), dp(40));
+        aboutSectionLp.bottomMargin = dp(8);
+        content.addView(about, aboutSectionLp);
 
-        Button close = new Button(this);
-        close.setText("إغلاق");
-        close.setTextSize(20f);
+        scrollView.addView(content, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, scrollHeight));
+
+        final Button close = new Button(this);
+        close.setText(isEn() ? "Close" : "إغلاق");
+        close.setTextSize(15f);
         close.setTextColor(Color.WHITE);
         close.setAllCaps(false);
         GradientDrawable closeBg = new GradientDrawable();
         closeBg.setColor(0xFF117A7C);
-        closeBg.setCornerRadius(dp(24));
+        closeBg.setCornerRadius(dp(16));
         closeBg.setStroke(dp(1), 0xFF2FE0C7);
         close.setBackground(closeBg);
         close.setOnClickListener(v -> dialog.dismiss());
-        card.addView(close, new LinearLayout.LayoutParams(dp(220), dp(56)));
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(160), dp(38));
+        closeLp.topMargin = dp(8);
+        card.addView(close, closeLp);
 
-        dialog.setContentView(card);
+        langBtn.setOnClickListener(v -> {
+            boolean nextEn = !isEn();
+            applyLanguageMode(nextEn);
+            appTitle.setText(nextEn ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME));
+            title.setText(nextEn ? "Settings" : "الإعدادات");
+            update.setText(nextEn ? "Check for Updates" : "فحص التحديثات");
+            appearanceTitle.setText(nextEn ? "Appearance & Language" : "المظهر واللغة");
+            langBtn.setText(nextEn ? "Language: EN  ⇄  عربي" : "اللغة: العربية  ⇄  EN");
+            theme.setText((nextEn ? "Theme: " : "المظهر: ") + themeModeLabel(qiblaView.getThemeMode()));
+            fontSize.setText((nextEn ? "Font Size: " : "حجم الخط: ") + fontScaleLabel(qiblaView.getFontScale()));
+            fontBtn.setText((nextEn ? "Font: " : "الخط: ") + QiblaView.getFontName(qiblaView.getFontIndex(), nextEn));
+            swapBtn.setText((nextEn ? "Prayer Times: " : "موضع المواقيت: ") + (qiblaView.isPanelSwapped() ? (nextEn ? "Left ⇄" : "يسار ⇄") : (nextEn ? "Right ⇄" : "يمين ⇄")));
+            guide.setText(nextEn ? "How to Use" : "طريقة استخدام البرنامج");
+            about.setText(nextEn ? "About" : "حول");
+            close.setText(nextEn ? "Close" : "إغلاق");
+        });
+
+        dialog.setContentView(card, new ViewGroup.LayoutParams(targetWidth, targetHeight));
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             WindowManager.LayoutParams attrs = window.getAttributes();
             attrs.dimAmount = 0.72f;
+            attrs.width = targetWidth;
+            attrs.height = targetHeight;
+            attrs.gravity = Gravity.CENTER;
             window.setAttributes(attrs);
+            window.setLayout(targetWidth, targetHeight);
         }
         dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
-        if (window != null) { window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT); window.setGravity(Gravity.CENTER); }
     }
 
     private void showAboutDetailsDialog() {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(true);
+
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int targetWidth = Math.min(dp(650), (int) (screenWidth * 0.90f));
+        int targetHeight = Math.min(dp(440), (int) (screenHeight * 0.86f));
+        int scrollHeight = Math.max(dp(130), targetHeight - dp(165));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setPadding(dp(38), dp(24), dp(38), dp(28));
+        card.setPadding(dp(28), dp(14), dp(28), dp(14));
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(0xF2171D23);
-        cardBg.setCornerRadius(dp(28));
+        cardBg.setCornerRadius(dp(26));
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText("قبلة", 24f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(dp(48)));
+        TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 18f, 0xFFE5B64A, true);
+        card.addView(appTitle, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
-        TextView title = noteText("حول", 30f, 0xFFFFC857, true);
-        card.addView(title, matchWrap(dp(58)));
+        TextView title = noteText(isEn() ? "About" : "حول", 24f, 0xFFFFC857, true);
+        title.setPadding(0, dp(2), 0, dp(8));
+        card.addView(title, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
-        TextView body = noteText("تم تطوير تطبيق قبلة بواسطة بندر بن سليمان لخدمة مستخدمي هافال وتانك.\n\nالتطبيق يعرض اتجاه القبلة، اتجاه المركبة، الموقع، ومواقيت الصلاة، مع دعم التحديثات عبر الإنترنت.\n\nهذا العمل صدقة جارية عني وعنك وعن كل مسلم.\n\nحساب تيك توك وسناب شات: h9_haval\n\nمتجر H9", 21f, 0xFFF1F5F6, false);
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setVerticalScrollBarEnabled(true);
+        scrollView.setScrollbarFadingEnabled(false);
+        LinearLayout inner = new LinearLayout(this);
+        inner.setOrientation(LinearLayout.VERTICAL);
+        inner.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        String aboutMsg = isEn()
+                ? "Qibla was developed by Bandar bin Sulaiman for Haval and Tank users.\n\n" +
+                  "The app displays the Qibla direction, vehicle/device heading, location, and Umm al-Qura prayer times, with online update support.\n\n" +
+                  "This work is an ongoing charity (Sadaqah Jariyah) for me, you, and every Muslim.\n\n" +
+                  "Developed by / Bandar bin Sulaiman\n" +
+                  "TikTok & Snapchat / h9_haval\n" +
+                  "Visit our website:\n" +
+                  "H9 Store"
+                : "تم تطوير تطبيق قبلة بواسطة بندر بن سليمان لخدمة مستخدمي هافال وتانك.\n\n" +
+                  "التطبيق يعرض اتجاه القبلة، اتجاه المركبة، الموقع، ومواقيت الصلاة، مع دعم التحديثات عبر الإنترنت.\n\n" +
+                  "هذا العمل صدقة جارية عني وعنك وعن كل مسلم.\n\n" +
+                  "تم تطوير بواسطة / بندر بن سليمان\n" +
+                  "حساب تيك توك و سناب شات / h9_haval\n" +
+                  "زورونا عبر موقعنا الالكتروني\n" +
+                  "متجر H9";
+        TextView body = noteText(aboutMsg, 16f, 0xFFF1F5F6, false);
+        body.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         body.setLineSpacing(dp(2), 1.08f);
-        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        inner.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
-        TextView store = noteText("https://h9-story.com", 22f, 0xFFFFC857, true);
-        store.setPadding(dp(8), dp(12), dp(8), dp(12));
+        TextView store = noteText("https://h9-story.com", 17f, 0xFFFFC857, true);
+        store.setPadding(dp(8), dp(10), dp(8), dp(10));
         store.setOnClickListener(v -> {
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
         });
-        card.addView(store, matchWrap(dp(58)));
+        inner.addView(store, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        scrollView.addView(inner, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, scrollHeight));
 
         Button close = new Button(this);
-        close.setText("إغلاق");
-        close.setTextSize(20f);
+        close.setText(isEn() ? "Close" : "إغلاق");
+        close.setTextSize(15f);
         close.setTextColor(Color.WHITE);
         close.setAllCaps(false);
         GradientDrawable closeBg = new GradientDrawable();
         closeBg.setColor(0xFF117A7C);
-        closeBg.setCornerRadius(dp(24));
+        closeBg.setCornerRadius(dp(16));
         closeBg.setStroke(dp(1), 0xFF2FE0C7);
         close.setBackground(closeBg);
         close.setOnClickListener(v -> dialog.dismiss());
-        card.addView(close, new LinearLayout.LayoutParams(dp(220), dp(56)));
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(160), dp(38));
+        closeLp.topMargin = dp(8);
+        card.addView(close, closeLp);
 
-        dialog.setContentView(card);
+        dialog.setContentView(card, new ViewGroup.LayoutParams(targetWidth, targetHeight));
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             WindowManager.LayoutParams attrs = window.getAttributes();
             attrs.dimAmount = 0.72f;
+            attrs.width = targetWidth;
+            attrs.height = targetHeight;
+            attrs.gravity = Gravity.CENTER;
             window.setAttributes(attrs);
+            window.setLayout(targetWidth, targetHeight);
         }
         dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
         dialog.show();
-        if (window != null) {
-            window.setLayout(dp(650), WindowManager.LayoutParams.WRAP_CONTENT);
-            window.setGravity(Gravity.CENTER);
-        }
     }
 
     private void showDeveloperNoticeOnce() {
@@ -441,78 +655,214 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void showUserGuideDialog(final Runnable onContinue, boolean firstRun) {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(!firstRun);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(true);
+
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int targetWidth = Math.min(dp(680), (int) (screenWidth * 0.90f));
+        int targetHeight = Math.min(dp(420), (int) (screenHeight * 0.85f));
+        int scrollHeight = Math.max(dp(120), targetHeight - dp(136));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setPadding(dp(38), dp(22), dp(38), dp(26));
+        card.setPadding(dp(22), dp(12), dp(22), dp(14));
         GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setColor(0xF2171D23);
-        cardBg.setCornerRadius(dp(28));
+        cardBg.setColor(0xF4141A20);
+        cardBg.setCornerRadius(dp(24));
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView title = noteText(firstRun ? "مرحبًا بك في قبلة" : "طريقة استخدام البرنامج", 29f, 0xFFFFC857, true);
-        card.addView(title, matchWrap(dp(58)));
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView body = noteText(
-                "وصف البرنامج\n" +
-                "تطبيق قبلة لمستخدمي هافال وتانك، يعرض اتجاه القبلة بالنسبة لاتجاه المركبة، الموقع، المنطقة، ومواقيت الصلاة.\n\n" +
-                "طريقة الاستخدام\n" +
-                "فعّل GPS وانتظر عدة ثوانٍ حتى يتم تحديد الموقع واستقرار اتجاه المركبة. السهم داخل البوصلة يوضح اتجاه القبلة بالنسبة لاتجاه السيارة.\n\n" +
-                "الموقع والمنطقة\n" +
-                "يعرض التطبيق اسم المدينة والمنطقة عند توفر بيانات الموقع.\n\n" +
-                "التحديث\n" +
-                "من الإعدادات اختر «فحص التحديثات». إذا توفر إصدار جديد اختر «تنزيل وتثبيت».\n\n" +
-                "نصيحة\n" +
-                "لأفضل دقة للبوصلة اترك التطبيق عدة ثوانٍ بعد التشغيل حتى يستقر الاتجاه.",
-                18f, 0xFFF1F5F6, false);
-        body.setLineSpacing(dp(2), 1.07f);
-        card.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        String headerTitleText;
+        if (isEn()) {
+            headerTitleText = firstRun ? ("Welcome to Qibla (" + BuildConfig.VERSION_NAME + ")") : "How to Use Qibla";
+        } else {
+            headerTitleText = firstRun ? ("مرحبًا بك في قبلة (" + BuildConfig.VERSION_NAME + ")") : "طريقة استخدام البرنامج";
+        }
+        TextView title = noteText(headerTitleText, 21f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        header.addView(title, titleLp);
+
+        Button topClose = new Button(this);
+        topClose.setText("✕");
+        topClose.setTextSize(14f);
+        topClose.setTextColor(0xFFFFC857);
+        topClose.setPadding(0, 0, 0, 0);
+        GradientDrawable topCloseBg = new GradientDrawable();
+        topCloseBg.setColor(0x2EFFFFFF);
+        topCloseBg.setCornerRadius(dp(16));
+        topClose.setBackground(topCloseBg);
+        topClose.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams topCloseLp = new LinearLayout.LayoutParams(dp(32), dp(32));
+        header.addView(topClose, topCloseLp);
+
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(38));
+        headerLp.bottomMargin = dp(6);
+        card.addView(header, headerLp);
+
+        final ScrollView scrollView = new ScrollView(this);
+        scrollView.setVerticalScrollBarEnabled(true);
+        scrollView.setScrollbarFadingEnabled(false);
+
+        LinearLayout scrollContent = new LinearLayout(this);
+        scrollContent.setOrientation(LinearLayout.VERTICAL);
+        scrollContent.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        String devCredit = isEn()
+                ? "Developed by / Bandar Bin Sulaiman\n" +
+                  "TikTok & Snapchat / h9_haval\n" +
+                  "Visit our website: H9 Store"
+                : "تم تطوير بواسطة / بندر بن سليمان\n" +
+                  "حساب تيك توك و سناب شات / h9_haval\n" +
+                  "زورونا عبر موقعنا الالكتروني / متجر H9";
+
+        TextView devText = noteText(devCredit, 15f, 0xFFFFC857, true);
+        devText.setGravity(Gravity.CENTER);
+        devText.setLineSpacing(dp(2), 1.08f);
+        devText.setPadding(dp(8), dp(4), dp(8), dp(4));
+        scrollContent.addView(devText, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        TextView storeLink = noteText("https://h9-story.com", 16f, 0xFF2FE0C7, true);
+        storeLink.setGravity(Gravity.CENTER);
+        storeLink.setPadding(dp(8), dp(2), dp(8), dp(8));
+        storeLink.setOnClickListener(v -> {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
+        });
+        scrollContent.addView(storeLink, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        View divider = new View(this);
+        divider.setBackgroundColor(0x44E5B64A);
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(dp(220), dp(1));
+        divLp.bottomMargin = dp(8);
+        scrollContent.addView(divider, divLp);
+
+        String guideBody = isEn()
+                ? "Overview\n" +
+                  "Qibla for Haval, Tank, and Android devices displays the Qibla direction relative to your vehicle or device heading, along with your location and Umm al-Qura prayer times.\n\n" +
+                  "How to Use\n" +
+                  "Enable GPS and wait a few seconds for location and compass heading stabilization. The arrow inside the compass indicates the Qibla direction relative to your heading.\n\n" +
+                  "Location & Region\n" +
+                  "The app automatically displays your city and province as soon as location data is available.\n\n" +
+                  "Updates\n" +
+                  "Open Settings and tap 'Check for Updates' to download and install new releases.\n\n" +
+                  "Tip\n" +
+                  "For optimal compass accuracy, allow the app a few seconds after launch to stabilize heading sensors."
+                : "وصف البرنامج\n" +
+                  "تطبيق قبلة لمستخدمي هافال وتانك، يعرض اتجاه القبلة بالنسبة لاتجاه المركبة، الموقع، المنطقة، ومواقيت الصلاة.\n\n" +
+                  "طريقة الاستخدام\n" +
+                  "فعّل GPS وانتظر عدة ثوانٍ حتى يتم تحديد الموقع واستقرار اتجاه المركبة. السهم داخل البوصلة يوضح اتجاه القبلة بالنسبة لاتجاه السيارة.\n\n" +
+                  "الموقع والمنطقة\n" +
+                  "يعرض التطبيق اسم المدينة والمنطقة عند توفر بيانات الموقع.\n\n" +
+                  "التحديث\n" +
+                  "من الإعدادات اختر «فحص التحديثات». إذا توفر إصدار جديد اختر «تنزيل وتثبيت».\n\n" +
+                  "نصيحة\n" +
+                  "لأفضل دقة للبوصلة اترك التطبيق عدة ثوانٍ بعد التشغيل حتى يستقر الاتجاه.";
+
+        TextView body = noteText(guideBody, 15f, 0xFFF1F5F6, false);
+        body.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        body.setLineSpacing(dp(2), 1.08f);
+        body.setPadding(dp(8), dp(4), dp(8), dp(12));
+        scrollContent.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        scrollView.addView(scrollContent, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, scrollHeight);
+        scrollLp.bottomMargin = dp(10);
+        card.addView(scrollView, scrollLp);
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER);
+
+        Button scrollDownButton = new Button(this);
+        scrollDownButton.setText(isEn() ? "⬇ Scroll Down" : "⬇ النزول للأسفل");
+        scrollDownButton.setTextSize(14f);
+        scrollDownButton.setTextColor(0xFFFFC857);
+        scrollDownButton.setAllCaps(false);
+        GradientDrawable scrollDownBg = new GradientDrawable();
+        scrollDownBg.setColor(0xFF22323A);
+        scrollDownBg.setCornerRadius(dp(16));
+        scrollDownBg.setStroke(dp(1), 0xFFE5B64A);
+        scrollDownButton.setBackground(scrollDownBg);
+        scrollDownButton.setOnClickListener(v -> scrollView.smoothScrollBy(0, dp(140)));
+        LinearLayout.LayoutParams scrollBtnLp = new LinearLayout.LayoutParams(dp(135), dp(38));
+        scrollBtnLp.rightMargin = dp(10);
+        footer.addView(scrollDownButton, scrollBtnLp);
 
         Button continueButton = new Button(this);
-        continueButton.setText(firstRun ? "بدء الاستخدام" : "إغلاق");
-        continueButton.setTextSize(20f);
+        continueButton.setText(isEn() ? (firstRun ? "Get Started" : "Close") : (firstRun ? "بدء الاستخدام" : "إغلاق"));
+        continueButton.setTextSize(15f);
         continueButton.setTextColor(Color.WHITE);
         continueButton.setAllCaps(false);
         GradientDrawable buttonBg = new GradientDrawable();
         buttonBg.setColor(0xFF117A7C);
-        buttonBg.setCornerRadius(dp(24));
+        buttonBg.setCornerRadius(dp(16));
         buttonBg.setStroke(dp(1), 0xFF2FE0C7);
         continueButton.setBackground(buttonBg);
         continueButton.setOnClickListener(v -> {
             if (onContinue != null) onContinue.run();
             dialog.dismiss();
         });
-        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(250), dp(56));
-        buttonLp.topMargin = dp(16);
-        card.addView(continueButton, buttonLp);
+        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(155), dp(38));
+        footer.addView(continueButton, buttonLp);
 
-        dialog.setContentView(card);
+        card.addView(footer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+
+        dialog.setContentView(card, new ViewGroup.LayoutParams(targetWidth, targetHeight));
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             WindowManager.LayoutParams attrs = window.getAttributes();
             attrs.dimAmount = 0.72f;
+            attrs.width = targetWidth;
+            attrs.height = targetHeight;
+            attrs.gravity = Gravity.CENTER;
             window.setAttributes(attrs);
+            window.setLayout(targetWidth, targetHeight);
         }
-        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
+        dialog.setOnDismissListener(d -> {
+            if (onContinue != null) onContinue.run();
+            handler.postDelayed(this::applyImmersiveMode, 120L);
+        });
         dialog.show();
-        if (window != null) {
-            window.setLayout(dp(760), WindowManager.LayoutParams.WRAP_CONTENT);
-            window.setGravity(Gravity.CENTER);
-        }
     }
 
     private String fontScaleLabel(float scale) {
+        if (isEn()) {
+            if (scale >= 1.25f) return "Extra Large";
+            if (scale >= 1.10f) return "Large";
+            if (scale <= 0.92f) return "Small";
+            return "Medium";
+        }
+        if (scale >= 1.25f) return "كبير جداً";
         if (scale >= 1.10f) return "كبير";
-        if (scale <= 0.95f) return "صغير";
+        if (scale <= 0.92f) return "صغير";
         return "متوسط";
     }
 
+    private String swapButtonLabel(boolean swapped, boolean english) {
+        if (english) {
+            return swapped ? "Prayers: Left ⇄" : "Prayers: Right ⇄";
+        } else {
+            return swapped ? "المواقيت: يسار ⇄" : "المواقيت: يمين ⇄";
+        }
+    }
+
     private String themeModeLabel(int mode) {
+        if (isEn()) {
+            if (mode == QiblaView.THEME_DAY) return "Day";
+            if (mode == QiblaView.THEME_NIGHT) return "Night";
+            return "Auto";
+        }
         if (mode == QiblaView.THEME_DAY) return "نهاري";
         if (mode == QiblaView.THEME_NIGHT) return "ليلي";
         return "تلقائي";
@@ -524,7 +874,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         view.setTextSize(sizeSp);
         view.setTextColor(color);
         view.setGravity(Gravity.CENTER);
-        view.setTextDirection(View.TEXT_DIRECTION_RTL);
+        view.setTextDirection(isEn() ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
         view.setTypeface(Typeface.create("sans", bold ? Typeface.BOLD : Typeface.NORMAL));
         return view;
     }
@@ -643,6 +993,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private boolean isBetterLocation(Location candidate, Location current) {
         if (current == null) return true;
+        if ("default".equals(current.getProvider()) && !"default".equals(candidate.getProvider())) return true;
         long dt = candidate.getTime() - current.getTime();
         if (dt > 30000L) return true;
         if (dt < -30000L) return false;
@@ -671,6 +1022,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         handler.removeCallbacks(uiTick);
         handler.post(uiTick);
         registerHeadingSensors();
+        if (qiblaSensorHelper != null) qiblaSensorHelper.startListening();
         if (!gwmNaviHeadingStarted) startGwmNaviHeadingIntegration();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();
     }
@@ -679,6 +1031,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(uiTick);
+        if (qiblaSensorHelper != null) qiblaSensorHelper.stopListening();
         if (sensorManager != null) sensorManager.unregisterListener(this);
         try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
     }
@@ -703,6 +1056,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         lastLocation = location;
         qiblaView.setLocation(location);
+        if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(location);
         updateNetworkStatus();
 
         if (isFused) {
@@ -3488,7 +3842,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         PrayerTimesCalculator.Result result = PrayerTimesCalculator.calculate(
                 location.getLatitude(), location.getLongitude(), calendar);
         String[] names = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
-        qiblaView.setPrayerTimes(names, result.times24, result.hijriDate);
+        qiblaView.setPrayerTimes(names, result.times24, result.hijriDate, result.hijriDateEn);
         qiblaView.setPrayerStatus("أم القرى • حساب محلي بدون إنترنت");
     }
 
@@ -3511,9 +3865,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void resolveLocationName(double lat, double lon) {
         String city = municipalityFromCoordinates(lat, lon);
         String region = regionFromSaudiCoordinates(lat, lon);
+        if (city == null && region != null) city = region;
         try {
             if (Geocoder.isPresent()) {
-                Geocoder geocoder = new Geocoder(this, new Locale("ar"));
+                Geocoder geocoder = new Geocoder(this, isEn() ? Locale.US : new Locale("ar"));
                 List<android.location.Address> results = geocoder.getFromLocation(lat, lon, 1);
                 if (results != null && !results.isEmpty()) {
                     android.location.Address a = results.get(0);
@@ -3527,7 +3882,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Exception ignored) { }
 
         final String finalCity = city == null || city.trim().isEmpty() ? "الموقع الحالي" : city.trim();
-        final String finalRegion = region == null ? "" : region.trim();
         runOnUiThread(() -> {
             qiblaView.setLocationName(finalCity);
             qiblaView.setRegionName("");
@@ -3605,6 +3959,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void registerHeadingSensors() {
+        if (qiblaSensorHelper != null) return;
         if (sensorManager == null) return;
         sensorManager.unregisterListener(this);
         if (rotationVectorSensor != null) {
@@ -3626,6 +3981,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         float[] orientation = new float[3];
         SensorManager.getOrientation(remapped, orientation);
         return normalize((float) Math.toDegrees(orientation[0]));
+    }
+
+    private void applyTrueSensorHeading(float trueHeading) {
+        if (Float.isNaN(trueHeading)) return;
+        long now = System.currentTimeMillis();
+        if (now - lastOemHeadingAt < 1500L) return;
+        boolean gpsFreshAndMoving = lastSpeedMps >= GPS_HEADING_MIN_SPEED_MPS && now - lastGpsHeadingAt < 3000L;
+        if (!gpsFreshAndMoving) {
+            lastHeadingAt = now;
+            saveHeading(trueHeading, "بوصلة الشاشة • شمال حقيقي");
+            qiblaView.setHeading(trueHeading, "بوصلة الشاشة • شمال حقيقي");
+        }
     }
 
     private void applySensorHeading(float headingValue) {
@@ -3677,6 +4044,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     @Override
     protected void onDestroy() {
+        if (qiblaSensorHelper != null) {
+            qiblaSensorHelper.stopListening();
+            qiblaSensorHelper = null;
+        }
         microGLocationRunning = false;
         handler.removeCallbacks(microGPollRunnable);
         oemDrRunning = false;

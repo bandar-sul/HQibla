@@ -9,23 +9,24 @@ android {
     defaultConfig {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
-        targetSdk 28
-        versionCode 80
-        versionName '8.0-manual-ui-location'
+        targetSdk 34
+        versionCode 86
+        versionName '8.6'
+        buildConfigField "String", "EXPECTED_CERT_SHA256", "\"" + (project.findProperty("EXPECTED_CERT_SHA256") ?: "") + "\""
+        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json\""
     }
 
     buildFeatures {
         buildConfig true
     }
 
-    def expectedCert = project.findProperty("EXPECTED_CERT_SHA256") ?: ""
-
-    defaultConfig {
-        buildConfigField "String", "EXPECTED_CERT_SHA256", "\"" + expectedCert + "\""
-        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json\""
-    }
-
     signingConfigs {
+        debugConfig {
+            storeFile file("${rootDir}/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
         production {
             def storePath = System.getenv("H9_SIGNING_STORE_FILE")
             if (storePath != null && !storePath.isEmpty()) {
@@ -40,6 +41,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debugConfig
+        }
         release {
             minifyEnabled true
             shrinkResources true

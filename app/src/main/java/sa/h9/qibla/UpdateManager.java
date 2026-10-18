@@ -36,14 +36,21 @@ public final class UpdateManager {
     private static final long AUTO_CHECK_INTERVAL = 24L * 60L * 60L * 1000L;
     private UpdateManager() { }
 
+    private static boolean isEn(Activity activity) {
+        if (activity == null) return false;
+        boolean defaultEn = Locale.getDefault().getLanguage().toLowerCase(Locale.US).startsWith("en");
+        return activity.getSharedPreferences("h9_qibla_ui", Activity.MODE_PRIVATE).getBoolean("english_mode", defaultEn);
+    }
+
     public static void checkForUpdates(Activity activity, boolean manual) {
         if (activity == null || activity.isFinishing()) return;
+        final boolean en = isEn(activity);
         if (!manual) {
             long last = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).getLong(KEY_LAST_AUTO_CHECK, 0L);
             if (System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL) return;
             activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).edit().putLong(KEY_LAST_AUTO_CHECK, System.currentTimeMillis()).apply();
         }
-        if (manual) Toast.makeText(activity, "جاري فحص التحديثات…", Toast.LENGTH_SHORT).show();
+        if (manual) Toast.makeText(activity, en ? "Checking for updates…" : "جاري فحص التحديثات…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             HttpURLConnection c = null;
             try {
@@ -64,18 +71,19 @@ public final class UpdateManager {
                 String sha256 = normalizeHex(j.getString("sha256"));
                 String notes = j.optString("notes", "");
                 if (remoteCode <= BuildConfig.VERSION_CODE) {
-                    if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, "أنت على أحدث إصدار", Toast.LENGTH_LONG).show());
+                    if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? ("You are on the latest version (" + BuildConfig.VERSION_NAME + ")") : ("أنت على أحدث إصدار (" + BuildConfig.VERSION_NAME + ")"), Toast.LENGTH_LONG).show());
                     return;
                 }
                 activity.runOnUiThread(() -> showUpdateDialog(activity, remoteCode, remoteName, apkUrl, sha256, notes));
             } catch (Throwable e) {
-                if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, "تعذر فحص التحديثات الآن", Toast.LENGTH_LONG).show());
+                if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? "Unable to check for updates right now" : "تعذر فحص التحديثات الآن", Toast.LENGTH_LONG).show());
             } finally { if (c != null) c.disconnect(); }
         }, "H9-OTA-Check").start();
     }
 
     private static void showUpdateDialog(Activity activity, int code, String name, String apkUrl, String sha256, String notes) {
         if (activity.isFinishing()) return;
+        final boolean en = isEn(activity);
         final Dialog dialog = new Dialog(activity);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
@@ -93,7 +101,7 @@ public final class UpdateManager {
         card.setBackground(bg);
 
         TextView title = new TextView(activity);
-        title.setText("يوجد تحديث جديد");
+        title.setText(en ? "New Update Available" : "يوجد تحديث جديد");
         title.setTextColor(0xFFFFC857);
         title.setTextSize(27f);
         title.setGravity(Gravity.CENTER);
@@ -102,7 +110,7 @@ public final class UpdateManager {
                 WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 58)));
 
         TextView version = new TextView(activity);
-        version.setText("الإصدار " + name);
+        version.setText((en ? "Version " : "الإصدار ") + name);
         version.setTextColor(0xFF2FE0C7);
         version.setTextSize(20f);
         version.setGravity(Gravity.CENTER);
@@ -114,13 +122,13 @@ public final class UpdateManager {
 
         TextView body = new TextView(activity);
         String bodyText = (notes == null || notes.trim().isEmpty())
-                ? "يتوفر إصدار أحدث للتطبيق."
+                ? (en ? "A newer version of Qibla is available." : "يتوفر إصدار أحدث للتطبيق.")
                 : notes.trim();
-        body.setText(bodyText + "\n\nسيتم التحقق من سلامة ملف التحديث قبل التثبيت.");
+        body.setText(bodyText + (en ? "\n\nThe update package integrity will be verified before installation." : "\n\nسيتم التحقق من سلامة ملف التحديث قبل التثبيت."));
         body.setTextColor(0xFFF1F5F6);
         body.setTextSize(18f);
         body.setGravity(Gravity.CENTER);
-        body.setTextDirection(android.view.View.TEXT_DIRECTION_RTL);
+        body.setTextDirection(en ? android.view.View.TEXT_DIRECTION_LTR : android.view.View.TEXT_DIRECTION_RTL);
         body.setLineSpacing(dp(activity, 2), 1.10f);
         LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
@@ -132,7 +140,7 @@ public final class UpdateManager {
         buttons.setGravity(Gravity.CENTER);
 
         Button later = new Button(activity);
-        later.setText("لاحقًا");
+        later.setText(en ? "Later" : "لاحقًا");
         later.setTextSize(18f);
         later.setTextColor(0xFFFFC857);
         later.setAllCaps(false);
@@ -144,7 +152,7 @@ public final class UpdateManager {
         later.setOnClickListener(v -> dialog.dismiss());
 
         Button install = new Button(activity);
-        install.setText("تنزيل وتثبيت");
+        install.setText(en ? "Download & Install" : "تنزيل وتثبيت");
         install.setTextSize(18f);
         install.setTextColor(Color.WHITE);
         install.setAllCaps(false);
@@ -183,7 +191,8 @@ public final class UpdateManager {
     }
 
     private static void downloadAndInstall(Activity activity, int code, String apkUrl, String expectedSha256) {
-        Toast.makeText(activity, "جاري تنزيل التحديث…", Toast.LENGTH_SHORT).show();
+        final boolean en = isEn(activity);
+        Toast.makeText(activity, en ? "Downloading update…" : "جاري تنزيل التحديث…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             HttpURLConnection c = null; File out = null;
             try {
@@ -212,7 +221,7 @@ public final class UpdateManager {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.getPackageManager().canRequestPackageInstalls()) {
                     final File f = out;
                     activity.runOnUiThread(() -> {
-                        Toast.makeText(activity, "فعّل السماح بتثبيت التطبيقات لهذا التطبيق ثم أعد فحص التحديث", Toast.LENGTH_LONG).show();
+                        Toast.makeText(activity, en ? "Enable permission to install apps for Qibla, then check for updates again" : "فعّل السماح بتثبيت التطبيقات لهذا التطبيق ثم أعد فحص التحديث", Toast.LENGTH_LONG).show();
                         activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())));
                     });
                     return;
@@ -221,12 +230,13 @@ public final class UpdateManager {
                 activity.runOnUiThread(() -> install(activity, apk));
             } catch (Throwable e) {
                 if (out != null && out.exists()) out.delete();
-                activity.runOnUiThread(() -> Toast.makeText(activity, "تم رفض التحديث: فشل التحقق الأمني أو التنزيل", Toast.LENGTH_LONG).show());
+                activity.runOnUiThread(() -> Toast.makeText(activity, en ? "Update rejected: security verification or download failed" : "تم رفض التحديث: فشل التحقق الأمني أو التنزيل", Toast.LENGTH_LONG).show());
             } finally { if (c != null) c.disconnect(); }
         }, "H9-OTA-Download").start();
     }
 
     private static void install(Activity activity, File apk) {
+        final boolean en = isEn(activity);
         try {
             Uri uri = FileProvider.getUriForFile(activity, BuildConfig.APPLICATION_ID + ".files", apk);
             Intent i = new Intent(Intent.ACTION_VIEW);
@@ -234,7 +244,7 @@ public final class UpdateManager {
             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(i);
         } catch (Throwable e) {
-            Toast.makeText(activity, "تعذر فتح مثبت الحزمة", Toast.LENGTH_LONG).show();
+            Toast.makeText(activity, en ? "Unable to open package installer" : "تعذر فتح مثبت الحزمة", Toast.LENGTH_LONG).show();
         }
     }
 

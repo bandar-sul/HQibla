@@ -20,14 +20,20 @@ public final class PrayerTimesCalculator {
     public static final class Result {
         public final String[] times24;
         public final String hijriDate;
+        public final String hijriDateEn;
 
-        Result(String[] times24, String hijriDate) {
+        Result(String[] times24, String hijriDate, String hijriDateEn) {
             this.times24 = times24;
             this.hijriDate = hijriDate;
+            this.hijriDateEn = hijriDateEn;
         }
     }
 
     public static Result calculate(double latitude, double longitude, Calendar date) {
+        return calculate(latitude, longitude, date, false);
+    }
+
+    public static Result calculate(double latitude, double longitude, Calendar date, boolean english) {
         Calendar local = (Calendar) date.clone();
         int dayOfYear = local.get(Calendar.DAY_OF_YEAR);
         double gamma = 2.0 * Math.PI / 365.0 * (dayOfYear - 1);
@@ -82,12 +88,18 @@ public final class PrayerTimesCalculator {
                 format24(isha)
         };
 
-        String[] months = {
+        String[] monthsAr = {
                 "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "جمادى الأولى", "جمادى الآخرة",
                 "رجب", "شعبان", "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
         };
-        String hijriText = hijri[2] + " " + months[Math.max(0, Math.min(11, hijri[1] - 1))] + " " + hijri[0];
-        return new Result(times, hijriText);
+        String[] monthsEn = {
+                "Muharram", "Safar", "Rabi' I", "Rabi' II", "Jumada I", "Jumada II",
+                "Rajab", "Sha'ban", "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
+        };
+        int mIdx = Math.max(0, Math.min(11, hijri[1] - 1));
+        String hijriTextAr = hijri[2] + " " + monthsAr[mIdx] + " " + hijri[0];
+        String hijriTextEn = hijri[2] + " " + monthsEn[mIdx] + " " + hijri[0] + " AH";
+        return new Result(times, english ? hijriTextEn : hijriTextAr, hijriTextEn);
     }
 
     private static double hourAngleMinutes(double latitude, double declinationRad, double altitudeDeg) {
