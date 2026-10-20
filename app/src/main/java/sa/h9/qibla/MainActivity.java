@@ -373,8 +373,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         themeBg.setStroke(dp(1), 0xFFE5B64A);
         theme.setBackground(themeBg);
         theme.setOnClickListener(v -> {
-            int next = qiblaView.getThemeMode() == QiblaView.THEME_AUTO ? QiblaView.THEME_DAY
-                    : (qiblaView.getThemeMode() == QiblaView.THEME_DAY ? QiblaView.THEME_NIGHT : QiblaView.THEME_AUTO);
+            int next = (qiblaView.getThemeMode() + 1) % 5;
             qiblaView.setThemeMode(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME_MODE, next).apply();
             theme.setText((isEn() ? "Theme: " : "المظهر: ") + themeModeLabel(next));
@@ -859,13 +858,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private String themeModeLabel(int mode) {
         if (isEn()) {
-            if (mode == QiblaView.THEME_DAY) return "Day";
-            if (mode == QiblaView.THEME_NIGHT) return "Night";
-            return "Auto";
+            switch (mode) {
+                case QiblaView.THEME_EMERALD: return "Royal Emerald";
+                case QiblaView.THEME_OBSIDIAN: return "Obsidian Navy";
+                case QiblaView.THEME_AMBER: return "Desert Amber";
+                case QiblaView.THEME_PEARL: return "Pearl Day";
+                default: return "Auto (Day/Night)";
+            }
         }
-        if (mode == QiblaView.THEME_DAY) return "نهاري";
-        if (mode == QiblaView.THEME_NIGHT) return "ليلي";
-        return "تلقائي";
+        switch (mode) {
+            case QiblaView.THEME_EMERALD: return "زمردي ملكي";
+            case QiblaView.THEME_OBSIDIAN: return "كحلي فاخر";
+            case QiblaView.THEME_AMBER: return "عنبر ذهبي";
+            case QiblaView.THEME_PEARL: return "نهاري لؤلؤي";
+            default: return "تلقائي (حسب الوقت)";
+        }
     }
 
     private TextView noteText(String text, float sizeSp, int color, boolean bold) {

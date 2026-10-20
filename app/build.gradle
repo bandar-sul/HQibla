@@ -10,10 +10,10 @@ android {
         applicationId 'sa.h9.qibla.stable'
         minSdk 28
         targetSdk 34
-        versionCode 88
-        versionName '8.8'
+        versionCode 89
+        versionName '8.9'
         buildConfigField "String", "EXPECTED_CERT_SHA256", "\"" + (project.findProperty("EXPECTED_CERT_SHA256") ?: "") + "\""
-        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json\""
+        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json\""
     }
 
     buildFeatures {

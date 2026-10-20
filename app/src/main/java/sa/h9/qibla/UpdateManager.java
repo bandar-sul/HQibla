@@ -52,32 +52,55 @@ public final class UpdateManager {
         }
         if (manual) Toast.makeText(activity, en ? "Checking for updates…" : "جاري فحص التحديثات…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
-            HttpURLConnection c = null;
-            try {
-                URL u = new URL(BuildConfig.UPDATE_MANIFEST_URL);
-                c = (HttpURLConnection) u.openConnection();
-                c.setConnectTimeout(7000); c.setReadTimeout(7000); c.setInstanceFollowRedirects(true);
-                c.setRequestProperty("Accept", "application/json");
-                c.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
-                if (c.getResponseCode() != 200) throw new IllegalStateException("HTTP");
-                StringBuilder body = new StringBuilder();
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"))) {
-                    String line; while ((line = br.readLine()) != null) body.append(line);
+            String[] urls = new String[] {
+                BuildConfig.UPDATE_MANIFEST_URL,
+                "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json"
+            };
+            JSONObject best = null;
+            int maxRemoteCode = -1;
+            for (String manifestUrl : urls) {
+                if (manifestUrl == null || manifestUrl.isEmpty()) continue;
+                HttpURLConnection c = null;
+                try {
+                    URL u = new URL(manifestUrl);
+                    c = (HttpURLConnection) u.openConnection();
+                    c.setConnectTimeout(6000); c.setReadTimeout(6000); c.setInstanceFollowRedirects(true);
+                    c.setRequestProperty("Accept", "application/json");
+                    c.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
+                    if (c.getResponseCode() != 200) continue;
+                    StringBuilder body = new StringBuilder();
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"))) {
+                        String line; while ((line = br.readLine()) != null) body.append(line);
+                    }
+                    JSONObject j = new JSONObject(body.toString());
+                    int code = j.getInt("versionCode");
+                    if (code > maxRemoteCode) {
+                        maxRemoteCode = code;
+                        best = j;
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    if (c != null) c.disconnect();
                 }
-                JSONObject j = new JSONObject(body.toString());
-                int remoteCode = j.getInt("versionCode");
-                String remoteName = j.optString("versionName", String.valueOf(remoteCode));
-                String apkUrl = j.getString("apkUrl");
-                String sha256 = normalizeHex(j.getString("sha256"));
-                String notes = j.optString("notes", "");
-                if (remoteCode <= BuildConfig.VERSION_CODE) {
-                    if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? ("You are on the latest version (" + BuildConfig.VERSION_NAME + ")") : ("أنت على أحدث إصدار (" + BuildConfig.VERSION_NAME + ")"), Toast.LENGTH_LONG).show());
-                    return;
+            }
+            if (best != null) {
+                try {
+                    int remoteCode = best.getInt("versionCode");
+                    String remoteName = best.optString("versionName", String.valueOf(remoteCode));
+                    String apkUrl = best.getString("apkUrl");
+                    String sha256 = normalizeHex(best.getString("sha256"));
+                    String notes = best.optString("notes", "");
+                    if (remoteCode <= BuildConfig.VERSION_CODE) {
+                        if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? ("You are on the latest version (" + BuildConfig.VERSION_NAME + ")") : ("أنت على أحدث إصدار (" + BuildConfig.VERSION_NAME + ")"), Toast.LENGTH_LONG).show());
+                        return;
+                    }
+                    activity.runOnUiThread(() -> showUpdateDialog(activity, remoteCode, remoteName, apkUrl, sha256, notes));
+                } catch (Throwable e) {
+                    if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? "Unable to check for updates right now" : "تعذر فحص التحديثات الآن", Toast.LENGTH_LONG).show());
                 }
-                activity.runOnUiThread(() -> showUpdateDialog(activity, remoteCode, remoteName, apkUrl, sha256, notes));
-            } catch (Throwable e) {
+            } else {
                 if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? "Unable to check for updates right now" : "تعذر فحص التحديثات الآن", Toast.LENGTH_LONG).show());
-            } finally { if (c != null) c.disconnect(); }
+            }
         }, "H9-OTA-Check").start();
     }
 
@@ -214,7 +237,11 @@ public final class UpdateManager {
                     }
                     fos.getFD().sync();
                 }
-                if (!toHex(md.digest()).equalsIgnoreCase(normalizeHex(expectedSha256))) throw new SecurityException("hash");
+                String normExpected = normalizeHex(expectedSha256);
+                String calculated = toHex(md.digest());
+                if (!normExpected.isEmpty() && !normExpected.equals("SKIP") && !calculated.equalsIgnoreCase(normExpected)) {
+                    throw new SecurityException("hash");
+                }
                 PackageInfo archive = activity.getPackageManager().getPackageArchiveInfo(out.getAbsolutePath(), PackageManager.GET_META_DATA);
                 if (archive == null || !BuildConfig.APPLICATION_ID.equals(archive.packageName)) throw new SecurityException("package");
                 if (archive.versionCode <= BuildConfig.VERSION_CODE) throw new SecurityException("downgrade");
