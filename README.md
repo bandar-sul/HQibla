@@ -2,8 +2,7 @@
 
 أحدث إصدار: **الإصدار 8.9**
 
-- رابط تحميل التحديث المباشر: [Qibla-v8.9.apk](https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v8.9.apk)
-- ملف التحديث الهوائي (OTA): [latest.json](https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json)
+قريباً
 
 ### مميزات ومظهر الإصدار 8.9 الفاخر:
 1. **حزمة ثيمات ملكية فاخرة لشاشات السيارات**:
