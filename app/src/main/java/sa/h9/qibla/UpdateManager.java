@@ -89,7 +89,8 @@ public final class UpdateManager {
                     String remoteName = best.optString("versionName", String.valueOf(remoteCode));
                     String apkUrl = best.getString("apkUrl");
                     String sha256 = normalizeHex(best.getString("sha256"));
-                    String notes = best.optString("notes", "");
+                    String notes = en ? best.optString("notes_en", best.optString("notes", ""))
+                                      : best.optString("notes_ar", best.optString("notes", ""));
                     if (remoteCode <= BuildConfig.VERSION_CODE) {
                         if (manual) activity.runOnUiThread(() -> Toast.makeText(activity, en ? ("You are on the latest version (" + BuildConfig.VERSION_NAME + ")") : ("أنت على أحدث إصدار (" + BuildConfig.VERSION_NAME + ")"), Toast.LENGTH_LONG).show());
                         return;

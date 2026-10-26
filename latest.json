@@ -2,6 +2,8 @@
   "versionCode": 100,
   "versionName": "9.1.0",
   "apkUrl": "https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v8.9.apk",
-  "sha256": "03F14DC42EB0F896196E86C83E0D2BF601FB63F33378D793D4776F9C9E70BFD2",
-  "notes": "تحديث 9.1.0: تشغيل صوت تكبيرات الأذان عبر سماعات السيارة وقناة التنبيه حتى لو كان الراديو مغلقاً، تكبير البوصلة في وضع الشاشة المقسومة Split Screen، إنزال مربعات المعلومات للأسفل وترتيب الصفوف بتناسق طبيعي مع اتجاه القراءة العربي، إصلاح تداخل النصوص والخط الكبير جداً، تكبير زر الإعدادات أسفل الشاشة، وإزالة الرمز الأحمر من شريط الأذكار."
+  "sha256": "A5CC7AD246DF8DCAB71B76E624FDFC31122DB9BD9DF7320C546E2AEC35E7B189",
+  "notes": "أهم مميزات الإصدار 9.1.0:\n• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة حتى لو كان الراديو مغلقاً.\n• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen).\n• إنزال وترتيب مربعات المعلومات لتناسب اتجاه القراءة العربي.\n• إصلاح تداخل النصوص والعناوين عند اختيار (خط كبير جداً).\n• تكبير زر الإعدادات أسفل الشاشة لسهولة الضغط أثناء القيادة.\n• إزالة الرمز الأحمر من شريط الأذكار لمظهر إسلامي أنيق.",
+  "notes_ar": "أهم مميزات الإصدار 9.1.0:\n• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة حتى لو كان الراديو مغلقاً.\n• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen).\n• إنزال وترتيب مربعات المعلومات لتناسب اتجاه القراءة العربي.\n• إصلاح تداخل النصوص والعناوين عند اختيار (خط كبير جداً).\n• تكبير زر الإعدادات أسفل الشاشة لسهولة الضغط أثناء القيادة.\n• إزالة الرمز الأحمر من شريط الأذكار لمظهر إسلامي أنيق.",
+  "notes_en": "Highlights of Version 9.1.0:\n• Audio Routing: Adhan Takbeerat plays on car speakers even if radio is off.\n• Enlarged Compass dial in Split-Screen mode.\n• Telemetry cards repositioned downward and reordered for Arabic RTL reading.\n• Fixed Extra Large font text overlaps in prayer header and countdown.\n• Enlarged bottom Settings button for easier in-car access.\n• Removed red beads icon from Athkar bar."
 }
