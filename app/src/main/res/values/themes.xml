@@ -1,7 +1,9 @@
 <resources>
     <style name="Theme.H9Qibla" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowActionModeOverlay">false</item>
         <item name="android:navigationBarColor">#0E141B</item>
         <item name="android:statusBarColor">#0E141B</item>

@@ -28,6 +28,7 @@ import android.view.Surface;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -37,6 +38,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -53,21 +56,29 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 2.0f;
     private static final long HEADING_STALE_MS = 7000L;
-    private static final long PRAYER_REFRESH_MS = 30L * 60L * 1000L;
+    private static final long PRAYER_REFRESH_MS = 5L * 60L * 1000L;
     private static final String NOTICE_PREFS = "h9_qibla_notice";
     private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v3";
     private static final String HEADING_PREFS = "h9_qibla_heading";
     private static final String KEY_LAST_HEADING = "last_heading";
     private static final String KEY_LAST_HEADING_SOURCE = "last_heading_source";
+    private static final String LOCATION_PREFS = "h9_qibla_location";
+    private static final String KEY_SAVED_LAT = "saved_lat";
+    private static final String KEY_SAVED_LON = "saved_lon";
+    private static final String KEY_SAVED_ACC = "saved_acc";
+    private static final String KEY_SAVED_TIME = "saved_time";
     private static final String UI_PREFS = "h9_qibla_ui";
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_FONT_SCALE = "font_scale";
     private static final String KEY_ENGLISH_MODE = "english_mode";
     private static final String KEY_FONT_INDEX = "font_index";
     private static final String KEY_PANEL_SWAPPED = "panel_swapped";
+    private static final String KEY_PRAYER_OFFSET_MINUTES = "prayer_offset_minutes";
+    private static final String KEY_ADHAN_SOUND_ENABLED = "adhan_sound_enabled";
+    private static final String KEY_FULLSCREEN_ENABLED = "fullscreen_enabled";
+    private static final String KEY_LAST_SEEN_CHANGELOG_VER = "last_seen_changelog_ver";
 
     private Button mainSettingsButton;
-    private Button mainSwapButton;
     private LocationManager locationManager;
     private ConnectivityManager connectivityManager;
     private SensorManager sensorManager;
@@ -133,12 +144,64 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private Location lastPlaceResolveLocation;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    private int lastPrayerDay = -1;
+    private int lastAdhanAlertMinute = -1;
+    private int lastAdhanAlertIndex = -1;
+
+    private void checkAdhanAlert() {
+        if (qiblaView == null || !qiblaView.hasPrayerTimes()) return;
+        Calendar now = Calendar.getInstance();
+        int currentSec = now.get(Calendar.SECOND);
+        if (currentSec > 5) return;
+
+        int minuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        if (minuteOfDay == lastAdhanAlertMinute) return;
+
+        String[] times = qiblaView.getPrayerTimes();
+        String[] names = qiblaView.getPrayerNames();
+        if (times == null || names == null || times.length != 6) return;
+
+        for (int i = 0; i < 6; i++) {
+            if (i == 1) continue; // Skip Sunrise
+            int pMin = parseMinutes(times[i]);
+            if (pMin == minuteOfDay && lastAdhanAlertIndex != i) {
+                lastAdhanAlertMinute = minuteOfDay;
+                lastAdhanAlertIndex = i;
+                qiblaView.showAdhanBanner(names[i], times[i]);
+                boolean soundOn = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
+                if (soundOn) {
+                    SoundManager.playAdhan(this, () -> {
+                        if (qiblaView != null) qiblaView.invalidate();
+                    });
+                }
+                break;
+            }
+        }
+    }
+
+    private static int parseMinutes(String s) {
+        if (s == null) return -1;
+        try {
+            String[] parts = s.trim().split(":");
+            return Integer.parseInt(parts[0].trim()) * 60 + Integer.parseInt(parts[1].trim());
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     private final Runnable uiTick = new Runnable() {
         @Override public void run() {
             qiblaView.tick();
             if (lastHeadingAt > 0 && System.currentTimeMillis() - lastHeadingAt > HEADING_STALE_MS) {
                 courseAnchor = null;
             }
+            if (lastLocation != null) {
+                int today = Calendar.getInstance().get(Calendar.DAY_OF_YEAR);
+                if (today != lastPrayerDay || System.currentTimeMillis() - lastPrayerCalcAt >= PRAYER_REFRESH_MS) {
+                    maybeRefreshPrayerTimes(lastLocation);
+                }
+            }
+            checkAdhanAlert();
             handler.postDelayed(this, 1000L);
         }
     };
@@ -153,10 +216,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
         getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENGLISH_MODE, english).apply();
         if (mainSettingsButton != null) {
-            mainSettingsButton.setText(english ? "Settings" : "الإعدادات");
-        }
-        if (mainSwapButton != null) {
-            mainSwapButton.setText(swapButtonLabel(qiblaView != null && qiblaView.isPanelSwapped(), english));
+            mainSettingsButton.setText(english ? "⚙ Settings" : "⚙ الإعدادات");
         }
         if (lastLocation != null) {
             lastPlaceResolveAt = 0L;
@@ -168,9 +228,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         applyImmersiveMode();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7705);
+            }
+        }
 
         SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
         boolean defaultEnglish = Locale.getDefault().getLanguage().toLowerCase(Locale.US).startsWith("en");
@@ -179,57 +245,41 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         FrameLayout root = new FrameLayout(this);
         qiblaView = new QiblaView(this);
         qiblaView.setThemeMode(uiPrefs.getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
-        qiblaView.setFontScale(uiPrefs.getFloat(KEY_FONT_SCALE, 1.0f));
+        qiblaView.setFontScale(uiPrefs.getFloat(KEY_FONT_SCALE, 0.90f));
         qiblaView.setFontIndex(uiPrefs.getInt(KEY_FONT_INDEX, QiblaView.FONT_DEFAULT));
         qiblaView.setPanelSwapped(uiPrefs.getBoolean(KEY_PANEL_SWAPPED, false));
         qiblaView.setEnglishMode(englishMode);
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
+        restoreLastLocation();
 
         middlewareDiagnosticText = null;
         binderDiagnosticText = null;
         locationDiagnosticText = null;
 
         mainSettingsButton = new Button(this);
-        mainSettingsButton.setText(englishMode ? "Settings" : "الإعدادات");
-        mainSettingsButton.setTextSize(14.5f);
-        mainSettingsButton.setTextColor(0xFFF1F7FA);
+        mainSettingsButton.setText(englishMode ? "⚙ Settings" : "⚙ الإعدادات");
+        mainSettingsButton.setTextSize(16.5f);
+        mainSettingsButton.setTextColor(0xFFFFFFFF);
         mainSettingsButton.setAllCaps(false);
         mainSettingsButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         GradientDrawable aboutBg = new GradientDrawable();
-        aboutBg.setColor(0xCC0B1B24);
-        aboutBg.setCornerRadius(dp(14));
-        aboutBg.setStroke(dp(1), 0xFF2FE0C7);
+        aboutBg.setColor(0xDD0B1B24);
+        aboutBg.setCornerRadius(dp(22));
+        aboutBg.setStroke(dp(2), 0xFF2FE0C7);
         mainSettingsButton.setBackground(aboutBg);
         mainSettingsButton.setOnClickListener(v -> showSettingsDialog());
-        FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(105), dp(38));
-        aboutLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
-        aboutLp.leftMargin = dp(36);
-        aboutLp.bottomMargin = dp(18);
+        FrameLayout.LayoutParams aboutLp = new FrameLayout.LayoutParams(dp(160), dp(46));
+        aboutLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        aboutLp.bottomMargin = dp(14);
         root.addView(mainSettingsButton, aboutLp);
 
-        mainSwapButton = new Button(this);
-        mainSwapButton.setText(swapButtonLabel(qiblaView.isPanelSwapped(), englishMode));
-        mainSwapButton.setTextSize(13.5f);
-        mainSwapButton.setTextColor(0xFFF1F7FA);
-        mainSwapButton.setAllCaps(false);
-        mainSwapButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        GradientDrawable swapBg = new GradientDrawable();
-        swapBg.setColor(0xCC0B1B24);
-        swapBg.setCornerRadius(dp(14));
-        swapBg.setStroke(dp(1), 0xFFE5B64A);
-        mainSwapButton.setBackground(swapBg);
-        mainSwapButton.setOnClickListener(v -> {
-            boolean next = !qiblaView.isPanelSwapped();
-            qiblaView.setPanelSwapped(next);
-            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PANEL_SWAPPED, next).apply();
-            mainSwapButton.setText(swapButtonLabel(next, isEn()));
+        qiblaView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int w = right - left;
+            int h = bottom - top;
+            if (w <= 0 || h <= 0) return;
+            updateButtonPositions(w, h, qiblaView.isPanelSwapped());
         });
-        FrameLayout.LayoutParams swapLp = new FrameLayout.LayoutParams(dp(135), dp(38));
-        swapLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
-        swapLp.leftMargin = dp(36) + dp(105) + dp(12);
-        swapLp.bottomMargin = dp(18);
-        root.addView(mainSwapButton, swapLp);
 
         setContentView(root);
 
@@ -262,6 +312,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         }, 2000L);
 
+        int lastChangelogVer = uiPrefs.getInt(KEY_LAST_SEEN_CHANGELOG_VER, 0);
+        if (lastChangelogVer < BuildConfig.VERSION_CODE) {
+            uiPrefs.edit().putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE).apply();
+            handler.postDelayed(() -> {
+                if (!isFinishing()) {
+                    showChangelogDialog();
+                }
+            }, 1800L);
+        }
+
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
     }
 
@@ -281,11 +341,79 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void applyImmersiveMode() {
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        View decor = getWindow().getDecorView();
-        if (decor != null) {
-            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        try {
+            boolean fullScreen = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_FULLSCREEN_ENABLED, true);
+            if (fullScreen) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowInsetsController controller = getWindow().getInsetsController();
+                    if (controller != null) {
+                        controller.hide(WindowInsets.Type.statusBars());
+                        controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    }
+                } else {
+                    View decor = getWindow().getDecorView();
+                    if (decor != null) {
+                        decor.setSystemUiVisibility(
+                                View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        );
+                    }
+                }
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowInsetsController controller = getWindow().getInsetsController();
+                    if (controller != null) {
+                        controller.show(WindowInsets.Type.statusBars());
+                    }
+                } else {
+                    View decor = getWindow().getDecorView();
+                    if (decor != null) {
+                        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                    }
+                }
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    private void updateButtonPositions(int w, int h, boolean swapped) {
+        if (w <= 0 || h <= 0 || mainSettingsButton == null) return;
+        boolean wide = ((float) w / (float) h) >= 1.35f;
+        int btnH = dp(46);
+        int btnW = wide ? dp(145) : dp(165);
+
+        FrameLayout.LayoutParams sLp = (FrameLayout.LayoutParams) mainSettingsButton.getLayoutParams();
+        sLp.width = btnW;
+        sLp.height = btnH;
+
+        if (wide) {
+            int btnMargin = (int) (w * 0.022f);
+            int btnBottom = Math.max(dp(10), (int) (h * 0.016f));
+
+            if (swapped) {
+                // When swapped, 4 cards are on the RIGHT, so Settings button sits on the bottom-right under cards
+                sLp.gravity = Gravity.BOTTOM | Gravity.RIGHT;
+                sLp.rightMargin = btnMargin;
+                sLp.leftMargin = 0;
+                sLp.bottomMargin = btnBottom;
+            } else {
+                // Default: 4 cards are on the LEFT, Settings button sits on the bottom-left under cards
+                sLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+                sLp.leftMargin = btnMargin;
+                sLp.rightMargin = 0;
+                sLp.bottomMargin = btnBottom;
+            }
+        } else {
+            // Split-Screen or Portrait: Center Settings button prominently at the bottom of the screen
+            int btnBottom = Math.max(dp(10), (int) (h * 0.020f));
+            sLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            sLp.leftMargin = 0;
+            sLp.rightMargin = 0;
+            sLp.bottomMargin = btnBottom;
         }
+        mainSettingsButton.setLayoutParams(sLp);
     }
 
     @Override
@@ -316,11 +444,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        final TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 18f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
-        final TextView title = noteText(isEn() ? "Settings" : "الإعدادات", 24f, 0xFFFFC857, true);
-        title.setPadding(0, dp(2), 0, dp(8));
-        card.addView(title, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        final TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 15f, 0xFFE5B64A, true);
+        LinearLayout.LayoutParams appTitleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        appTitleLp.bottomMargin = dp(4);
+        card.addView(appTitle, appTitleLp);
+
+        final TextView title = noteText(isEn() ? "Settings" : "الإعدادات", 22f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        titleLp.bottomMargin = dp(10);
+        card.addView(title, titleLp);
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setVerticalScrollBarEnabled(true);
@@ -395,14 +527,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         fontSize.setOnClickListener(v -> {
             float current = qiblaView.getFontScale();
             float next;
-            if (current < 0.95f) {
-                next = 1.0f;
-            } else if (current < 1.08f) {
-                next = 1.16f;
-            } else if (current < 1.25f) {
-                next = 1.34f;
+            if (current <= 0.82f) {
+                next = 0.90f; // عادي
+            } else if (current <= 0.95f) {
+                next = 1.05f; // كبير
+            } else if (current <= 1.12f) {
+                next = 1.25f; // كبير جداً
             } else {
-                next = 0.88f;
+                next = 0.78f; // صغير
             }
             qiblaView.setFontScale(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putFloat(KEY_FONT_SCALE, next).apply();
@@ -447,13 +579,104 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             qiblaView.setPanelSwapped(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PANEL_SWAPPED, next).apply();
             swapBtn.setText((isEn() ? "Prayer Times: " : "موضع المواقيت: ") + (next ? (isEn() ? "Left ⇄" : "يسار ⇄") : (isEn() ? "Right ⇄" : "يمين ⇄")));
-            if (mainSwapButton != null) {
-                mainSwapButton.setText(swapButtonLabel(next, isEn()));
-            }
+            updateButtonPositions(qiblaView.getWidth(), qiblaView.getHeight(), next);
         });
         LinearLayout.LayoutParams swapBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
         swapBtnLp.bottomMargin = dp(8);
         content.addView(swapBtn, swapBtnLp);
+
+        final Button calibBtn = new Button(this);
+        calibBtn.setText(prayerOffsetLabel(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0), isEn()));
+        calibBtn.setTextSize(15f);
+        calibBtn.setTextColor(0xFFFFC857);
+        calibBtn.setAllCaps(false);
+        GradientDrawable calibBtnBg = new GradientDrawable();
+        calibBtnBg.setColor(0xFF22323A);
+        calibBtnBg.setCornerRadius(dp(16));
+        calibBtnBg.setStroke(dp(1), 0xFFE5B64A);
+        calibBtn.setBackground(calibBtnBg);
+        calibBtn.setOnClickListener(v -> {
+            int current = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0);
+            int next = (current == 0) ? 1 : ((current == 1) ? 2 : ((current == 2) ? -1 : 0));
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_PRAYER_OFFSET_MINUTES, next).apply();
+            calibBtn.setText(prayerOffsetLabel(next, isEn()));
+            lastPrayerCalcAt = 0L;
+            if (lastLocation != null) maybeRefreshPrayerTimes(lastLocation);
+        });
+        LinearLayout.LayoutParams calibBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        calibBtnLp.bottomMargin = dp(8);
+        content.addView(calibBtn, calibBtnLp);
+
+        final Button fullscreenBtn = new Button(this);
+        fullscreenBtn.setText(fullscreenLabel(isEn()));
+        fullscreenBtn.setTextSize(15f);
+        fullscreenBtn.setTextColor(Color.WHITE);
+        fullscreenBtn.setAllCaps(false);
+        GradientDrawable fsBg = new GradientDrawable();
+        fsBg.setColor(0xFF22323A);
+        fsBg.setCornerRadius(dp(16));
+        fsBg.setStroke(dp(1), 0xFFE5B64A);
+        fullscreenBtn.setBackground(fsBg);
+        fullscreenBtn.setOnClickListener(v -> {
+            boolean cur = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_FULLSCREEN_ENABLED, true);
+            boolean nxt = !cur;
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FULLSCREEN_ENABLED, nxt).apply();
+            fullscreenBtn.setText(fullscreenLabel(isEn()));
+            applyImmersiveMode();
+        });
+        LinearLayout.LayoutParams fsLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        fsLp.bottomMargin = dp(8);
+        content.addView(fullscreenBtn, fsLp);
+
+        final TextView audioTitle = noteText(isEn() ? "Audio & Islamic Alerts" : "الصوتيات والتنبيهات الإسلامية", 16f, 0xFFFFC857, true);
+        content.addView(audioTitle, matchWrap(dp(26)));
+
+        final Button adhanSoundBtn = new Button(this);
+        adhanSoundBtn.setText(adhanSoundLabel(isEn()));
+        adhanSoundBtn.setTextSize(15f);
+        adhanSoundBtn.setTextColor(Color.WHITE);
+        adhanSoundBtn.setAllCaps(false);
+        GradientDrawable adhanBg = new GradientDrawable();
+        adhanBg.setColor(0xFF22323A);
+        adhanBg.setCornerRadius(dp(16));
+        adhanBg.setStroke(dp(1), 0xFFE5B64A);
+        adhanSoundBtn.setBackground(adhanBg);
+        adhanSoundBtn.setOnClickListener(v -> {
+            boolean cur = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
+            boolean nxt = !cur;
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ADHAN_SOUND_ENABLED, nxt).apply();
+            adhanSoundBtn.setText(adhanSoundLabel(isEn()));
+        });
+        LinearLayout.LayoutParams adhanSoundLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        adhanSoundLp.bottomMargin = dp(8);
+        content.addView(adhanSoundBtn, adhanSoundLp);
+
+        final Button playAdhanBtn = new Button(this);
+        playAdhanBtn.setText(SoundManager.isPlaying() ? (isEn() ? "⏹ Stop Takbeerat" : "⏹ إيقاف الصوت") : (isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان"));
+        playAdhanBtn.setTextSize(15f);
+        playAdhanBtn.setTextColor(Color.WHITE);
+        playAdhanBtn.setAllCaps(false);
+        GradientDrawable playAdhanBg = new GradientDrawable();
+        playAdhanBg.setColor(0xFF165B63);
+        playAdhanBg.setCornerRadius(dp(16));
+        playAdhanBg.setStroke(dp(1), 0xFF2FE0C7);
+        playAdhanBtn.setBackground(playAdhanBg);
+        playAdhanBtn.setOnClickListener(v -> {
+            if (SoundManager.isPlaying()) {
+                SoundManager.stop();
+                playAdhanBtn.setText(isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان");
+            } else {
+                playAdhanBtn.setText(isEn() ? "⏹ Stop Takbeerat" : "⏹ إيقاف الصوت");
+                SoundManager.playAdhan(this, () -> {
+                    handler.post(() -> playAdhanBtn.setText(isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان"));
+                    if (qiblaView != null) qiblaView.invalidate();
+                });
+            }
+            if (qiblaView != null) qiblaView.invalidate();
+        });
+        LinearLayout.LayoutParams playAdhanLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        playAdhanLp.bottomMargin = dp(8);
+        content.addView(playAdhanBtn, playAdhanLp);
 
         final Button guide = new Button(this);
         guide.setText(isEn() ? "How to Use" : "طريقة استخدام البرنامج");
@@ -472,6 +695,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         LinearLayout.LayoutParams guideLp = new LinearLayout.LayoutParams(dp(230), dp(40));
         guideLp.bottomMargin = dp(8);
         content.addView(guide, guideLp);
+
+        final Button changelogBtn = new Button(this);
+        changelogBtn.setText(isEn() ? "What's New (from v8.8)" : "سجل التحديثات (من ٨.٨)");
+        changelogBtn.setTextSize(15f);
+        changelogBtn.setTextColor(Color.WHITE);
+        changelogBtn.setAllCaps(false);
+        GradientDrawable clBg = new GradientDrawable();
+        clBg.setColor(0xFF22323A);
+        clBg.setCornerRadius(dp(16));
+        clBg.setStroke(dp(1), 0xFFE5B64A);
+        changelogBtn.setBackground(clBg);
+        changelogBtn.setOnClickListener(v -> {
+            dialog.dismiss();
+            handler.postDelayed(this::showChangelogDialog, 120L);
+        });
+        LinearLayout.LayoutParams clLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        clLp.bottomMargin = dp(8);
+        content.addView(changelogBtn, clLp);
 
         final Button about = new Button(this);
         about.setText(isEn() ? "About" : "حول");
@@ -521,7 +762,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             fontSize.setText((nextEn ? "Font Size: " : "حجم الخط: ") + fontScaleLabel(qiblaView.getFontScale()));
             fontBtn.setText((nextEn ? "Font: " : "الخط: ") + QiblaView.getFontName(qiblaView.getFontIndex(), nextEn));
             swapBtn.setText((nextEn ? "Prayer Times: " : "موضع المواقيت: ") + (qiblaView.isPanelSwapped() ? (nextEn ? "Left ⇄" : "يسار ⇄") : (nextEn ? "Right ⇄" : "يمين ⇄")));
+            calibBtn.setText(prayerOffsetLabel(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0), nextEn));
             guide.setText(nextEn ? "How to Use" : "طريقة استخدام البرنامج");
+            audioTitle.setText(nextEn ? "Audio & Islamic Alerts" : "الصوتيات والتنبيهات الإسلامية");
+            adhanSoundBtn.setText(adhanSoundLabel(nextEn));
+            playAdhanBtn.setText(SoundManager.isPlaying() ? (nextEn ? "⏹ Stop Takbeerat" : "⏹ إيقاف الصوت") : (nextEn ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان"));
+            changelogBtn.setText(nextEn ? "What's New (from v8.8)" : "سجل التحديثات (من ٨.٨)");
             about.setText(nextEn ? "About" : "حول");
             close.setText(nextEn ? "Close" : "إغلاق");
         });
@@ -565,12 +811,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         cardBg.setStroke(dp(2), 0xFFE5B64A);
         card.setBackground(cardBg);
 
-        TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 18f, 0xFFE5B64A, true);
-        card.addView(appTitle, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 15f, 0xFFE5B64A, true);
+        LinearLayout.LayoutParams appTitleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        appTitleLp.bottomMargin = dp(4);
+        card.addView(appTitle, appTitleLp);
 
-        TextView title = noteText(isEn() ? "About" : "حول", 24f, 0xFFFFC857, true);
-        title.setPadding(0, dp(2), 0, dp(8));
-        card.addView(title, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+        TextView title = noteText(isEn() ? "About" : "حول", 22f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        titleLp.bottomMargin = dp(10);
+        card.addView(title, titleLp);
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setVerticalScrollBarEnabled(true);
@@ -605,6 +854,217 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://h9-story.com"))); } catch (Exception ignored) { }
         });
         inner.addView(store, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
+
+        scrollView.addView(inner, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, scrollHeight));
+
+        Button close = new Button(this);
+        close.setText(isEn() ? "Close" : "إغلاق");
+        close.setTextSize(15f);
+        close.setTextColor(Color.WHITE);
+        close.setAllCaps(false);
+        GradientDrawable closeBg = new GradientDrawable();
+        closeBg.setColor(0xFF117A7C);
+        closeBg.setCornerRadius(dp(16));
+        closeBg.setStroke(dp(1), 0xFF2FE0C7);
+        close.setBackground(closeBg);
+        close.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(dp(160), dp(38));
+        closeLp.topMargin = dp(8);
+        card.addView(close, closeLp);
+
+        dialog.setContentView(card, new ViewGroup.LayoutParams(targetWidth, targetHeight));
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.72f;
+            attrs.width = targetWidth;
+            attrs.height = targetHeight;
+            attrs.gravity = Gravity.CENTER;
+            window.setAttributes(attrs);
+            window.setLayout(targetWidth, targetHeight);
+        }
+        dialog.setOnDismissListener(d -> handler.postDelayed(this::applyImmersiveMode, 120L));
+        dialog.show();
+    }
+
+    private void showChangelogDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(true);
+
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int targetWidth = Math.min(dp(680), (int) (screenWidth * 0.90f));
+        int targetHeight = Math.min(dp(440), (int) (screenHeight * 0.86f));
+        int scrollHeight = Math.max(dp(130), targetHeight - dp(165));
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(28), dp(14), dp(28), dp(14));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(0xF2171D23);
+        cardBg.setCornerRadius(dp(26));
+        cardBg.setStroke(dp(2), 0xFFE5B64A);
+        card.setBackground(cardBg);
+
+        TextView appTitle = noteText(isEn() ? ("Qibla • Version " + BuildConfig.VERSION_NAME) : ("قبلة • الإصدار " + BuildConfig.VERSION_NAME), 15f, 0xFFE5B64A, true);
+        LinearLayout.LayoutParams appTitleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        appTitleLp.bottomMargin = dp(4);
+        card.addView(appTitle, appTitleLp);
+
+        TextView title = noteText(isEn() ? "Changelog (From v8.8)" : "سجل التحديثات (من ٨.٨)", 22f, 0xFFFFC857, true);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        titleLp.bottomMargin = dp(10);
+        card.addView(title, titleLp);
+
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setVerticalScrollBarEnabled(true);
+        scrollView.setScrollbarFadingEnabled(false);
+        LinearLayout inner = new LinearLayout(this);
+        inner.setOrientation(LinearLayout.VERTICAL);
+        inner.setGravity(isEn() ? Gravity.LEFT : Gravity.RIGHT);
+
+        String changelogText = isEn()
+                ? "◈ Version 9.1.0 (Current):\n" +
+                  "• Automotive Audio routing: Takbeerat now plays on car speakers even when radio is turned off.\n" +
+                  "• Enlarged Compass in Split-Screen mode for superior driving visibility.\n" +
+                  "• Moved telemetry cards downward and reordered columns to match Arabic reading direction.\n" +
+                  "• Fixed Extra Large font text collisions: resolved prayer header and countdown overlaps.\n" +
+                  "• Enlarged Settings button with prominent styling and comfortable touch targets.\n" +
+                  "• Removed red prayer beads icon from Athkar bar for a clean, unified aesthetic.\n\n" +
+                  "◈ Version 9.0.0:\n" +
+                  "• Completely removed Dua al-Rukub audio per user preference.\n" +
+                  "• Adhan audio now plays exclusively the opening Takbeerat (Makkah Haram).\n" +
+                  "• Fixed Split-Screen compass background circle and Arabesque star lattice alignment.\n" +
+                  "• Removed Left/Right prayer times button from main screen; kept strictly inside Settings.\n" +
+                  "• Centered bottom Settings button in Split-Screen mode for optimal car UI balance.\n\n" +
+                  "◈ Version 8.9.9:\n" +
+                  "• Restored authentic majestic Makkah Adhan audio.\n" +
+                  "• Fixed Compass collision in Split-Screen: generous clearance between top text, dial, and cards.\n" +
+                  "• Redesigned Next Prayer card: dedicated 2-line layout without duplicate prayer name.\n" +
+                  "• Geometric Split-Screen polish: balanced vertical budget, no overlapping prayer rows.\n" +
+                  "• Instant tap-to-stop audio for Adhan directly from the bottom Athkar bar.\n\n" +
+                  "◈ Version 8.9.8:\n" +
+                  "• Fixed Full-Screen layout transition: landscape dashboard remains stable without switching to split mode.\n" +
+                  "• Fixed Prayer Panel swap (Right/Left): now instantly flips prayer times and cards in all modes.\n" +
+                  "• Symmetrical bottom buttons: Settings & Swap buttons automatically align under cards when swapped.\n" +
+                  "• Compact card scaling in Split-Screen mode with balanced typography and two-pane swap support.\n\n" +
+                  "◈ Version 8.9.7:\n" +
+                  "• Full Screen toggle option in Settings (enable/disable system status bar).\n" +
+                  "• Startup Travel Dua is now OFF by default (enable anytime from Settings or Athkar bar).\n" +
+                  "• Compact telemetry cards with balanced text, giving ample breathing room on Haval H9.\n" +
+                  "• Slender Athkar bar with enlarged bold Arabic font for effortless legibility.\n" +
+                  "• Dedicated 2-Pane Split-Screen layout (50/50): unobstructed compass, 2x2 cards, and prayer times.\n" +
+                  "• Background prayer alert with Makkah Takbeerat and exact alarm reliability.\n\n" +
+                  "◈ Version 8.9.6:\n" +
+                  "• Fixed left and right margin voids for a seamless edge-to-edge dashboard layout.\n" +
+                  "• Compact and balanced telemetry cards with centered typography and 'Live GPS' status.\n" +
+                  "• Slender, lowered Athkar bar aligned flush with the right prayer panel.\n" +
+                  "• Full adaptive split-screen support: unobstructed compass dial and all 4 telemetry cards.\n" +
+                  "• Fixed dialog header spacing to prevent title overlapping in changelog and settings.\n\n" +
+                  "◈ Version 8.9.5:\n" +
+                  "• Automatic Changelog popup upon first launch after every update.\n" +
+                  "• Compact and slender telemetry cards on the left, preventing any overlap with bottom buttons.\n" +
+                  "• Sleek circular app medallion at top-left replacing bulky square tile.\n" +
+                  "• Reduced default font size for elegance, and added 'Extra Large' option in Settings.\n" +
+                  "• Refined spacing and full adaptive support for 50/50 split-screen mode.\n" +
+                  "• Corrected Next Prayer countdown formatting with Latin numerals.\n\n" +
+                  "◈ Version 8.9.4:\n" +
+                  "• Background Adhan Takbeer alerts and notifications even when app is closed.\n" +
+                  "• Uniform geometric grid alignment for all telemetry and prayer cards.\n" +
+                  "• Enlarged Next Prayer card & countdown for clear visibility while driving.\n" +
+                  "• Removed box border around 'Facing Kaaba' and raised text for all themes.\n" +
+                  "• Refined prayer list typography and aligned 12h times.\n" +
+                  "• Added Changelog history section in Settings.\n\n" +
+                  "◈ Version 8.9.3:\n" +
+                  "• Full-screen immersive mode hiding vehicle status bar.\n" +
+                  "• Makkah Takbeerat prayer alert with top dismissible banner.\n" +
+                  "• Saudi Airlines Travel Dua with in-call phone safety.\n\n" +
+                  "◈ Version 8.9.2:\n" +
+                  "• Astronomical precision alignment with official Umm al-Qura calendar.\n" +
+                  "• Manual prayer minute calibration offset in Settings.\n" +
+                  "• Fixed signature certificate for seamless in-car upgrades.\n\n" +
+                  "◈ Version 8.9.0 - 8.9.1:\n" +
+                  "• Compact Makkah distance indicator inside compass.\n" +
+                  "• Continuous real-time astronomical location and prayer updates.\n" +
+                  "• Comprehensive sensor diagnostic for Haval H9 & Tank.\n\n" +
+                  "◈ Version 8.8.0:\n" +
+                  "• 3D Kaaba compass and Great Wall OEM sensor integration."
+                : "◈ الإصدار 9.1.0 (الحالي):\n" +
+                  "• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة وقناة التنبيه حتى لو كان الراديو مغلقاً.\n" +
+                  "• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen) لرؤية فائقة الوضوح أثناء القيادة.\n" +
+                  "• إنزال مربعات المعلومات للأسفل وإعادة ترتيب الصفوف بتناسق طبيعي مع اتجاه القراءة العربي.\n" +
+                  "• إصلاح تداخل النصوص والحروف عند اختيار (خط كبير جداً) ومنع تداخل التاريخ مع عنوان المواقيت.\n" +
+                  "• تكبير زر الإعدادات أسفل الشاشة لسهولة وسرعة الضغط عليه أثناء القيادة.\n" +
+                  "• إزالة الرمز الأحمر من شريط الأذكار للحفاظ على مظهر إسلامي هادئ ومتناسق.\n\n" +
+                  "◈ الإصدار 9.0.0:\n" +
+                  "• إزالة دعاء الركوب والسفر الصوتي نهائياً من التطبيق.\n" +
+                  "• تخصيص صوت الأذان ليكون التكبيرات الأولى فقط من الحرم المكي الشريف.\n" +
+                  "• إصلاح محاذاة دائرة خلفية البوصلة والزخرفة الإسلامية بالكامل في وضع الشاشة المقسومة (Split Screen).\n" +
+                  "• حذف زر تبديل المواقيت (يمين/يسار) من الشاشة الرئيسية وحصره داخل قائمة الإعدادات فقط.\n" +
+                  "• توسيط زر الإعدادات أسفل الشاشة في وضع الشاشة المقسومة لسهولة الوصول والراحة أثناء القيادة.\n\n" +
+                  "◈ الإصدار 8.9.9:\n" +
+                  "• استعادة صوت أذان الحرم المكي الشريف بدقة عالية.\n" +
+                  "• إصلاح التداخل مع البوصلة وإبعادها تماماً عن كروت المعلومات والشريط العلوي في وضع الشاشة المقسومة (Split Screen).\n" +
+                  "• إصلاح وإعادة تصميم بطاقة الصلاة القادمة: خطان واضحان بدون تكرار اسم الصلاة وبحجم متناسق ومحاذاة تامة.\n" +
+                  "• ضبط وهندسة الشاشة المقسومة (Split Screen 50/50) بالكامل لجميع شاشات هافال H9 وتانك دون أي تداخل في أوقات الصلاة.\n" +
+                  "• إمكانية إيقاف صوت الأذان فوراً بالضغط على شريط الأذكار أثناء القيادة.\n\n" +
+                  "◈ الإصدار 8.9.8:\n" +
+                  "• إصلاح ثبات التصميم الفخم في وضع ملء الشاشة دون التحول لوضع التقسيم على شاشات السيارات.\n" +
+                  "• إصلاح تفعيل زر تبديل المواقيت (يمين / يسار): انتقال فوري للوحة المواقيت وبطاقات القبلة.\n" +
+                  "• محاذاة متناسقة للأزرار السفلية: انتقال أزرار الإعدادات والتبديل تلقائياً أسفل البطاقات عند التبديل.\n" +
+                  "• تصغير وموازنة مربعات القبلة في الشاشة المقسمة (Split Screen) مع دعم كامل لتبديل الجهة.\n\n" +
+                  "◈ الإصدار 8.9.7:\n" +
+                  "• إضافة خيار ملء الشاشة أو إغلاقه وإظهار شريط النظام من الإعدادات.\n" +
+                  "• جعل دعاء الركوب عند التشغيل مغلقاً افتراضياً (يمكن تفعيله من الإعدادات أو شريط الأذكار).\n" +
+                  "• تصغير مربعات اتجاه القبلة والبيانات وموازنة الخط مع توفير مساحة مريحة لعداد السرعة والأزرار.\n" +
+                  "• تصغير مستطيل الأذكار مع تكبير خط الذكر بشكل بارز ومريح للقراءة أثناء القيادة.\n" +
+                  "• تصميم متكامل ومخصص للشاشة المقسمة (Split Screen 50/50) بمسارين جانبيين ودون إخفاء أي ميزة.\n" +
+                  "• تنبيهات الصلاة بالخلفية بتكبيرات مكة المكرمة فقط مع دقة التنبيه بالوقت الفعلي.\n\n" +
+                  "◈ الإصدار 8.9.6:\n" +
+                  "• معالجة الفراغات الجانبية وتحسين المحاذاة مع شاشة السيارة بالكامل.\n" +
+                  "• تصغير بطاقات القبلة وموازنة وتوسيط الخط بداخلها مع عرض (GPS مباشر).\n" +
+                  "• تصغير شريط الأذكار وإنزاله للأسفل ومحاذاته تماماً مع لوحة المواقيت على اليمين.\n" +
+                  "• دعم الشاشة المقسمة التلقائي بالكامل دون إخفاء أي ميزة وعرض البطاقات الأربع دون أي تداخل.\n" +
+                  "• إصلاح تباعد العناوين في نافذة سجل التحديثات والإعدادات لمنع التداخل نهائياً.\n\n" +
+                  "◈ الإصدار 8.9.5:\n" +
+                  "• ظهور تلقائي لسجل التغييرات بعد كل تحديث للإطلاع على المزايا الجديدة فوراً.\n" +
+                  "• تصغير الأيقونات والمربعات اليسرى بتصميم هندسي رشيق ومتناسق يمنع التداخل مع الأزرار.\n" +
+                  "• تصغير الشعار العلوي لمدالية دائرية فخمة وأنيقة بدلاً من المربع الضخم.\n" +
+                  "• تصغير حجم الخط الافتراضي مع إضافة خيار (كبير جداً) في الإعدادات.\n" +
+                  "• إصلاح التباعد والمساحات ودعم كامل لوضع الشاشة المقسومة (Split Screen 50/50).\n" +
+                  "• تصحيح ترتيب عداد الصلاة القادمة بالأرقام اللاتينية المنسقة.\n\n" +
+                  "◈ الإصدار 8.9.4:\n" +
+                  "• تشغيل تنبيهات وتكبيرات الأذان في الخلفية حتى لو كان التطبيق مغلقاً.\n" +
+                  "• ترتيب وتنسيق هندسي موحد لجميع مربعات الشاشة والبيانات.\n" +
+                  "• تكبير مربع الصلاة القادمة والوقت المتبقي لسهولة القراءة أثناء القيادة.\n" +
+                  "• إزالة المربع المحيط بـ (باتجاه القبلة المشرفة) ورفع النص بتناسق مع جميع الثيمات.\n" +
+                  "• تحسين ومحاذاة خطوط قائمة الصلوات وأوقاتها.\n" +
+                  "• إضافة قسم سجل التحديثات في الإعدادات.\n\n" +
+                  "◈ الإصدار 8.9.3:\n" +
+                  "• ملء الشاشة بالكامل (Full Screen) وإخفاء البار العلوي للسيارة.\n" +
+                  "• إضافة تنبيه تكبيرات الحرم المكي مع بنر إشعار علوي فخم.\n" +
+                  "• إضافة دعاء الركوب والسفر بصوت الخطوط السعودية مع أمان المكالمات.\n\n" +
+                  "◈ الإصدار 8.9.2:\n" +
+                  "• الضبط الفلكي الدقيق لمواقيت الصلاة وفق تقويم أم القرى الرسمي.\n" +
+                  "• إضافة زر معايرة وتعديل دقائق الصلاة يدوياً من الإعدادات.\n" +
+                  "• ثبات التوقيع البرمجي والشهادة للتحديث المباشر.\n\n" +
+                  "◈ الإصدار 8.9.0 - 8.9.1:\n" +
+                  "• تصغير وتنسيق مسافة مكة داخل البوصلة مع الاتجاه الدقيق.\n" +
+                  "• التحديث اللحظي التلقائي للموقع الفلكي ومواقيت الصلاة.\n" +
+                  "• فحص شامل لمستشعرات التوجيه و GPS في شاشات هافال H9 وتانك.\n\n" +
+                  "◈ الإصدار 8.8.0:\n" +
+                  "• تحسين البوصلة ثلاثية الأبعاد والتوافق الأساسي مع أنظمة Great Wall OEM.";
+
+        TextView body = noteText(changelogText, 15f, 0xFFF1F5F6, false);
+        body.setGravity(isEn() ? (Gravity.TOP | Gravity.LEFT) : (Gravity.TOP | Gravity.RIGHT));
+        body.setLineSpacing(dp(3), 1.12f);
+        inner.addView(body, matchWrap(WindowManager.LayoutParams.WRAP_CONTENT));
 
         scrollView.addView(inner, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
         card.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, scrollHeight));
@@ -837,15 +1297,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private String fontScaleLabel(float scale) {
         if (isEn()) {
-            if (scale >= 1.25f) return "Extra Large";
-            if (scale >= 1.10f) return "Large";
-            if (scale <= 0.92f) return "Small";
-            return "Medium";
+            if (scale >= 1.18f) return "Extra Large";
+            if (scale >= 1.00f) return "Large";
+            if (scale <= 0.84f) return "Small";
+            return "Normal";
         }
-        if (scale >= 1.25f) return "كبير جداً";
-        if (scale >= 1.10f) return "كبير";
-        if (scale <= 0.92f) return "صغير";
-        return "متوسط";
+        if (scale >= 1.18f) return "كبير جداً";
+        if (scale >= 1.00f) return "كبير";
+        if (scale <= 0.84f) return "صغير";
+        return "عادي";
     }
 
     private String swapButtonLabel(boolean swapped, boolean english) {
@@ -854,6 +1314,27 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } else {
             return swapped ? "المواقيت: يسار ⇄" : "المواقيت: يمين ⇄";
         }
+    }
+
+    private String prayerOffsetLabel(int offset, boolean en) {
+        if (en) {
+            if (offset == 0) return "Prayer Adjust: 0 min (Auto)";
+            return "Prayer Adjust: " + (offset > 0 ? "+" + offset : String.valueOf(offset)) + " min";
+        }
+        if (offset == 0) return "معايرة المواقيت: دقيقة 0 (تلقائي)";
+        return "معايرة المواقيت: " + (offset > 0 ? "+" + offset : String.valueOf(offset)) + " دقيقة";
+    }
+
+    private String fullscreenLabel(boolean en) {
+        boolean on = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_FULLSCREEN_ENABLED, true);
+        if (en) return on ? "Full Screen: Enabled ⛶" : "Full Screen: Off (Show Bars)";
+        return on ? "ملء الشاشة: مفعّل ⛶" : "ملء الشاشة: مغلق (إظهار الشريط)";
+    }
+
+    private String adhanSoundLabel(boolean en) {
+        boolean on = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
+        if (en) return on ? "Adhan Takbeerat: On 🔊" : "Adhan Takbeerat: Muted 🔇";
+        return on ? "تكبيرات الأذان: مفعّلة 🔊" : "تكبيرات الأذان: صامتة 🔇";
     }
 
     private String themeModeLabel(int mode) {
@@ -984,11 +1465,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 if (network != null && isBetterLocation(network, lastLocation)) updateLocation(network);
             }
 
-            // GNSS remains the fallback and the reference source while moving.
+            // Passive listener captures coordinates from system apps and OEM navigation immediately
+            try {
+                if (locationManager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                    locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 500L, 0f, this);
+                    Location passive = locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER);
+                    if (passive != null && isBetterLocation(passive, lastLocation)) updateLocation(passive);
+                }
+            } catch (Throwable ignored) { }
+
+            // GNSS remains the primary reference source while driving
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 400L, 0.2f, this);
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 400L, 0f, this);
                 Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                if (gps != null && lastLocation == null) updateLocation(gps);
+                if (gps != null && isBetterLocation(gps, lastLocation)) updateLocation(gps);
             }
         } catch (SecurityException ignored) {
             qiblaView.setStatus("تعذر الوصول إلى الموقع");
@@ -1037,6 +1527,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     @Override
     protected void onPause() {
         super.onPause();
+        SoundManager.stop();
         handler.removeCallbacks(uiTick);
         if (qiblaSensorHelper != null) qiblaSensorHelper.stopListening();
         if (sensorManager != null) sensorManager.unregisterListener(this);
@@ -1062,6 +1553,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 !LocationManager.GPS_PROVIDER.equals(provider)) return;
 
         lastLocation = location;
+        saveLocation(location);
         qiblaView.setLocation(location);
         if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(location);
         updateNetworkStatus();
@@ -1187,6 +1679,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             getSharedPreferences(HEADING_PREFS, MODE_PRIVATE).edit()
                     .putFloat(KEY_LAST_HEADING, normalize(heading))
                     .putString(KEY_LAST_HEADING_SOURCE, source)
+                    .apply();
+        } catch (Throwable ignored) { }
+    }
+
+    private void restoreLastLocation() {
+        try {
+            SharedPreferences p = getSharedPreferences(LOCATION_PREFS, MODE_PRIVATE);
+            if (!p.contains(KEY_SAVED_LAT)) return;
+            Location loc = new Location("saved_gps");
+            loc.setLatitude(p.getFloat(KEY_SAVED_LAT, 24.7136f));
+            loc.setLongitude(p.getFloat(KEY_SAVED_LON, 46.6753f));
+            float acc = p.getFloat(KEY_SAVED_ACC, -1f);
+            if (acc > 0) loc.setAccuracy(acc);
+            loc.setTime(p.getLong(KEY_SAVED_TIME, System.currentTimeMillis()));
+            updateLocation(loc);
+        } catch (Throwable ignored) { }
+    }
+
+    private void saveLocation(Location loc) {
+        if (loc == null || "default".equals(loc.getProvider())) return;
+        try {
+            getSharedPreferences(LOCATION_PREFS, MODE_PRIVATE).edit()
+                    .putFloat(KEY_SAVED_LAT, (float) loc.getLatitude())
+                    .putFloat(KEY_SAVED_LON, (float) loc.getLongitude())
+                    .putFloat(KEY_SAVED_ACC, loc.hasAccuracy() ? loc.getAccuracy() : -1f)
+                    .putLong(KEY_SAVED_TIME, loc.getTime())
                     .apply();
         } catch (Throwable ignored) { }
     }
@@ -3837,20 +4355,33 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void maybeRefreshPrayerTimes(Location location) {
+        if (location == null) return;
         long now = System.currentTimeMillis();
-        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 3000f;
-        if (!movedFar && now - lastPrayerCalcAt < PRAYER_REFRESH_MS) return;
+        Calendar calendar = Calendar.getInstance();
+        int today = calendar.get(Calendar.DAY_OF_YEAR);
+        boolean dayChanged = today != lastPrayerDay;
+        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 500f;
+        boolean timeElapsed = now - lastPrayerCalcAt >= PRAYER_REFRESH_MS;
+        if (!dayChanged && !movedFar && !timeElapsed && lastPrayerCalcAt > 0) return;
 
+        lastPrayerDay = today;
         lastPrayerCalcAt = now;
         lastPrayerLocation = new Location(location);
-        qiblaView.setPrayerStatus("حساب مواقيت الصلاة محليًا…");
+        qiblaView.setPrayerStatus(isEn() ? "Calculating prayer times…" : "حساب مواقيت الصلاة محليًا…");
 
-        Calendar calendar = Calendar.getInstance();
+        int offset = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0);
         PrayerTimesCalculator.Result result = PrayerTimesCalculator.calculate(
-                location.getLatitude(), location.getLongitude(), calendar);
-        String[] names = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
+                location.getLatitude(), location.getLongitude(), calendar, offset, isEn());
+        String[] names = isEn()
+                ? new String[]{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
+                : new String[]{"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
         qiblaView.setPrayerTimes(names, result.times24, result.hijriDate, result.hijriDateEn);
-        qiblaView.setPrayerStatus("أم القرى • حساب محلي بدون إنترنت");
+        AdhanScheduler.saveAndSchedule(this, result.times24, names, qiblaView.getLocationName());
+        String statusNote = isEn() ? "Umm al-Qura • Live Calculation" : "أم القرى • حساب حي بدون إنترنت";
+        if (offset != 0) {
+            statusNote += " (" + (offset > 0 ? "+" + offset : String.valueOf(offset)) + (isEn() ? "m)" : " د)");
+        }
+        qiblaView.setPrayerStatus(statusNote);
     }
 
     private void maybeResolveLocationName(Location location) {
@@ -3892,6 +4423,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         runOnUiThread(() -> {
             qiblaView.setLocationName(finalCity);
             qiblaView.setRegionName("");
+            if (qiblaView.hasPrayerTimes()) {
+                AdhanScheduler.saveAndSchedule(MainActivity.this, qiblaView.getPrayerTimes(), qiblaView.getPrayerNames(), finalCity);
+            }
         });
     }
 
@@ -4051,6 +4585,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     @Override
     protected void onDestroy() {
+        SoundManager.stop();
         if (qiblaSensorHelper != null) {
             qiblaSensorHelper.stopListening();
             qiblaSensorHelper = null;

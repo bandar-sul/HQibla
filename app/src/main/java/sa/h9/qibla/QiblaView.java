@@ -11,6 +11,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.location.Location;
+import android.view.MotionEvent;
 import android.view.View;
 import androidx.core.content.res.ResourcesCompat;
 
@@ -90,7 +91,7 @@ public class QiblaView extends View {
     public static final int THEME_NIGHT = THEME_EMERALD;
 
     private int themeMode = THEME_AUTO;
-    private float fontScale = 1.0f;
+    private float fontScale = 0.90f;
 
     public static final int FONT_DEFAULT = 0;
     public static final int FONT_CAIRO = 1;
@@ -139,7 +140,7 @@ public class QiblaView extends View {
     public int getThemeMode() { return themeMode; }
 
     public void setFontScale(float scale) {
-        fontScale = Math.max(0.80f, Math.min(1.50f, scale));
+        fontScale = Math.max(0.70f, Math.min(1.50f, scale));
         invalidate();
     }
 
@@ -244,6 +245,7 @@ public class QiblaView extends View {
     public void setNetworkStatus(String text) { networkStatus = text; invalidate(); }
     public void setPrayerStatus(String text) { prayerStatus = text; invalidate(); }
     public void setLocationName(String text) { locationName = text; invalidate(); }
+    public String getLocationName() { return locationName; }
     public void setRegionName(String text) { regionName = text == null ? "" : text; invalidate(); }
 
     public void setPrayerTimes(String[] names, String[] times, String hijri) {
@@ -260,6 +262,29 @@ public class QiblaView extends View {
         invalidate();
     }
 
+    private String adhanBannerText = null;
+    private long adhanBannerUntil = 0L;
+
+    public boolean hasPrayerTimes() { return hasPrayerTimes; }
+    public String[] getPrayerTimes() { return prayerTimes; }
+    public String[] getPrayerNames() { return prayerNames; }
+
+    public void showAdhanBanner(String prayerName, String timeStr) {
+        if (englishMode) {
+            adhanBannerText = "🕌 Time for " + prayerName + " Prayer (" + timeStr + ") • May Allah accept";
+        } else {
+            adhanBannerText = "🕌 حان الآن موعد أذان " + prayerName + " (" + timeStr + ") • تقبل الله طاعتكم";
+        }
+        adhanBannerUntil = System.currentTimeMillis() + 25000L;
+        invalidate();
+    }
+
+    public void dismissAdhanBanner() {
+        adhanBannerText = null;
+        adhanBannerUntil = 0L;
+        invalidate();
+    }
+
     private String formatAccuracy() {
         if (gpsAccuracy < 0) return "—";
         if (gpsAccuracy <= 12) return englishMode ? "Excellent" : "ممتازة";
@@ -272,10 +297,24 @@ public class QiblaView extends View {
             if (!hasLocation) return englishMode ? "Waiting for GPS" : "بانتظار GPS";
             return englishMode ? "Waiting for compass" : "بانتظار بوصلة السيارة";
         }
-        if (!englishMode) return headingSource;
+        if (!englishMode) {
+            if (headingSource != null && (headingSource.contains("اتجاه حي") || headingSource.contains("GPS"))) {
+                return "GPS مباشر";
+            }
+            if (headingSource != null && (headingSource.contains("هافال") || headingSource.contains("GWM") || headingSource.contains("السيارة"))) {
+                return "بوصلة هافال";
+            }
+            if (headingSource != null && headingSource.contains("الشاشة")) {
+                return "بوصلة الشاشة";
+            }
+            if (headingSource != null && headingSource.contains("آخر اتجاه")) {
+                return "آخر اتجاه";
+            }
+            return headingSource != null ? headingSource : "بوصلة نشطة";
+        }
         if (headingSource == null) return "Compass Active";
-        if (headingSource.contains("بوصلة الشاشة")) return "Device Compass • True North";
-        if (headingSource.contains("اتجاه حي عبر GPS")) return "Live GPS Heading";
+        if (headingSource.contains("بوصلة الشاشة")) return "Device Compass";
+        if (headingSource.contains("اتجاه حي") || headingSource.contains("GPS")) return "Live GPS";
         if (headingSource.contains("آخر اتجاه")) return "Saved Heading";
         if (headingSource.contains("هافال") || headingSource.contains("GWM") || headingSource.contains("السيارة")) return "Vehicle Compass";
         return "Compass Active";
@@ -443,92 +482,247 @@ public class QiblaView extends View {
         float w = getWidth(), h = getHeight();
         drawBackground(c, w, h);
         drawTopBar(c, w, h);
-        if (w >= h) {
+        boolean wideLandscape = (w / h) >= 1.35f;
+        boolean splitScreen = !wideLandscape && (w / h) >= 0.85f;
+        if (wideLandscape) {
+            float compassR = Math.min(h * .225f, w * .138f);
             if (panelSwapped) {
                 drawPrayerPanel(c, w, h, true);
-                drawCompass(c, w * .570f, h * .52f, Math.min(h * .215f, w * .126f));
+                drawCompass(c, w * .565f, h * .525f, compassR);
                 drawLeftCards(c, w, h, true);
             } else {
                 drawLeftCards(c, w, h, false);
-                drawCompass(c, w * .430f, h * .52f, Math.min(h * .215f, w * .126f));
+                drawCompass(c, w * .435f, h * .525f, compassR);
                 drawPrayerPanel(c, w, h, false);
             }
             drawBottomAthkarBar(c, w, h);
+        } else if (splitScreen) {
+            drawSplitScreenTwoPane(c, w, h);
         } else {
             drawPortraitLayout(c, w, h);
         }
+        drawAdhanBanner(c, w, h);
     }
 
-    private void drawPortraitLayout(Canvas c, float w, float h) {
-        float compassR = Math.min(w * .24f, h * .135f);
-        drawCompass(c, w * .50f, h * .29f, compassR);
+    private void drawSplitScreenTwoPane(Canvas c, float w, float h) {
+        float leftPaneX = panelSwapped ? (w * .515f) : (w * .030f);
+        float rightPaneX = panelSwapped ? (w * .030f) : (w * .515f);
+        float paneW = w * .455f;
+        boolean rtl = !englishMode;
 
-        float pad = w * .04f;
-        float gap = w * .025f;
-        float cardW = (w - pad * 2f - gap * 2f) / 3f;
-        float cardH = h * .070f;
-        float cardY = h * .465f;
-        drawInfoCard(c, pad, cardY, cardW, cardH,
+        // 1. Enlarged Compass in its pane - high visibility, perfectly balanced
+        float compassR = Math.min(paneW * 0.44f, h * 0.170f);
+        float compassCx = leftPaneX + paneW * 0.5f;
+        float compassCy = h * 0.315f;
+        drawCompass(c, compassCx, compassCy, compassR);
+
+        // 2. Telemetry Cards pushed downward, with RTL-aware row/col arrangement
+        float colGap = w * .015f;
+        float cardW = (paneW - colGap) / 2f;
+        float cardH = h * 0.105f;
+        float row0Y = h * 0.540f;
+        float row1Y = row0Y + cardH + h * 0.016f;
+
+        float rightColX = leftPaneX + cardW + colGap;
+        float leftColX = leftPaneX;
+        float primaryColX = rtl ? rightColX : leftColX;
+        float secondaryColX = rtl ? leftColX : rightColX;
+
+        // Row 0 - Primary (Right in Arabic): Qibla Angle | Secondary (Left in Arabic): Vehicle Heading
+        drawInfoCard(c, primaryColX, row0Y, cardW, cardH,
                 englishMode ? "Qibla Angle" : "زاوية القبلة",
                 hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—",
                 "◈", prayerAccentColor());
-        drawInfoCard(c, pad + cardW + gap, cardY, cardW, cardH,
-                englishMode ? "Heading" : "اتجاه المركبة",
+
+        drawInfoCard(c, secondaryColX, row0Y, cardW, cardH,
+                englishMode ? "Vehicle Heading" : "اتجاه المركبة",
                 hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—",
                 "↗", hasHeading ? prayerAccentColor() : 0xFFE5B64A);
-        drawInfoCard(c, pad + (cardW + gap) * 2f, cardY, cardW, cardH,
-                speedKmh > 1f ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
-                speedKmh > 1f ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
-                speedKmh > 1f ? "🚗" : "◎", prayerAccentColor());
 
-        float px = pad, py = h * .550f, pw = w - pad * 2f, ph = h * .240f;
-        roundCard(c, new RectF(px, py, px + pw, py + ph));
-        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
+        // Row 1 - Primary (Right in Arabic): Speed | Secondary (Left in Arabic): Heading Source
+        boolean showSpeed = speedKmh > 1f;
+        drawInfoCard(c, primaryColX, row1Y, cardW, cardH,
+                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+                showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
+                showSpeed ? "🚗" : "◎", prayerAccentColor());
+
+        drawInfoCard(c, secondaryColX, row1Y, cardW, cardH,
+                englishMode ? "Heading Source" : "مصدر الاتجاه",
+                localizedHeadingSource(),
+                "🧭", goldColor());
+
+        // 3. Prayer Times Card in Prayer pane (bottom aligns with Row 0 cards)
+        float px = rightPaneX;
+        float py = h * 0.130f;
+        float pw = paneW;
+        float ph = (row0Y + cardH) - py;
+        roundCard(c, new RectF(px, py, px + pw, py + ph), 16f, 1.2f);
+
+        float padX = pw * 0.06f;
+        p.setTextAlign(rtl ? Paint.Align.RIGHT : Paint.Align.LEFT);
         p.setColor(goldColor());
-        ts(h * .023f);
+        ts(ph * 0.082f);
         p.setFakeBoldText(true);
-        String prayerHeader = englishMode
-                ? ("Prayer Times (" + localizedLocationName() + ")")
-                : ("مواقيت الصلاة (" + localizedLocationName() + ")");
-        drawFittedTextAligned(c, prayerHeader, englishMode ? (px + pw * .06f) : (px + pw * .94f), py + ph * .15f, pw * .88f);
+        float headerY = py + ph * 0.112f;
+        // Clean single-line header without overlapping Hijri date
+        drawFittedTextAligned(c, englishMode ? "🕌 Prayer Times" : "🕌 مواقيت الصلاة",
+                rtl ? (px + pw - padX) : (px + padX), headerY, pw * 0.88f);
         p.setFakeBoldText(false);
 
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = py + ph * .29f, rowH = ph * .115f;
+        float rowStart = py + ph * 0.230f;
+        float rowH = ph * 0.122f;
+        float maxColW = (pw - padX * 2.2f) * 0.50f;
+
         for (int i = 0; i < 6; i++) {
             float ry = rowStart + i * rowH;
             if (i == next) {
                 p.setColor(0x28FFA726);
-                c.drawRoundRect(new RectF(px + pw * .04f, ry - rowH * .72f, px + pw * .96f, ry + rowH * .25f), 14f, 14f, p);
+                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, p);
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0xBBFFD768);
-                c.drawRoundRect(new RectF(px + pw * .04f, ry - rowH * .72f, px + pw * .96f, ry + rowH * .25f), 14f, 14f, stroke);
+                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
             }
-            ts(h * .019f);
+
+            ts(ph * 0.072f);
+            String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
+            p.setColor(i == next ? goldColor() : prayerPrimaryColor());
+            p.setFakeBoldText(i == next);
+
+            if (rtl) {
+                p.setTextAlign(Paint.Align.RIGHT);
+                drawFittedTextAligned(c, icon + "  " + names[i], px + pw - padX, ry, maxColW);
+                p.setTextAlign(Paint.Align.LEFT);
+                drawFittedTextAligned(c, format12Hour(prayerTimes[i]), px + padX, ry, maxColW);
+            } else {
+                p.setTextAlign(Paint.Align.LEFT);
+                drawFittedTextAligned(c, icon + "  " + names[i], px + padX, ry, maxColW);
+                p.setTextAlign(Paint.Align.RIGHT);
+                drawFittedTextAligned(c, format12Hour(prayerTimes[i]), px + pw - padX, ry, maxColW);
+            }
+            p.setFakeBoldText(false);
+        }
+
+        // 4. Next Prayer Card in Prayer pane (aligned precisely with Row 1 cards)
+        float ny = row1Y;
+        float nh = cardH;
+        roundCard(c, new RectF(px, ny, px + pw, ny + nh), 16f, 1.4f);
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(1.4f);
+        stroke.setColor(0xAAFFD768);
+        c.drawRoundRect(new RectF(px, ny, px + pw, ny + nh), 16f, 16f, stroke);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        ts(nh * 0.28f);
+        p.setColor(goldColor());
+        p.setFakeBoldText(true);
+        drawFittedText(c, formatNextPrayerTitle(), px + pw * 0.5f, ny + nh * 0.38f, pw * 0.90f);
+
+        ts(nh * 0.38f);
+        p.setColor(primaryTextColor());
+        drawFittedText(c, formatNextPrayerCountdown(), px + pw * 0.5f, ny + nh * 0.78f, pw * 0.92f);
+        p.setFakeBoldText(false);
+
+        // 5. Bottom Athkar Bar (Removed red symbol)
+        float barX = w * .030f;
+        float barY = h * 0.785f;
+        float barW = w * .940f;
+        float barH = h * 0.065f;
+        RectF barRect = new RectF(barX, barY, barX + barW, barY + barH);
+        roundCard(c, barRect, 14f, 1.2f);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        ts(barH * 0.52f);
+        p.setFakeBoldText(true);
+        boolean playing = SoundManager.isPlaying();
+        p.setColor(playing ? 0xFF00F5C8 : goldColor());
+        String thikr = playing
+                ? (englishMode ? "🔊 Playing Takbeerat... (Tap to stop)" : "🔊 جاري تشغيل تكبيرات الأذان... (اضغط للإيقاف)")
+                : currentThikrText();
+        drawFittedText(c, thikr, barX + barW * 0.5f, barY + barH * 0.68f, barW * 0.94f);
+        p.setFakeBoldText(false);
+    }
+
+    private void drawPortraitLayout(Canvas c, float w, float h) {
+        float compassR = Math.min(w * .19f, h * .105f);
+        drawCompass(c, w * .50f, h * .215f, compassR);
+
+        float pad = w * .025f;
+        float gap = w * .015f;
+        float cardW = (w - pad * 2f - gap * 3f) / 4f;
+        float cardH = h * .085f;
+        float cardY = h * .360f;
+
+        drawInfoCard(c, pad + 0 * (cardW + gap), cardY, cardW, cardH,
+                englishMode ? "Qibla Angle" : "زاوية القبلة",
+                hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—",
+                "◈", prayerAccentColor());
+        drawInfoCard(c, pad + 1 * (cardW + gap), cardY, cardW, cardH,
+                englishMode ? "Heading" : "اتجاه المركبة",
+                hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—",
+                "↗", hasHeading ? prayerAccentColor() : 0xFFE5B64A);
+        boolean showSpeed = speedKmh > 1f;
+        drawInfoCard(c, pad + 2 * (cardW + gap), cardY, cardW, cardH,
+                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+                showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
+                showSpeed ? "🚗" : "◎", prayerAccentColor());
+        drawInfoCard(c, pad + 3 * (cardW + gap), cardY, cardW, cardH,
+                englishMode ? "Heading Source" : "مصدر الاتجاه",
+                localizedHeadingSource(),
+                "🧭", goldColor());
+
+        float px = pad, py = h * .465f, pw = w - pad * 2f, ph = h * .275f;
+        roundCard(c, new RectF(px, py, px + pw, py + ph));
+        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
+        p.setColor(goldColor());
+        ts(ph * .115f);
+        p.setFakeBoldText(true);
+        String prayerHeader = englishMode
+                ? ("Prayer Times (" + localizedLocationName() + ")")
+                : ("مواقيت الصلاة (" + localizedLocationName() + ")");
+        drawFittedTextAligned(c, prayerHeader, englishMode ? (px + pw * .05f) : (px + pw * .95f), py + ph * .14f, pw * .88f);
+        p.setFakeBoldText(false);
+
+        String[] names = activePrayerNames();
+        int next = getNextPrayerIndex();
+        float rowStart = py + ph * .27f, rowH = ph * .118f;
+        for (int i = 0; i < 6; i++) {
+            float ry = rowStart + i * rowH;
+            if (i == next) {
+                p.setColor(0x28FFA726);
+                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, p);
+                stroke.setStyle(Paint.Style.STROKE);
+                stroke.setStrokeWidth(1.2f);
+                stroke.setColor(0xBBFFD768);
+                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
+            }
+            ts(ph * .095f);
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             if (englishMode) {
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(icon + " " + names[i], px + pw * .07f, ry, p);
+                c.drawText(icon + " " + names[i], px + pw * .06f, ry, p);
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(format12Hour(prayerTimes[i]), px + pw * .93f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), px + pw * .94f, ry, p);
             } else {
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(icon + " " + names[i], px + pw * .93f, ry, p);
+                c.drawText(icon + " " + names[i], px + pw * .94f, ry, p);
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(format12Hour(prayerTimes[i]), px + pw * .07f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), px + pw * .06f, ry, p);
             }
         }
 
-        float ny = h * .802f;
-        roundCard(c, new RectF(px, ny, px + pw, ny + h * .055f));
+        // Next Prayer Card
+        float ny = h * .755f;
+        float nh = h * .065f;
+        roundCard(c, new RectF(px, ny, px + pw, ny + nh));
         p.setTextAlign(Paint.Align.CENTER);
-        ts(h * .019f);
+        ts(nh * .36f);
         p.setColor(goldColor());
         p.setFakeBoldText(true);
-        drawFittedText(c, nextPrayerText(), px + pw * .5f, ny + h * .036f, pw * .90f);
+        drawFittedText(c, nextPrayerText(), px + pw * .5f, ny + nh * 0.65f, pw * .90f);
         p.setFakeBoldText(false);
 
         // Portrait Bottom Athkar Bar
@@ -541,41 +735,65 @@ public class QiblaView extends View {
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
 
-        boolean landscape = w >= h;
-        float compassCx = landscape ? (panelSwapped ? (w * .570f) : (w * .430f)) : (w * .50f);
-        float compassCy = landscape ? (h * .52f) : (h * .29f);
+        boolean wideLandscape = (w / h) >= 1.35f;
+        boolean splitScreen = !wideLandscape && (w / h) >= 0.85f;
 
-        // Ambient radial circles
+        float compassCx;
+        float compassCy;
+        float ambR;
+
+        if (wideLandscape) {
+            compassCx = panelSwapped ? (w * .565f) : (w * .435f);
+            compassCy = h * .525f;
+            ambR = h * .320f;
+        } else if (splitScreen) {
+            float leftPaneX = panelSwapped ? (w * .515f) : (w * .030f);
+            float paneW = w * .455f;
+            compassCx = leftPaneX + paneW * 0.5f;
+            compassCy = h * 0.315f;
+            ambR = Math.min(paneW * 0.44f, h * 0.170f) * 1.12f;
+        } else {
+            compassCx = w * .50f;
+            compassCy = h * .215f;
+            ambR = h * .160f;
+        }
+
+        // Ambient radial circle directly centered under the compass!
         p.setStyle(Paint.Style.FILL);
         p.setColor(isNightTheme() ? 0x1600F5C8 : 0x1E00D7C2);
-        c.drawCircle(compassCx, compassCy, h * .365f, p);
+        c.drawCircle(compassCx, compassCy, ambR, p);
 
-        float secondCx = landscape ? (panelSwapped ? (w * .18f) : (w * .84f)) : (w * .88f);
-        p.setColor(isNightTheme() ? 0x103E8CFF : 0x1837678E);
-        c.drawCircle(secondCx, h * .15f, h * .34f, p);
+        if (wideLandscape) {
+            float secondCx = panelSwapped ? (w * .18f) : (w * .84f);
+            p.setColor(isNightTheme() ? 0x103E8CFF : 0x1837678E);
+            c.drawCircle(secondCx, h * .15f, h * .30f, p);
+        }
 
-        // Draw Islamic Arabesque Geometry
-        drawArabesqueGeometry(c, w, h);
+        // Draw Islamic Arabesque Geometry centered at the EXACT compass location!
+        drawArabesqueGeometry(c, w, h, compassCx, compassCy, wideLandscape, splitScreen);
     }
 
-    private void drawArabesqueGeometry(Canvas c, float w, float h) {
-        boolean landscape = w >= h;
-        float cx = landscape ? (panelSwapped ? (w * .570f) : (w * .430f)) : (w * .50f);
-        float cy = landscape ? (h * .52f) : (h * .29f);
-        float maxR = Math.min(w, h) * (landscape ? 0.36f : 0.26f);
+    private void drawArabesqueGeometry(Canvas c, float w, float h, float cx, float cy, boolean wide, boolean split) {
+        float maxR;
+        if (wide) {
+            maxR = Math.min(w, h) * 0.32f;
+        } else if (split) {
+            maxR = Math.min(w * 0.455f * 0.44f, h * 0.170f) * 1.05f;
+        } else {
+            maxR = Math.min(w, h) * 0.20f;
+        }
 
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(1.2f);
         int patternColor = getArabesqueColor();
         stroke.setColor(patternColor);
 
-        // Concentric geometric circles
+        // Concentric geometric circles exactly around the compass
         c.drawCircle(cx, cy, maxR * 0.88f, stroke);
-        c.drawCircle(cx, cy, maxR * 1.15f, stroke);
-        c.drawCircle(cx, cy, maxR * 1.35f, stroke);
+        c.drawCircle(cx, cy, maxR * 1.10f, stroke);
 
         // 8-Pointed Star Lattice around compass
-        float starR = maxR * 1.25f;
+        float starR = maxR * 1.18f;
         float innerR = starR * 0.7071f;
         Path starPath = new Path();
         for (int i = 0; i < 16; i++) {
@@ -588,20 +806,6 @@ public class QiblaView extends View {
         }
         starPath.close();
         c.drawPath(starPath, stroke);
-
-        // Second interleaved 8-Pointed Star rotated by 11.25 degrees
-        Path starPath2 = new Path();
-        for (int i = 0; i < 16; i++) {
-            double angle = Math.toRadians(i * 22.5 + 11.25);
-            float r = (i % 2 == 0) ? (starR * 1.08f) : (innerR * 1.08f);
-            float px = cx + (float) (Math.cos(angle) * r);
-            float py = cy + (float) (Math.sin(angle) * r);
-            if (i == 0) starPath2.moveTo(px, py);
-            else starPath2.lineTo(px, py);
-        }
-        starPath2.close();
-        stroke.setColor(patternColor & 0x66FFFFFF);
-        c.drawPath(starPath2, stroke);
 
         // Corner Arabesque motifs
         drawCornerArabesque(c, 0, 0, 1, 1, patternColor);
@@ -630,26 +834,26 @@ public class QiblaView extends View {
 
     private void drawTopBar(Canvas c, float w, float h) {
         float minDim = Math.min(w, h);
-        boolean landscape = w >= h;
-        float logoR = minDim * (landscape ? .062f : .058f);
-        float logoCx = landscape ? Math.max(w * .060f, logoR + w * .035f) : (logoR + w * .042f);
-        float logoCy = h * (landscape ? .074f : .068f);
+        boolean landscape = (w / h) >= 1.55f;
+        float logoR = minDim * (landscape ? .038f : .042f);
+        float logoCx = landscape ? (w * .022f + logoR) : (logoR + w * .028f);
+        float logoCy = h * (landscape ? .066f : .048f);
         drawLogo(c, logoCx, logoCy, logoR);
 
-        float textX = logoCx + logoR + (landscape ? w * .016f : w * .024f);
+        float textX = logoCx + logoR + (landscape ? w * .012f : w * .016f);
         p.setTextAlign(Paint.Align.LEFT);
         p.setColor(primaryTextColor());
-        ts(minDim * .042f);
+        ts(minDim * (landscape ? .036f : .030f));
         p.setFakeBoldText(true);
-        c.drawText(englishMode ? "Qibla" : "قبلة", textX, logoCy + logoR * .10f, p);
+        c.drawText(englishMode ? "Qibla" : "قبلة", textX, logoCy + logoR * .05f, p);
         p.setFakeBoldText(false);
-        ts(minDim * .020f);
+        ts(minDim * (landscape ? .018f : .016f));
         p.setColor(goldColor());
-        c.drawText(BuildConfig.VERSION_NAME, textX + (englishMode ? minDim * .006f : minDim * .014f), logoCy + logoR * .68f, p);
+        c.drawText(BuildConfig.VERSION_NAME, textX + minDim * .006f, logoCy + logoR * .72f, p);
 
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(primaryTextColor());
-        ts(minDim * .029f);
+        ts(minDim * (landscape ? .028f : .020f));
         String qibla;
         if (englishMode) {
             qibla = hasLocation
@@ -660,10 +864,11 @@ public class QiblaView extends View {
                     ? String.format(Locale.US, "اتجاه القبلة: %.0f° من الشمال", qiblaBearing)
                     : "اتجاه القبلة: بانتظار الموقع";
         }
-        float centerMaxW = landscape ? (w * .44f) : (w * .88f);
-        drawFittedText(c, qibla, w * .50f, h * (landscape ? .064f : .138f), centerMaxW);
+        float centerMaxW = landscape ? (w * .44f) : (w * .42f);
+        float qiblaY = landscape ? (h * .062f) : (h * .042f);
+        drawFittedText(c, qibla, w * .50f, qiblaY, centerMaxW);
 
-        ts(minDim * .021f);
+        ts(minDim * (landscape ? .020f : .015f));
         p.setColor(secondaryTextColor());
         String deviation;
         if (hasLocation && hasHeading) {
@@ -683,59 +888,45 @@ public class QiblaView extends View {
                 deviation = hasLocation ? "بانتظار اتجاه السيارة" : "بانتظار تحديد الموقع";
             }
         }
-        drawFittedText(c, deviation, w * .50f, h * (landscape ? .105f : .165f), centerMaxW);
+        float devY = landscape ? (h * .102f) : (h * .068f);
+        drawFittedText(c, deviation, w * .50f, devY, centerMaxW);
 
         Date now = new Date();
+        float rightX = landscape ? (w * .978f) : (w * .965f);
         p.setTextAlign(Paint.Align.RIGHT);
         p.setColor(primaryTextColor());
-        ts(minDim * .042f);
+        ts(minDim * (landscape ? .040f : .032f));
         p.setFakeBoldText(true);
-        c.drawText(new SimpleDateFormat("hh:mm a", Locale.US).format(now), w * .955f, h * .070f, p);
+        c.drawText(new SimpleDateFormat("hh:mm a", Locale.US).format(now), rightX, h * (landscape ? .068f : .046f), p);
         p.setFakeBoldText(false);
-        ts(minDim * .019f);
+        ts(minDim * (landscape ? .018f : .015f));
         p.setColor(secondaryTextColor());
-        float rightMaxW = landscape ? (w * .24f) : (w * .44f);
-        drawFittedTextAligned(c, new SimpleDateFormat("EEEE d MMMM", englishMode ? Locale.US : ar).format(now), w * .955f, h * .098f, rightMaxW);
+        float rightMaxW = landscape ? (w * .24f) : (w * .38f);
+        drawFittedTextAligned(c, new SimpleDateFormat("EEEE d MMMM", englishMode ? Locale.US : ar).format(now), rightX, h * (landscape ? .096f : .068f), rightMaxW);
         p.setColor(mutedTextColor());
-        ts(minDim * .016f);
+        ts(minDim * .015f);
         String activeHijri = (englishMode && !hijriDateEn.isEmpty()) ? hijriDateEn : hijriDate;
         String emptyHijri = englishMode ? "Hijri date after prayer sync" : "التاريخ الهجري بعد تحديث الصلاة";
-        drawFittedTextAligned(c, activeHijri.isEmpty() ? emptyHijri : activeHijri, w * .955f, h * .120f, rightMaxW);
+        drawFittedTextAligned(c, activeHijri.isEmpty() ? emptyHijri : activeHijri, w * .955f, h * .118f, rightMaxW);
     }
 
     private void drawLogo(Canvas c, float cx, float cy, float r) {
         boolean night = isNightTheme();
         p.setStyle(Paint.Style.FILL);
+        p.setColor(night ? 0xFF0F1820 : 0xF6101B22);
+        c.drawCircle(cx, cy, r, p);
 
-        RectF badge = new RectF(cx - r, cy - r, cx + r, cy + r);
-        if (night) {
-            p.setColor(0x38FFD56B);
-            c.drawRoundRect(new RectF(cx - r * 1.08f, cy - r * 1.08f, cx + r * 1.08f, cy + r * 1.08f), r * .28f, r * .28f, p);
-            p.setColor(0xFF0F1820);
-            c.drawRoundRect(badge, r * .24f, r * .24f, p);
-        } else {
-            p.setColor(0x28000000);
-            c.drawRoundRect(new RectF(cx - r * 1.04f, cy - r * 1.02f + 2f, cx + r * 1.04f, cy + r * 1.06f + 2f), r * .28f, r * .28f, p);
-            p.setColor(0xF6101B22);
-            c.drawRoundRect(badge, r * .24f, r * .24f, p);
-        }
-
+        RectF badge = new RectF(cx - r * 0.82f, cy - r * 0.82f, cx + r * 0.82f, cy + r * 0.82f);
         if (logoBitmap != null && !logoBitmap.isRecycled()) {
             c.drawBitmap(logoBitmap, null, badge, bitmapPaint);
         } else {
-            drawVectorLogo(c, cx, cy, r, night);
+            drawVectorLogo(c, cx, cy, r * 0.82f, night);
         }
 
         stroke.setStyle(Paint.Style.STROKE);
-        stroke.setStrokeWidth(Math.max(1.8f, r * .075f));
-        stroke.setColor(night ? 0xFFFFD875 : 0xFFE5B23A);
-        c.drawRoundRect(badge, r * .24f, r * .24f, stroke);
-
-        if (!night) {
-            stroke.setStrokeWidth(1.2f);
-            stroke.setColor(0x66FFF5D6);
-            c.drawRoundRect(new RectF(cx - r * .93f, cy - r * .93f, cx + r * .93f, cy + r * .93f), r * .20f, r * .20f, stroke);
-        }
+        stroke.setStrokeWidth(1.2f);
+        stroke.setColor(night ? 0xBBFFD875 : 0xBBE5B23A);
+        c.drawCircle(cx, cy, r, stroke);
     }
 
     private void drawVectorLogo(Canvas c, float cx, float cy, float r, boolean night) {
@@ -858,53 +1049,70 @@ public class QiblaView extends View {
     }
 
     private void drawLeftCards(Canvas c, float w, float h, boolean onRight) {
-        float margin = w * .045f;
-        float cardW = w * .175f, cardH = h * .120f;
+        float margin = w * .022f;
+        float cardW = w * .118f;
         float x = onRight ? (w - margin - cardW) : margin;
-        drawInfoCard(c, x, h * .185f, cardW, cardH,
+
+        float yTop = h * .145f;
+        float gap = h * .010f;
+        float cardH = h * .112f;
+
+        drawInfoCard(c, x, yTop + 0 * (cardH + gap), cardW, cardH,
                 englishMode ? "Qibla Angle" : "زاوية القبلة",
                 hasLocation ? String.format(Locale.US, "%.0f°", qiblaBearing) : "—",
                 "◈", prayerAccentColor());
-        drawInfoCard(c, x, h * .322f, cardW, cardH,
-                englishMode ? "Heading" : "اتجاه المركبة",
+
+        drawInfoCard(c, x, yTop + 1 * (cardH + gap), cardW, cardH,
+                englishMode ? "Vehicle Heading" : "اتجاه المركبة",
                 hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—",
                 "↗", hasHeading ? prayerAccentColor() : 0xFFE5B64A);
 
         boolean showSpeed = speedKmh > 1f;
-        drawInfoCard(c, x, h * .459f, cardW, cardH,
-                showSpeed ? (englishMode ? "Vehicle Speed" : "سرعة المركبة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+        drawInfoCard(c, x, yTop + 2 * (cardH + gap), cardW, cardH,
+                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
                 showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
                 showSpeed ? "🚗" : "◎", prayerAccentColor());
 
-        drawInfoCard(c, x, h * .596f, cardW, cardH * 0.72f,
-                englishMode ? "Compass Source" : "مصدر الاتجاه",
-                localizedHeadingSource(), "🧭", goldColor());
+        drawInfoCard(c, x, yTop + 3 * (cardH + gap), cardW, cardH,
+                englishMode ? "Heading Source" : "مصدر الاتجاه",
+                localizedHeadingSource(),
+                "🧭", goldColor());
     }
 
     private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
-        roundCard(c, new RectF(x, y, x + cw, y + ch));
-        p.setTextAlign(Paint.Align.LEFT);
+        drawInfoCard(c, x, y, cw, ch, label, value, icon, accent, null);
+    }
+
+    private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent, String sub) {
+        roundCard(c, new RectF(x, y, x + cw, y + ch), 14f, 1.0f);
+
+        float cx = x + cw * 0.5f;
+
+        p.setTextAlign(Paint.Align.CENTER);
         ts(ch * .20f);
         p.setColor(accent);
-        c.drawText(icon, x + cw * .08f, y + ch * .53f, p);
-        p.setColor(mutedTextColor());
-        ts(ch * .14f);
-        drawFittedTextAligned(c, label, x + cw * .30f, y + ch * .34f, cw * .66f);
+        String header = (icon != null && !icon.isEmpty()) ? (icon + " " + label) : label;
+        drawFittedText(c, header, cx, y + ch * 0.38f, cw * 0.90f);
+
         p.setColor(primaryTextColor());
-        ts(ch * .25f);
+        ts(ch * .32f);
         p.setFakeBoldText(true);
-        drawFittedTextAligned(c, value, x + cw * .30f, y + ch * .74f, cw * .66f);
+        drawFittedText(c, value, cx, y + ch * 0.78f, cw * 0.90f);
         p.setFakeBoldText(false);
     }
 
     private void roundCard(Canvas c, RectF r) {
+        roundCard(c, r, 16f, 1.2f);
+    }
+
+    private void roundCard(Canvas c, RectF r, float radius, float strokeW) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(cardBgFill());
-        c.drawRoundRect(r, 22f, 22f, p);
+        c.drawRoundRect(r, radius, radius, p);
         stroke.setStyle(Paint.Style.STROKE);
-        stroke.setStrokeWidth(1.4f);
+        stroke.setStrokeWidth(strokeW);
         stroke.setColor(cardStrokeColor());
-        c.drawRoundRect(r, 22f, 22f, stroke);
+        c.drawRoundRect(r, radius, radius, stroke);
     }
 
     private void drawCompass(Canvas c, float cx, float cy, float r) {
@@ -913,22 +1121,22 @@ public class QiblaView extends View {
         p.setStyle(Paint.Style.FILL);
         if (aligned) {
             p.setColor(0x2E00F5A0);
-            c.drawCircle(cx, cy, r * 1.48f, p);
+            c.drawCircle(cx, cy, r * 1.20f, p);
             p.setColor(0x3D00F5A0);
-            c.drawCircle(cx, cy, r * 1.34f, p);
+            c.drawCircle(cx, cy, r * 1.12f, p);
         } else {
             p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
-            c.drawCircle(cx, cy, r * 1.42f, p);
+            c.drawCircle(cx, cy, r * 1.16f, p);
         }
 
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(r * .035f);
         stroke.setColor(aligned ? 0xFFFFD768 : (isNightTheme() ? 0xFF8A6726 : 0xFFB88E3E));
-        c.drawCircle(cx, cy, r * 1.25f, stroke);
+        c.drawCircle(cx, cy, r * 1.14f, stroke);
 
         stroke.setStrokeWidth(r * .012f);
         stroke.setColor(aligned ? 0xFF00F5C8 : (isNightTheme() ? 0x88FFDF85 : 0x884D7783));
-        c.drawCircle(cx, cy, r * 1.28f, stroke);
+        c.drawCircle(cx, cy, r * 1.08f, stroke);
 
         stroke.setStrokeWidth(r * .008f);
         stroke.setColor(isNightTheme() ? 0x44FFD768 : 0x445D7E86);
@@ -989,23 +1197,12 @@ public class QiblaView extends View {
     }
 
     private void drawCompassBottomBadge(Canvas c, float cx, float cy, float r, boolean aligned) {
-        float badgeY = cy + r * 1.05f;
-        float badgeW = r * 1.55f;
-        float badgeH = Math.max(26f, r * 0.22f);
-        RectF badgeRect = new RectF(cx - badgeW * 0.5f, badgeY, cx + badgeW * 0.5f, badgeY + badgeH);
-
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(aligned ? 0xE005382B : cardBgFill());
-        c.drawRoundRect(badgeRect, 18f, 18f, p);
-
-        stroke.setStyle(Paint.Style.STROKE);
-        stroke.setStrokeWidth(1.2f);
-        stroke.setColor(aligned ? 0xFFFFD768 : cardStrokeColor());
-        c.drawRoundRect(badgeRect, 18f, 18f, stroke);
+        // Raised higher up inside the compass dial below Kaaba (no box/rectangle)
+        float textY = cy + r * 0.285f;
+        float maxTextW = r * 0.82f;
 
         p.setTextAlign(Paint.Align.CENTER);
-        ts(badgeH * 0.50f);
-        p.setColor(aligned ? 0xFFFFFFFF : goldColor());
+        ts(r * 0.070f);
         p.setFakeBoldText(true);
 
         String makkahDist = (distanceKm > 0)
@@ -1016,7 +1213,17 @@ public class QiblaView extends View {
                 ? (englishMode ? "🕋 Aligned with Qibla" : "🕋 باتجاه القبلة المشرفة")
                 : ("🕋 " + makkahDist);
 
-        drawFittedText(c, badgeText, cx, badgeY + badgeH * 0.68f, badgeW * 0.90f);
+        if (aligned) {
+            int glowColor = isNightTheme() ? 0xFF00F5C8 : 0xFF00897B;
+            p.setColor(glowColor);
+            p.setShadowLayer(14f, 0, 0, isNightTheme() ? 0xDD00F5C8 : 0x88004D40);
+        } else {
+            p.setColor(goldColor());
+            p.setShadowLayer(8f, 0, 0, isNightTheme() ? 0xAA000000 : 0x44000000);
+        }
+
+        drawFittedText(c, badgeText, cx, textY, maxTextW);
+        p.clearShadowLayer();
         p.setFakeBoldText(false);
     }
 
@@ -1103,108 +1310,218 @@ public class QiblaView extends View {
     }
 
     private void drawPrayerPanel(Canvas c, float w, float h, boolean onLeft) {
-        float margin = w * .045f;
-        float cw = w * .305f, ch = h * .425f, y = h * .175f;
+        float margin = w * .022f;
+        float cw = w * .315f;
         float x = onLeft ? margin : (w - margin - cw);
-        roundCard(c, new RectF(x, y, x + cw, y + ch));
-        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
+
+        float yTop = h * .145f;
+        float gap = h * .014f;
+
+        float ch1 = h * .415f;
+        float ch2 = h * .140f; // Next Prayer Card
+        float ch3 = h * .175f; // Location & Status Card
+
+        float y1 = yTop;
+        float y2 = y1 + ch1 + gap;
+        float y3 = y2 + ch2 + gap;
+
+        // Card 1: مواقيت الصلاة (Prayer Times Card)
+        roundCard(c, new RectF(x, y1, x + cw, y1 + ch1), 16f, 1.2f);
+        boolean rtl = !englishMode;
+        float padX = cw * 0.08f;
+
+        // Header Title
+        p.setTextAlign(rtl ? Paint.Align.RIGHT : Paint.Align.LEFT);
         p.setColor(goldColor());
-        ts(h * .033f);
+        ts(ch1 * .078f);
         p.setFakeBoldText(true);
+        float headerY = y1 + ch1 * 0.12f;
         c.drawText(englishMode ? "🕌 Prayer Times" : "🕌 مواقيت الصلاة",
-                englishMode ? (x + cw * .08f) : (x + cw * .92f), y + ch * .12f, p);
+                rtl ? (x + cw - padX) : (x + padX), headerY, p);
         p.setFakeBoldText(false);
+
+        // Hijri date subtitle in header
+        String hijri = englishMode ? (hijriDateEn.isEmpty() ? hijriDate : hijriDateEn) : hijriDate;
+        if (hijri != null && !hijri.isEmpty()) {
+            p.setTextAlign(rtl ? Paint.Align.LEFT : Paint.Align.RIGHT);
+            p.setColor(prayerSecondaryColor());
+            ts(ch1 * .058f);
+            drawFittedTextAligned(c, hijri, rtl ? (x + padX) : (x + cw - padX), headerY, cw * 0.44f);
+        }
 
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = y + ch * .22f, rowH = ch * .115f;
+        float rowStart = y1 + ch1 * 0.235f;
+        float rowH = ch1 * 0.120f;
+
         for (int i = 0; i < 6; i++) {
             float ry = rowStart + i * rowH;
             if (i == next) {
                 p.setColor(0x28FFA726);
-                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .72f, x + cw * .97f, ry + rowH * .25f), 14f, 14f, p);
+                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .70f, x + cw * .97f, ry + rowH * .26f), 10f, 10f, p);
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0xBBFFD768);
-                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .72f, x + cw * .97f, ry + rowH * .25f), 14f, 14f, stroke);
+                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .70f, x + cw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
             }
-            ts(Math.min(h * .029f, ch * .085f));
+
+            ts(ch1 * .074f);
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
-            if (englishMode) {
-                p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(icon + " " + names[i], x + cw * .08f, ry, p);
+            p.setFakeBoldText(i == next);
+
+            if (rtl) {
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(format12Hour(prayerTimes[i]), x + cw * .92f, ry, p);
+                c.drawText(icon + "  " + names[i], x + cw - padX, ry, p);
+                p.setTextAlign(Paint.Align.LEFT);
+                c.drawText(format12Hour(prayerTimes[i]), x + padX, ry, p);
             } else {
-                p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(icon + " " + names[i], x + cw * .92f, ry, p);
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(format12Hour(prayerTimes[i]), x + cw * .08f, ry, p);
+                c.drawText(icon + "  " + names[i], x + padX, ry, p);
+                p.setTextAlign(Paint.Align.RIGHT);
+                c.drawText(format12Hour(prayerTimes[i]), x + cw - padX, ry, p);
             }
+            p.setFakeBoldText(false);
         }
 
-        float ny = h * .615f;
-        roundCard(c, new RectF(x, ny, x + cw, ny + h * .075f));
+        // Card 2: الصلاة القادمة (Next Prayer Card - ENLARGED!)
+        roundCard(c, new RectF(x, y2, x + cw, y2 + ch2), 16f, 1.4f);
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(1.5f);
+        stroke.setColor(0xAAFFD768);
+        c.drawRoundRect(new RectF(x, y2, x + cw, y2 + ch2), 16f, 16f, stroke);
+
         p.setTextAlign(Paint.Align.CENTER);
-        ts(h * .022f);
+        ts(ch2 * 0.22f);
         p.setColor(goldColor());
         p.setFakeBoldText(true);
-        drawFittedText(c, nextPrayerText(), x + cw * .5f, ny + h * .046f, cw * .92f);
+        drawFittedText(c, formatNextPrayerTitle(), x + cw * 0.5f, y2 + ch2 * 0.32f, cw * 0.88f);
+
+        // Main prominent countdown line in large bold font
+        ts(ch2 * 0.38f);
+        p.setColor(primaryTextColor());
+        drawFittedText(c, formatNextPrayerCountdown(), x + cw * 0.5f, y2 + ch2 * 0.76f, cw * 0.92f);
         p.setFakeBoldText(false);
 
-        float ly = h * .705f;
-        roundCard(c, new RectF(x, ly, x + cw, ly + h * .125f));
-        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
-        float alignX = englishMode ? (x + cw * .09f) : (x + cw * .90f);
-        ts(h * .020f);
+        // Card 3: الموقع وحالة النظام (Location & Status Card)
+        roundCard(c, new RectF(x, y3, x + cw, y3 + ch3), 16f, 1.2f);
+        p.setTextAlign(rtl ? Paint.Align.RIGHT : Paint.Align.LEFT);
+        float alignX = rtl ? (x + cw - padX) : (x + padX);
+
+        ts(ch3 * 0.18f);
         p.setColor(prayerAccentColor());
-        String placeLine = (englishMode ? "📍 Location: " : "📍 الموقع: ") + localizedLocationName();
-        drawFittedTextAligned(c, placeLine, alignX, ly + h * .035f, cw * .84f);
+        String placeLine = "📍 " + localizedLocationName();
+        drawFittedTextAligned(c, placeLine, alignX, y3 + ch3 * 0.30f, cw * 0.84f);
+
         p.setColor(prayerSecondaryColor());
-        ts(h * .015f);
+        ts(ch3 * 0.14f);
         String coords = hasLocation
-                ? String.format(Locale.US, "%.5f, %.5f", latitude, longitude)
-                : (englishMode ? "Waiting for coordinates" : "بانتظار الإحداثيات");
-        drawFittedTextAligned(c, coords, alignX, ly + h * .063f, cw * .84f);
+                ? String.format(Locale.US, "🛰️ %.4f° N, %.4f° E  (±%s)", latitude, longitude, formatAccuracy())
+                : (englishMode ? "🛰️ Waiting for GPS lock" : "🛰️ بانتظار إشارة GPS");
+        drawFittedTextAligned(c, coords, alignX, y3 + ch3 * 0.58f, cw * 0.84f);
+
         p.setColor(isNightTheme() ? 0xFF7ED9EA : 0xFF006B70);
-        String gpsLabel = hasLocation
-                ? (englishMode ? "GPS + Network" : "GPS + الشبكة")
-                : (englishMode ? "Waiting for GPS" : "بانتظار GPS");
-        drawFittedTextAligned(c, gpsLabel + "  •  " + localizedNetworkStatus(), alignX, ly + h * .090f, cw * .84f);
-        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
-        p.setColor(prayerSecondaryColor());
-        ts(h * .014f);
-        drawFittedTextAligned(c, localizedPrayerStatus(), alignX, ly + h * .111f, cw * .84f);
+        ts(ch3 * 0.13f);
+        String calMethod = englishMode ? "⚖️ Umm al-Qura Calendar • Live Sync" : "⚖️ تقويم أم القرى الرسمي • تحديث مباشر";
+        drawFittedTextAligned(c, calMethod, alignX, y3 + ch3 * 0.84f, cw * 0.84f);
     }
 
     private void drawBottomAthkarBar(Canvas c, float w, float h) {
-        float barH = h * 0.052f;
-        float barY = h * 0.932f;
-        float startX = w * 0.38f;
-        float endX = w * 0.96f;
+        float barH = h * 0.048f;
+        float barY = h * 0.940f;
+        float startX = panelSwapped ? (w * 0.035f) : (w * 0.350f);
+        float endX = panelSwapped ? (w * 0.635f) : (w * 0.965f);
         RectF barRect = new RectF(startX, barY, endX, barY + barH);
 
-        roundCard(c, barRect);
+        roundCard(c, barRect, 14f, 1.2f);
 
         p.setTextAlign(Paint.Align.CENTER);
-        ts(barH * 0.44f);
-        p.setColor(goldColor());
-        String thikr = "📿 " + currentThikrText();
+        ts(barH * 0.56f);
+        p.setFakeBoldText(true);
+        boolean playing = SoundManager.isPlaying();
+        p.setColor(playing ? 0xFF00F5C8 : goldColor());
+        String thikr = playing
+                ? (englishMode ? "🔊 Playing Takbeerat... (Tap to stop)" : "🔊 جاري تشغيل تكبيرات الأذان... (اضغط للإيقاف)")
+                : currentThikrText();
         drawFittedText(c, thikr, (startX + endX) * 0.5f, barY + barH * 0.68f, (endX - startX) * 0.94f);
+        p.setFakeBoldText(false);
     }
 
     private void drawPortraitBottomAthkar(Canvas c, float w, float h) {
-        float pad = w * .04f;
-        float barH = h * 0.048f;
-        float barY = h * 0.940f;
+        float pad = w * .025f;
+        float barH = h * 0.045f;
+        float barY = h * 0.832f;
         RectF barRect = new RectF(pad, barY, w - pad, barY + barH);
-        roundCard(c, barRect);
+        roundCard(c, barRect, 14f, 1.2f);
         p.setTextAlign(Paint.Align.CENTER);
-        ts(barH * 0.44f);
-        p.setColor(goldColor());
-        String thikr = "📿 " + currentThikrText();
+        ts(barH * 0.52f);
+        p.setFakeBoldText(true);
+        boolean playing = SoundManager.isPlaying();
+        p.setColor(playing ? 0xFF00F5C8 : goldColor());
+        String thikr = playing
+                ? (englishMode ? "🔊 Playing Takbeerat... (Tap to stop)" : "🔊 جاري تشغيل تكبيرات الأذان... (اضغط للإيقاف)")
+                : currentThikrText();
         drawFittedText(c, thikr, w * 0.5f, barY + barH * 0.68f, (w - pad * 2f) * 0.94f);
+        p.setFakeBoldText(false);
+    }
+
+    private void drawAdhanBanner(Canvas c, float w, float h) {
+        if (adhanBannerText == null || System.currentTimeMillis() >= adhanBannerUntil) return;
+        float bw = Math.min(w * 0.74f, 750f);
+        float bh = h * 0.078f;
+        float bx = (w - bw) * 0.5f;
+        float by = h * 0.020f;
+        RectF r = new RectF(bx, by, bx + bw, by + bh);
+
+        // Rich emerald fill with soft glow
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFA052C22);
+        p.setShadowLayer(26f, 0, 4f, 0xDD00F5C8);
+        c.drawRoundRect(r, bh * 0.42f, bh * 0.42f, p);
+        p.clearShadowLayer();
+
+        // Stroke gold border
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(2.0f);
+        stroke.setColor(0xFFFFD768);
+        c.drawRoundRect(r, bh * 0.42f, bh * 0.42f, stroke);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        ts(bh * 0.40f);
+        p.setColor(0xFFFFFFFF);
+        p.setFakeBoldText(true);
+        drawFittedText(c, adhanBannerText, bx + bw * 0.5f, by + bh * 0.64f, bw * 0.90f);
+        p.setFakeBoldText(false);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            float y = event.getY();
+            float h = getHeight();
+
+            // 1. Tapping on active Adhan banner dismisses it and silences audio
+            if (System.currentTimeMillis() < adhanBannerUntil && adhanBannerText != null && y <= h * 0.15f) {
+                dismissAdhanBanner();
+                SoundManager.stop();
+                return true;
+            }
+
+            // 2. Tapping bottom Athkar bar stops audio if playing
+            float aspect = getWidth() / (float) h;
+            boolean wide = aspect >= 1.35f;
+            boolean split = !wide && aspect >= 0.85f;
+            float athkarMinY = wide ? (h * 0.92f) : (split ? (h * 0.77f) : (h * 0.81f));
+            float athkarMaxY = wide ? (h * 0.995f) : (split ? (h * 0.86f) : (h * 0.88f));
+            if (y >= athkarMinY && y <= athkarMaxY) {
+                if (SoundManager.isPlaying()) {
+                    SoundManager.stop();
+                    invalidate();
+                    return true;
+                }
+            }
+        }
+        return super.onTouchEvent(event);
     }
 
     private int getNextPrayerIndex() {
@@ -1237,6 +1554,31 @@ public class QiblaView extends View {
         return String.format(Locale.US, "الصلاة القادمة: %s متبقي %02d:%02d:%02d", names[idx], dh, dm, ds);
     }
 
+    private String formatNextPrayerTitle() {
+        int idx = getNextPrayerIndex();
+        if (idx < 0) return englishMode ? "NEXT PRAYER" : "الصلاة القادمة";
+        String[] names = activePrayerNames();
+        return englishMode ? ("🕌 Next Prayer: " + names[idx]) : ("🕌 الصلاة القادمة: " + names[idx]);
+    }
+
+    private String formatNextPrayerCountdown() {
+        int idx = getNextPrayerIndex();
+        if (idx < 0) return englishMode ? "Waiting for sync" : "بانتظار التحديث";
+        int target = parseMinutes(prayerTimes[idx]);
+        Calendar now = Calendar.getInstance();
+        int currentSec = now.get(Calendar.HOUR_OF_DAY) * 3600 + now.get(Calendar.MINUTE) * 60 + now.get(Calendar.SECOND);
+        int targetSec = target * 60;
+        int diff = targetSec - currentSec;
+        if (diff <= 0) diff += 24 * 3600;
+        int dh = diff / 3600;
+        int dm = (diff % 3600) / 60;
+        int ds = diff % 60;
+        if (englishMode) {
+            return String.format(Locale.US, "%02d:%02d:%02d  Remaining", dh, dm, ds);
+        }
+        return String.format(Locale.US, "متبقي  \u200E%02d:%02d:%02d", dh, dm, ds);
+    }
+
     private int parseMinutes(String s) {
         try {
             String[] parts = s.split(":");
@@ -1262,7 +1604,7 @@ public class QiblaView extends View {
         float originalSize = p.getTextSize();
         float textW = p.measureText(text);
         if (textW > maxW && textW > 0) {
-            p.setTextSize(Math.max(originalSize * 0.65f, originalSize * (maxW / textW)));
+            p.setTextSize(Math.max(originalSize * 0.45f, originalSize * (maxW / textW)));
         }
         c.drawText(text, cx, cy, p);
         p.setTextSize(originalSize);
@@ -1273,7 +1615,7 @@ public class QiblaView extends View {
         float originalSize = p.getTextSize();
         float textW = p.measureText(text);
         if (textW > maxW && textW > 0) {
-            p.setTextSize(Math.max(originalSize * 0.65f, originalSize * (maxW / textW)));
+            p.setTextSize(Math.max(originalSize * 0.45f, originalSize * (maxW / textW)));
         }
         c.drawText(text, x, y, p);
         p.setTextSize(originalSize);
