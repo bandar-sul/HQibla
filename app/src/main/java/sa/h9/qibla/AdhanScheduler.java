@@ -87,8 +87,9 @@ public final class AdhanScheduler {
             if (i == 1) continue; // Sunrise has no Adhan
             int m = parseMinute(times[i]);
             if (m < 0) continue;
-            // Target is ahead of current minute (or same minute with seconds < 10)
-            if (m > nowMinute || (m == nowMinute && nowSecond < 10)) {
+            // CRITICAL FIX: Target MUST be strictly in the future.
+            // Never re-select current minute or past minutes for today!
+            if (m > nowMinute) {
                 targetIndex = i;
                 targetMinute = m;
                 break;
@@ -114,8 +115,10 @@ public final class AdhanScheduler {
         targetCal.set(Calendar.MILLISECOND, 0);
 
         long triggerAtMillis = targetCal.getTimeInMillis();
-        if (triggerAtMillis <= System.currentTimeMillis()) {
-            triggerAtMillis = System.currentTimeMillis() + 1000L;
+        if (triggerAtMillis <= System.currentTimeMillis() + 15000L) {
+            // Safety guard: if calculated time is in the past, push to tomorrow
+            targetCal.add(Calendar.DAY_OF_YEAR, 1);
+            triggerAtMillis = targetCal.getTimeInMillis();
         }
 
         sp.edit()

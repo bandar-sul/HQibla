@@ -1,0 +1,9 @@
+{
+  "versionCode": 114,
+  "versionName": "9.9.8",
+  "apkUrl": "https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v9.9.8.apk",
+  "sha256": "519de02cb08fc997261bd976665b380493269567202205ca5656414f194a3e22",
+  "notes": "أهم مميزات وإصلاحات الإصدار 9.9.8:\n• تعديل زر التحديث: حذف التاريخ المكرر من داخل بطاقة الصلوات ووضع أيقونة وزر التحديث بجانب عنوان 'مواقيت الصلاة  🔄' مباشرة.\n• تصغير وتجميل نافذة تم حفظ الإعدادات: شارة أنيقة مدمجة ذات زوايا دائرية فخمة باللون الزمردي المتناسق مع الشاشة لا تحجب الرؤية.\n• ثبات فائق للبوصلة وإلغاء الاهتزاز والتردد، مع خروج الصوت عبر سماعات السيارة STREAM_MUSIC وقناة إشعار عالية الأولوية qibla_adhan_v8.\n• حذف الرادار النرويجي المعطل واعتماد طقس Open-Meteo المفتوح المباشر.",
+  "notes_ar": "أهم مميزات وإصلاحات الإصدار 9.9.8:\n• تعديل زر التحديث: حذف التاريخ المكرر من داخل بطاقة الصلوات ووضع أيقونة وزر التحديث بجانب عنوان 'مواقيت الصلاة  🔄' مباشرة.\n• تصغير وتجميل نافذة تم حفظ الإعدادات: شارة أنيقة مدمجة ذات زوايا دائرية فخمة باللون الزمردي المتناسق مع الشاشة لا تحجب الرؤية.\n• ثبات فائق للبوصلة وإلغاء الاهتزاز والتردد، مع خروج الصوت عبر سماعات السيارة STREAM_MUSIC وقناة إشعار عالية الأولوية qibla_adhan_v8.\n• حذف الرادار النرويجي المعطل واعتماد طقس Open-Meteo المفتوح المباشر.",
+  "notes_en": "Highlights & Fixes in Version 9.9.8:\n• Streamlined Prayer Sync Button: Removed redundant date from inside prayer card and placed the sync icon directly next to 'Prayer Times 🔄'.\n• Compact & Elegant Settings Saved Toast: Replaced bulky white box with a sleek, compact floating dark-emerald pill with glowing cyan border.\n• Damped stable compass, loud car stereo audio via STREAM_MUSIC, and open-source Open-Meteo weather."
+}

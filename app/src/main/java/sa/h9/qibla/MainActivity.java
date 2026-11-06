@@ -38,6 +38,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.Toast;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -47,16 +48,19 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import android.util.Log;
+
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements LocationListener, SensorEventListener {
+    private static final String TAG = "H9MainActivity";
     private static final int REQ_LOCATION = 1001;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 2.0f;
     private static final long HEADING_STALE_MS = 7000L;
-    private static final long PRAYER_REFRESH_MS = 5L * 60L * 1000L;
+    private static final long PRAYER_REFRESH_MS = 60_000L; // 1 minute continuous live refresh
     private static final String NOTICE_PREFS = "h9_qibla_notice";
     private static final String KEY_NOTICE_SHOWN = "developer_notice_shown_v3";
     private static final String HEADING_PREFS = "h9_qibla_heading";
@@ -67,16 +71,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String KEY_SAVED_LON = "saved_lon";
     private static final String KEY_SAVED_ACC = "saved_acc";
     private static final String KEY_SAVED_TIME = "saved_time";
-    private static final String UI_PREFS = "h9_qibla_ui";
-    private static final String KEY_THEME_MODE = "theme_mode";
-    private static final String KEY_FONT_SCALE = "font_scale";
-    private static final String KEY_ENGLISH_MODE = "english_mode";
-    private static final String KEY_FONT_INDEX = "font_index";
-    private static final String KEY_PANEL_SWAPPED = "panel_swapped";
-    private static final String KEY_PRAYER_OFFSET_MINUTES = "prayer_offset_minutes";
-    private static final String KEY_ADHAN_SOUND_ENABLED = "adhan_sound_enabled";
-    private static final String KEY_FULLSCREEN_ENABLED = "fullscreen_enabled";
-    private static final String KEY_LAST_SEEN_CHANGELOG_VER = "last_seen_changelog_ver";
+    public static final String UI_PREFS = "h9_qibla_ui";
+    public static final String KEY_THEME_MODE = "theme_mode";
+    public static final String KEY_FONT_SCALE = "font_scale";
+    public static final String KEY_ENGLISH_MODE = "english_mode";
+    public static final String KEY_FONT_INDEX = "font_index";
+    public static final String KEY_PANEL_SWAPPED = "panel_swapped";
+    public static final String KEY_PRAYER_OFFSET_MINUTES = "prayer_offset_minutes";
+    public static final String KEY_ADHAN_SOUND_ENABLED = "adhan_sound_enabled";
+    public static final String KEY_FULLSCREEN_ENABLED = "fullscreen_enabled";
+    public static final String KEY_LAST_SEEN_CHANGELOG_VER = "last_seen_changelog_ver";
 
     private Button mainSettingsButton;
     private LocationManager locationManager;
@@ -149,33 +153,65 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private int lastAdhanAlertIndex = -1;
 
     private void checkAdhanAlert() {
-        if (qiblaView == null || !qiblaView.hasPrayerTimes()) return;
-        Calendar now = Calendar.getInstance();
-        int currentSec = now.get(Calendar.SECOND);
-        if (currentSec > 5) return;
+        try {
+            if (qiblaView == null || !qiblaView.hasPrayerTimes()) return;
+            Calendar now = Calendar.getInstance();
 
-        int minuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
-        if (minuteOfDay == lastAdhanAlertMinute) return;
+            int minuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+            if (minuteOfDay == lastAdhanAlertMinute) return;
 
-        String[] times = qiblaView.getPrayerTimes();
-        String[] names = qiblaView.getPrayerNames();
-        if (times == null || names == null || times.length != 6) return;
+            String[] times = qiblaView.getPrayerTimes();
+            String[] names = qiblaView.getPrayerNames();
+            if (times == null || names == null || times.length != 6) return;
 
-        for (int i = 0; i < 6; i++) {
-            if (i == 1) continue; // Skip Sunrise
-            int pMin = parseMinutes(times[i]);
-            if (pMin == minuteOfDay && lastAdhanAlertIndex != i) {
-                lastAdhanAlertMinute = minuteOfDay;
-                lastAdhanAlertIndex = i;
-                qiblaView.showAdhanBanner(names[i], times[i]);
-                boolean soundOn = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
-                if (soundOn) {
-                    SoundManager.playAdhan(this, () -> {
-                        if (qiblaView != null) qiblaView.invalidate();
-                    });
+            SharedPreferences sp = getSharedPreferences(AdhanScheduler.PREFS_NAME, MODE_PRIVATE);
+
+            for (int i = 0; i < 6; i++) {
+                if (i == 1) continue; // Skip Sunrise
+                int pMin = parseMinutes(times[i]);
+                if (pMin == minuteOfDay && lastAdhanAlertIndex != i) {
+                    String todayPrayerKey = String.format(Locale.US, "%04d-%02d-%02d_%s",
+                            now.get(Calendar.YEAR), now.get(Calendar.DAY_OF_YEAR), names[i]);
+                    String lastKey = sp.getString("last_triggered_prayer_key", "");
+                    if (todayPrayerKey.equals(lastKey)) {
+                        lastAdhanAlertMinute = minuteOfDay;
+                        lastAdhanAlertIndex = i;
+                        break;
+                    }
+                    sp.edit().putString("last_triggered_prayer_key", todayPrayerKey).apply();
+
+                    lastAdhanAlertMinute = minuteOfDay;
+                    lastAdhanAlertIndex = i;
+
+                    try {
+                        qiblaView.showAdhanBanner(names[i], times[i]);
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Failed to show Adhan banner", t);
+                    }
+
+                    // Post high-priority system notification safely
+                    try {
+                        AdhanAlarmReceiver.showNotification(this, names[i], times[i], qiblaView.getLocationName());
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Failed to post Adhan notification", t);
+                    }
+
+                    try {
+                        boolean soundOn = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
+                        int soundMode = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
+                        if (soundOn && soundMode != SoundManager.SOUND_MODE_MUTED) {
+                            SoundManager.playPrayerAlert(this, soundMode, true, () -> {
+                                if (qiblaView != null) qiblaView.postInvalidate();
+                            });
+                        }
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Failed to start prayer alert sound", t);
+                    }
+                    break;
                 }
-                break;
             }
+        } catch (Throwable t) {
+            Log.e(TAG, "Error in checkAdhanAlert", t);
         }
     }
 
@@ -206,11 +242,98 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     };
 
-    private boolean isEn() {
+    boolean isEn() {
         return qiblaView != null && qiblaView.isEnglishMode();
     }
 
-    private void applyLanguageMode(boolean english) {
+    public boolean isEnglishMode() {
+        return isEn();
+    }
+
+    public Location getLastLocation() {
+        return lastLocation;
+    }
+
+    public QiblaView getQiblaView() {
+        return qiblaView;
+    }
+
+    private volatile boolean pendingUserPrayerSync = false;
+
+    public void forceSyncOnlinePrayerTimes(boolean showUserToast) {
+        if (showUserToast) {
+            pendingUserPrayerSync = true;
+            Toast.makeText(this, isEn() ? "Syncing prayer times & Hijri date online..." : "جاري تحديث مواقيت الصلاة والتاريخ الهجري أونلاين...", Toast.LENGTH_SHORT).show();
+        }
+        try {
+            getSharedPreferences("h9_prayer_cache_v100", MODE_PRIVATE).edit().clear().apply();
+        } catch (Throwable ignored) { }
+        lastPrayerCalcAt = 0L;
+        lastPrayerDay = -1;
+        Location loc = lastLocation;
+        int cityIdx = CityManager.getSelectedCityIndex(this);
+        if (cityIdx > 0) {
+            Location manualLoc = CityManager.getManualLocation(this);
+            if (manualLoc != null) loc = manualLoc;
+        }
+        if (loc == null) {
+            loc = CityManager.getManualLocation(this);
+            if (loc == null) {
+                loc = new Location("default_saudi");
+                loc.setLatitude(24.7136);
+                loc.setLongitude(46.6753);
+            }
+        }
+        maybeRefreshPrayerTimes(loc);
+    }
+
+    public void invalidatePrayerTimes() {
+        lastPrayerCalcAt = 0L;
+        lastPrayerDay = -1;
+        try {
+            getSharedPreferences("h9_prayer_cache_v100", MODE_PRIVATE).edit().clear().apply();
+        } catch (Throwable ignored) { }
+        Location loc = lastLocation;
+        if (loc == null) {
+            loc = CityManager.getManualLocation(this);
+            if (loc == null) {
+                loc = new Location("default_saudi");
+                loc.setLatitude(24.7136);
+                loc.setLongitude(46.6753);
+            }
+        }
+        maybeRefreshPrayerTimes(loc);
+    }
+
+    public void onCitySelectionChanged() {
+        int idx = CityManager.getSelectedCityIndex(this);
+        if (idx > 0) {
+            Location loc = CityManager.getManualLocation(this);
+            if (loc != null) {
+                lastLocation = loc;
+                saveLocation(loc);
+                qiblaView.setLocation(loc);
+                qiblaView.setLocationName(CityManager.getManualCityName(this, isEn()));
+                if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(loc);
+                invalidatePrayerTimes();
+                WeatherManager.fetchWeather(this, loc.getLatitude(), loc.getLongitude(), info -> {
+                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
+                });
+            }
+        } else {
+            restoreLastLocation();
+            if (lastLocation != null) {
+                qiblaView.setLocation(lastLocation);
+                maybeResolveLocationName(lastLocation);
+                invalidatePrayerTimes();
+                WeatherManager.fetchWeather(this, lastLocation.getLatitude(), lastLocation.getLongitude(), info -> {
+                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
+                });
+            }
+        }
+    }
+
+    void applyLanguageMode(boolean english) {
         if (qiblaView != null) {
             qiblaView.setEnglishMode(english);
         }
@@ -249,9 +372,23 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         qiblaView.setFontIndex(uiPrefs.getInt(KEY_FONT_INDEX, QiblaView.FONT_DEFAULT));
         qiblaView.setPanelSwapped(uiPrefs.getBoolean(KEY_PANEL_SWAPPED, false));
         qiblaView.setEnglishMode(englishMode);
+        qiblaView.setWeatherEffectsEnabled(uiPrefs.getBoolean("weather_effects_enabled", true));
+        qiblaView.setHudMirrorMode(uiPrefs.getBoolean("hud_mirror_mode", false));
+        qiblaView.setVehicleHeadingMode(uiPrefs.getInt("vehicle_heading_mode", 0));
+        qiblaView.setNeedleStyle(uiPrefs.getInt("needle_style", 0));
+        qiblaView.setSmoothMode(uiPrefs.getInt("compass_smooth_mode", 0));
+        qiblaView.setOnWeatherClickListener(() -> {
+            FullScreenWeatherDialog.show(this, WeatherManager.getCachedWeather(this), lastLocation, qiblaView.getLocationName());
+        });
+        qiblaView.setOnPrayerClickListener(() -> forceSyncOnlinePrayerTimes(true));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
         restoreLastLocation();
+
+        WeatherManager.WeatherInfo cachedWeather = WeatherManager.getCachedWeather(this);
+        if (cachedWeather != null && qiblaView != null) {
+            qiblaView.setWeatherInfo(cachedWeather);
+        }
 
         middlewareDiagnosticText = null;
         binderDiagnosticText = null;
@@ -340,7 +477,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         return view;
     }
 
-    private void applyImmersiveMode() {
+    void applyImmersiveMode() {
         try {
             boolean fullScreen = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_FULLSCREEN_ENABLED, true);
             if (fullScreen) {
@@ -378,7 +515,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } catch (Throwable ignored) { }
     }
 
-    private void updateButtonPositions(int w, int h, boolean swapped) {
+    void updateButtonPositions(int w, int h, boolean swapped) {
         if (w <= 0 || h <= 0 || mainSettingsButton == null) return;
         boolean wide = ((float) w / (float) h) >= 1.35f;
         int btnH = dp(46);
@@ -422,7 +559,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (hasFocus) applyImmersiveMode();
     }
 
+    @Override
+    public void onBackPressed() {
+        if (qiblaView != null && qiblaView.isHudMirrorMode()) {
+            qiblaView.setHudMirrorMode(false);
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean("hud_mirror_mode", false).apply();
+            return;
+        }
+        super.onBackPressed();
+    }
+
     private void showSettingsDialog() {
+        FullScreenSettingsDialog.show(this);
+    }
+
+    private void showSettingsDialogOld() {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
@@ -585,27 +736,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         swapBtnLp.bottomMargin = dp(8);
         content.addView(swapBtn, swapBtnLp);
 
-        final Button calibBtn = new Button(this);
-        calibBtn.setText(prayerOffsetLabel(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0), isEn()));
-        calibBtn.setTextSize(15f);
-        calibBtn.setTextColor(0xFFFFC857);
-        calibBtn.setAllCaps(false);
-        GradientDrawable calibBtnBg = new GradientDrawable();
-        calibBtnBg.setColor(0xFF22323A);
-        calibBtnBg.setCornerRadius(dp(16));
-        calibBtnBg.setStroke(dp(1), 0xFFE5B64A);
-        calibBtn.setBackground(calibBtnBg);
-        calibBtn.setOnClickListener(v -> {
-            int current = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0);
-            int next = (current == 0) ? 1 : ((current == 1) ? 2 : ((current == 2) ? -1 : 0));
-            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_PRAYER_OFFSET_MINUTES, next).apply();
-            calibBtn.setText(prayerOffsetLabel(next, isEn()));
-            lastPrayerCalcAt = 0L;
-            if (lastLocation != null) maybeRefreshPrayerTimes(lastLocation);
-        });
-        LinearLayout.LayoutParams calibBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
-        calibBtnLp.bottomMargin = dp(8);
-        content.addView(calibBtn, calibBtnLp);
 
         final Button fullscreenBtn = new Button(this);
         fullscreenBtn.setText(fullscreenLabel(isEn()));
@@ -633,7 +763,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         final Button adhanSoundBtn = new Button(this);
         adhanSoundBtn.setText(adhanSoundLabel(isEn()));
-        adhanSoundBtn.setTextSize(15f);
+        adhanSoundBtn.setTextSize(14f);
         adhanSoundBtn.setTextColor(Color.WHITE);
         adhanSoundBtn.setAllCaps(false);
         GradientDrawable adhanBg = new GradientDrawable();
@@ -642,18 +772,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         adhanBg.setStroke(dp(1), 0xFFE5B64A);
         adhanSoundBtn.setBackground(adhanBg);
         adhanSoundBtn.setOnClickListener(v -> {
-            boolean cur = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
-            boolean nxt = !cur;
-            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ADHAN_SOUND_ENABLED, nxt).apply();
+            int curMode = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
+            int nextMode = (curMode + 1) % 4;
+            getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit()
+                    .putInt("adhan_sound_mode", nextMode)
+                    .putBoolean(KEY_ADHAN_SOUND_ENABLED, nextMode != SoundManager.SOUND_MODE_MUTED)
+                    .apply();
             adhanSoundBtn.setText(adhanSoundLabel(isEn()));
         });
-        LinearLayout.LayoutParams adhanSoundLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        LinearLayout.LayoutParams adhanSoundLp = new LinearLayout.LayoutParams(dp(280), dp(42));
         adhanSoundLp.bottomMargin = dp(8);
         content.addView(adhanSoundBtn, adhanSoundLp);
 
         final Button playAdhanBtn = new Button(this);
-        playAdhanBtn.setText(SoundManager.isPlaying() ? (isEn() ? "⏹ Stop Takbeerat" : "⏹ إيقاف الصوت") : (isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان"));
-        playAdhanBtn.setTextSize(15f);
+        playAdhanBtn.setText(SoundManager.isPlaying() ? (isEn() ? "⏹ Stop Audio" : "⏹ إيقاف الصوت") : (isEn() ? "▶ Test Alert Audio" : "▶ تجربة صوت التنبيه"));
+        playAdhanBtn.setTextSize(14f);
         playAdhanBtn.setTextColor(Color.WHITE);
         playAdhanBtn.setAllCaps(false);
         GradientDrawable playAdhanBg = new GradientDrawable();
@@ -664,17 +797,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         playAdhanBtn.setOnClickListener(v -> {
             if (SoundManager.isPlaying()) {
                 SoundManager.stop();
-                playAdhanBtn.setText(isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان");
+                playAdhanBtn.setText(isEn() ? "▶ Test Alert Audio" : "▶ تجربة صوت التنبيه");
             } else {
-                playAdhanBtn.setText(isEn() ? "⏹ Stop Takbeerat" : "⏹ إيقاف الصوت");
-                SoundManager.playAdhan(this, () -> {
-                    handler.post(() -> playAdhanBtn.setText(isEn() ? "▶ Test Takbeerat Alert" : "▶ تجربة تكبيرات الأذان"));
-                    if (qiblaView != null) qiblaView.invalidate();
+                playAdhanBtn.setText(isEn() ? "⏹ Stop Audio" : "⏹ إيقاف الصوت");
+                int mode = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
+                SoundManager.playPrayerAlert(this, mode, true, () -> {
+                    runOnUiThread(() -> playAdhanBtn.setText(isEn() ? "▶ Test Alert Audio" : "▶ تجربة صوت التنبيه"));
                 });
             }
-            if (qiblaView != null) qiblaView.invalidate();
         });
-        LinearLayout.LayoutParams playAdhanLp = new LinearLayout.LayoutParams(dp(230), dp(40));
+        LinearLayout.LayoutParams playAdhanLp = new LinearLayout.LayoutParams(dp(280), dp(42));
         playAdhanLp.bottomMargin = dp(8);
         content.addView(playAdhanBtn, playAdhanLp);
 
@@ -762,7 +894,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             fontSize.setText((nextEn ? "Font Size: " : "حجم الخط: ") + fontScaleLabel(qiblaView.getFontScale()));
             fontBtn.setText((nextEn ? "Font: " : "الخط: ") + QiblaView.getFontName(qiblaView.getFontIndex(), nextEn));
             swapBtn.setText((nextEn ? "Prayer Times: " : "موضع المواقيت: ") + (qiblaView.isPanelSwapped() ? (nextEn ? "Left ⇄" : "يسار ⇄") : (nextEn ? "Right ⇄" : "يمين ⇄")));
-            calibBtn.setText(prayerOffsetLabel(getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0), nextEn));
             guide.setText(nextEn ? "How to Use" : "طريقة استخدام البرنامج");
             audioTitle.setText(nextEn ? "Audio & Islamic Alerts" : "الصوتيات والتنبيهات الإسلامية");
             adhanSoundBtn.setText(adhanSoundLabel(nextEn));
@@ -890,7 +1021,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         dialog.show();
     }
 
-    private void showChangelogDialog() {
+    void showChangelogDialog() {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
@@ -930,78 +1061,26 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         inner.setGravity(isEn() ? Gravity.LEFT : Gravity.RIGHT);
 
         String changelogText = isEn()
-                ? "◈ Version 9.1.0 (Current):\n" +
-                  "• Automotive Audio routing: Takbeerat now plays on car speakers even when radio is turned off.\n" +
-                  "• Enlarged Compass in Split-Screen mode for superior driving visibility.\n" +
-                  "• Moved telemetry cards downward and reordered columns to match Arabic reading direction.\n" +
-                  "• Fixed Extra Large font text collisions: resolved prayer header and countdown overlaps.\n" +
-                  "• Enlarged Settings button with prominent styling and comfortable touch targets.\n" +
-                  "• Removed red prayer beads icon from Athkar bar for a clean, unified aesthetic.\n\n" +
-                  "◈ Version 9.0.0:\n" +
-                  "• Completely removed Dua al-Rukub audio per user preference.\n" +
-                  "• Adhan audio now plays exclusively the opening Takbeerat (Makkah Haram).\n" +
-                  "• Fixed Split-Screen compass background circle and Arabesque star lattice alignment.\n" +
-                  "• Removed Left/Right prayer times button from main screen; kept strictly inside Settings.\n" +
-                  "• Centered bottom Settings button in Split-Screen mode for optimal car UI balance.\n\n" +
-                  "◈ Version 8.9.9:\n" +
-                  "• Restored authentic majestic Makkah Adhan audio.\n" +
-                  "• Fixed Compass collision in Split-Screen: generous clearance between top text, dial, and cards.\n" +
-                  "• Redesigned Next Prayer card: dedicated 2-line layout without duplicate prayer name.\n" +
-                  "• Geometric Split-Screen polish: balanced vertical budget, no overlapping prayer rows.\n" +
-                  "• Instant tap-to-stop audio for Adhan directly from the bottom Athkar bar.\n\n" +
-                  "◈ Version 8.9.8:\n" +
-                  "• Fixed Full-Screen layout transition: landscape dashboard remains stable without switching to split mode.\n" +
-                  "• Fixed Prayer Panel swap (Right/Left): now instantly flips prayer times and cards in all modes.\n" +
-                  "• Symmetrical bottom buttons: Settings & Swap buttons automatically align under cards when swapped.\n" +
-                  "• Compact card scaling in Split-Screen mode with balanced typography and two-pane swap support.\n\n" +
-                  "◈ Version 8.9.7:\n" +
-                  "• Full Screen toggle option in Settings (enable/disable system status bar).\n" +
-                  "• Startup Travel Dua is now OFF by default (enable anytime from Settings or Athkar bar).\n" +
-                  "• Compact telemetry cards with balanced text, giving ample breathing room on Haval H9.\n" +
-                  "• Slender Athkar bar with enlarged bold Arabic font for effortless legibility.\n" +
-                  "• Dedicated 2-Pane Split-Screen layout (50/50): unobstructed compass, 2x2 cards, and prayer times.\n" +
-                  "• Background prayer alert with Makkah Takbeerat and exact alarm reliability.\n\n" +
-                  "◈ Version 8.9.6:\n" +
-                  "• Fixed left and right margin voids for a seamless edge-to-edge dashboard layout.\n" +
-                  "• Compact and balanced telemetry cards with centered typography and 'Live GPS' status.\n" +
-                  "• Slender, lowered Athkar bar aligned flush with the right prayer panel.\n" +
-                  "• Full adaptive split-screen support: unobstructed compass dial and all 4 telemetry cards.\n" +
-                  "• Fixed dialog header spacing to prevent title overlapping in changelog and settings.\n\n" +
-                  "◈ Version 8.9.5:\n" +
-                  "• Automatic Changelog popup upon first launch after every update.\n" +
-                  "• Compact and slender telemetry cards on the left, preventing any overlap with bottom buttons.\n" +
-                  "• Sleek circular app medallion at top-left replacing bulky square tile.\n" +
-                  "• Reduced default font size for elegance, and added 'Extra Large' option in Settings.\n" +
-                  "• Refined spacing and full adaptive support for 50/50 split-screen mode.\n" +
-                  "• Corrected Next Prayer countdown formatting with Latin numerals.\n\n" +
-                  "◈ Version 8.9.4:\n" +
-                  "• Background Adhan Takbeer alerts and notifications even when app is closed.\n" +
-                  "• Uniform geometric grid alignment for all telemetry and prayer cards.\n" +
-                  "• Enlarged Next Prayer card & countdown for clear visibility while driving.\n" +
-                  "• Removed box border around 'Facing Kaaba' and raised text for all themes.\n" +
-                  "• Refined prayer list typography and aligned 12h times.\n" +
-                  "• Added Changelog history section in Settings.\n\n" +
-                  "◈ Version 8.9.3:\n" +
-                  "• Full-screen immersive mode hiding vehicle status bar.\n" +
-                  "• Makkah Takbeerat prayer alert with top dismissible banner.\n" +
-                  "• Saudi Airlines Travel Dua with in-call phone safety.\n\n" +
-                  "◈ Version 8.9.2:\n" +
-                  "• Astronomical precision alignment with official Umm al-Qura calendar.\n" +
-                  "• Manual prayer minute calibration offset in Settings.\n" +
-                  "• Fixed signature certificate for seamless in-car upgrades.\n\n" +
-                  "◈ Version 8.9.0 - 8.9.1:\n" +
-                  "• Compact Makkah distance indicator inside compass.\n" +
-                  "• Continuous real-time astronomical location and prayer updates.\n" +
-                  "• Comprehensive sensor diagnostic for Haval H9 & Tank.\n\n" +
-                  "◈ Version 8.8.0:\n" +
-                  "• 3D Kaaba compass and Great Wall OEM sensor integration."
-                : "◈ الإصدار 9.1.0 (الحالي):\n" +
-                  "• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة وقناة التنبيه حتى لو كان الراديو مغلقاً.\n" +
-                  "• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen) لرؤية فائقة الوضوح أثناء القيادة.\n" +
-                  "• إنزال مربعات المعلومات للأسفل وإعادة ترتيب الصفوف بتناسق طبيعي مع اتجاه القراءة العربي.\n" +
-                  "• إصلاح تداخل النصوص والحروف عند اختيار (خط كبير جداً) ومنع تداخل التاريخ مع عنوان المواقيت.\n" +
-                  "• تكبير زر الإعدادات أسفل الشاشة لسهولة وسرعة الضغط عليه أثناء القيادة.\n" +
-                  "• إزالة الرمز الأحمر من شريط الأذكار للحفاظ على مظهر إسلامي هادئ ومتناسق.\n\n" +
+                ? "◈ Version 9.9.8 (Latest Automotive):\n" +
+                  "• Feature #3 Audio Polish: Added multiple prayer alert sounds (Male Voice, Makkah Takbeerat, Calm Islamic Chime, Mute) with Auto-Media Ducking (lowers car radio 70% during alert).\n" +
+                  "• Feature #4 Pure Black OLED Night Mode: Complete glare-free black theme designed for midnight highway driving without eye fatigue.\n" +
+                  "• Windshield HUD Mirroring Mode: Flip the display horizontally with one touch to project Qibla, heading, and GPS speed onto the car windshield at night.\n" +
+                  "• Individual 6-Prayer Adjustment: Dedicated (+) and (-) buttons + minute dropdowns in settings to customize Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha independently.\n" +
+                  "• Hybrid Offline Weather & GPS Climatology: Persistent caching and astronomical solar estimation when disconnected in desert/remote areas.\n\n" +
+                  "◈ Version 9.9.0:\n" +
+                  "• Full BYD DiLink 5.1 & Leopard 5 car system support: rotating screen, 3-screen multi-display, and 320 DPI density.\n" +
+                  "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
+                  "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
+                : "◈ الإصدار 9.9.8 (التحديث الجديد للسيارات):\n" +
+                  "• ميزة الصوتيات الذكية للسيارة: خيارات أصوات أذان متعددة (صوت رجل، تكبيرات الحرم المكي، نغمة إسلامية وقورة هادئة، كتم) + خفض صوت وسائط السيارة تلقائياً 70% أثناء الأذان (Audio Ducking).\n" +
+                  "• وضع القيادة الليلية الهادئة (Pure Black OLED Night): ثيم أسود نقي تماماً #000000 ومريح للعينين على الطرق المظلمة والسفر ليلاً بدون أي توهج.\n" +
+                  "• وضع الانعكاس على الزجاج الأمامي (HUD Mirroring): قلب الشاشة أفقياً بلمسة واحدة لعكس القبلة والسرعة والاتجاه على الزجاج الأمامي للسيارة ليلاً كشاشات الـ HUD الفارهة.\n" +
+                  "• معايرة وتعديل الصلوات الست يدوياً: أزرار (+) و (-) وقوائم منسدلة أمام كل صلاة (الفجر، الشروق، الظهر، العصر، المغرب، العشاء) لضبط الدقائق بشكل مستقل وفوري.\n" +
+                  "• محرك الطقس الهجين وأوفلاين GPS: حفظ تلقائي لحالة الطقس بالذاكرة مع محرك تقدير مناخي فلكي عبر إحداثيات GPS والشمس عند انقطاع الإنترنت بالبر والسفر.\n\n" +
+                  "◈ الإصدار 9.9.0:\n" +
+                  "• دعم كامل لسيارة ليوبارد 5 ونظام BYD DiLink 5.1: دعم دوران الشاشة والشاشات الثلاث وكثافة 320 DPI.\n" +
+                  "• دعم شامل لجميع إصدارات أندرويد (تخفيض minSdk إلى 24): يعمل على أندرويد 7.0 إلى 15.\n" +
+                  "• دعم تقسيم الشاشة المباشر (GCCSplit) لتشغيل القبلة والملاحة معاً دون إعادة تشغيل التطبيق.\n\n" +
                   "◈ الإصدار 9.0.0:\n" +
                   "• إزالة دعاء الركوب والسفر الصوتي نهائياً من التطبيق.\n" +
                   "• تخصيص صوت الأذان ليكون التكبيرات الأولى فقط من الحرم المكي الشريف.\n" +
@@ -1107,7 +1186,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         showUserGuideDialog(() -> prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply(), true);
     }
 
-    private void showUserGuideDialog() {
+    void showUserGuideDialog() {
         showUserGuideDialog(null, false);
     }
 
@@ -1332,9 +1411,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private String adhanSoundLabel(boolean en) {
+        int mode = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
         boolean on = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_ADHAN_SOUND_ENABLED, true);
-        if (en) return on ? "Adhan Takbeerat: On 🔊" : "Adhan Takbeerat: Muted 🔇";
-        return on ? "تكبيرات الأذان: مفعّلة 🔊" : "تكبيرات الأذان: صامتة 🔇";
+        if (!on || mode == SoundManager.SOUND_MODE_MUTED) {
+            return en ? "Alert: Muted 🔇" : "التنبيه: صامت 🔇";
+        }
+        if (mode == SoundManager.SOUND_MODE_VOICE_ONLY) {
+            return en ? "Alert: Male Voice Only 🗣️" : "التنبيه: صوت رجل فقط 🗣️";
+        }
+        if (mode == SoundManager.SOUND_MODE_TAKBEER_ONLY) {
+            return en ? "Alert: Takbeerat Only 🕌" : "التنبيه: تكبيرات فقط 🕌";
+        }
+        return en ? "Alert: Voice + Takbeerat 🔊" : "التنبيه: صوت رجل + تكبيرات 🔊";
     }
 
     private String themeModeLabel(int mode) {
@@ -1344,6 +1432,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 case QiblaView.THEME_OBSIDIAN: return "Obsidian Navy";
                 case QiblaView.THEME_AMBER: return "Desert Amber";
                 case QiblaView.THEME_PEARL: return "Pearl Day";
+                case QiblaView.THEME_OLED_NIGHT: return "Pure Black OLED Night";
                 default: return "Auto (Day/Night)";
             }
         }
@@ -1352,6 +1441,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             case QiblaView.THEME_OBSIDIAN: return "كحلي فاخر";
             case QiblaView.THEME_AMBER: return "عنبر ذهبي";
             case QiblaView.THEME_PEARL: return "نهاري لؤلؤي";
+            case QiblaView.THEME_OLED_NIGHT: return "وضع القيادة الليلية (OLED)";
             default: return "تلقائي (حسب الوقت)";
         }
     }
@@ -1522,6 +1612,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (qiblaSensorHelper != null) qiblaSensorHelper.startListening();
         if (!gwmNaviHeadingStarted) startGwmNaviHeadingIntegration();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startLocation();
+        if (isNetworkConnected()) {
+            forceSyncOnlinePrayerTimes(false);
+        }
     }
 
     @Override
@@ -1545,10 +1638,37 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void updateLocation(Location location) {
+        if (location == null) return;
+        int cityIdx = CityManager.getSelectedCityIndex(this);
         String provider = location.getProvider() == null ? "unknown" : location.getProvider();
         boolean isFused = "fused".equals(provider);
 
-        // Never discard factory fused samples merely because the previous GPS fix is more accurate.
+        // Always update vehicle speed and live heading while driving, regardless of city selection!
+        if (isFused) {
+            updateFusedCourse(location);
+        } else {
+            updateLiveCourse(location);
+        }
+
+        if (cityIdx > 0 && !"manual_city".equals(provider)) {
+            // Manual City Mode: city coordinates govern prayer times, but live GPS governs speed, accuracy & motion
+            if (location.hasSpeed()) {
+                lastSpeedMps = location.getSpeed();
+                qiblaView.setSpeed(location.getSpeed() * 3.6f);
+            }
+            if (location.hasAccuracy()) {
+                qiblaView.setGpsAccuracy(location.getAccuracy());
+            }
+            Location manualLoc = CityManager.getManualLocation(this);
+            if (manualLoc != null) {
+                WeatherManager.fetchWeather(this, manualLoc.getLatitude(), manualLoc.getLongitude(), info -> {
+                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
+                });
+            }
+            return;
+        }
+
+        // Auto GPS Mode
         if (!isFused && !isBetterLocation(location, lastLocation) && lastLocation != null &&
                 !LocationManager.GPS_PROVIDER.equals(provider)) return;
 
@@ -1558,13 +1678,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(location);
         updateNetworkStatus();
 
-        if (isFused) {
-            updateFusedCourse(location);
-        } else if (LocationManager.GPS_PROVIDER.equals(provider)) {
-            updateLiveCourse(location);
-        }
         maybeRefreshPrayerTimes(location);
         maybeResolveLocationName(location);
+        WeatherManager.fetchWeather(this, location.getLatitude(), location.getLongitude(), info -> {
+            if (qiblaView != null) qiblaView.setWeatherInfo(info);
+        });
     }
 
     private void updateFusedCourse(Location location) {
@@ -1685,14 +1803,36 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private void restoreLastLocation() {
         try {
+            int cityIdx = CityManager.getSelectedCityIndex(this);
+            if (cityIdx > 0) {
+                Location manualLoc = CityManager.getManualLocation(this);
+                if (manualLoc != null) {
+                    lastLocation = manualLoc;
+                    qiblaView.setLocation(manualLoc);
+                    qiblaView.setLocationName(CityManager.getManualCityName(this, isEn()));
+                    if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(manualLoc);
+                    maybeRefreshPrayerTimes(manualLoc);
+                    WeatherManager.fetchWeather(this, manualLoc.getLatitude(), manualLoc.getLongitude(), info -> {
+                        if (qiblaView != null) qiblaView.setWeatherInfo(info);
+                    });
+                    return;
+                }
+            }
+
             SharedPreferences p = getSharedPreferences(LOCATION_PREFS, MODE_PRIVATE);
-            if (!p.contains(KEY_SAVED_LAT)) return;
             Location loc = new Location("saved_gps");
-            loc.setLatitude(p.getFloat(KEY_SAVED_LAT, 24.7136f));
-            loc.setLongitude(p.getFloat(KEY_SAVED_LON, 46.6753f));
-            float acc = p.getFloat(KEY_SAVED_ACC, -1f);
-            if (acc > 0) loc.setAccuracy(acc);
-            loc.setTime(p.getLong(KEY_SAVED_TIME, System.currentTimeMillis()));
+            if (p.contains(KEY_SAVED_LAT)) {
+                loc.setLatitude(p.getFloat(KEY_SAVED_LAT, 24.7136f));
+                loc.setLongitude(p.getFloat(KEY_SAVED_LON, 46.6753f));
+                float acc = p.getFloat(KEY_SAVED_ACC, -1f);
+                if (acc > 0) loc.setAccuracy(acc);
+                loc.setTime(p.getLong(KEY_SAVED_TIME, System.currentTimeMillis()));
+            } else {
+                // Initial launch fallback to Riyadh capital coordinates
+                loc.setLatitude(24.7136);
+                loc.setLongitude(46.6753);
+                loc.setTime(System.currentTimeMillis());
+            }
             updateLocation(loc);
         } catch (Throwable ignored) { }
     }
@@ -4323,34 +4463,39 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             if (location.hasSpeed()) lastSpeedMps = location.getSpeed();
             return;
         }
-        if (location.hasSpeed()) lastSpeedMps = location.getSpeed();
-        if (location.hasSpeed() && location.getSpeed() < GPS_HEADING_MIN_SPEED_MPS) {
-            courseAnchor = null;
-            return;
+        if (location.hasSpeed()) {
+            lastSpeedMps = location.getSpeed();
+            if (qiblaView != null) qiblaView.setSpeed(location.getSpeed() * 3.6f);
+        }
+        if (location.hasAccuracy() && qiblaView != null) {
+            qiblaView.setGpsAccuracy(location.getAccuracy());
         }
 
         Float newHeading = null;
+        boolean isMoving = location.hasSpeed() && location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS;
 
-        if (location.hasBearing() && (!location.hasSpeed() || location.getSpeed() >= GPS_HEADING_MIN_SPEED_MPS)) {
+        // GPS bearing is ONLY stable and reliable when the vehicle is in motion (>= 0.8 m/s ~ 3 km/h).
+        // When stationary or stopped, GPS bearing fluctuates randomly and must be ignored!
+        if (isMoving && location.hasBearing() && !Float.isNaN(location.getBearing())) {
             newHeading = normalize(location.getBearing());
-        }
-
-        if (courseAnchor == null) {
-            courseAnchor = new Location(location);
-        } else {
+        } else if (isMoving && courseAnchor != null) {
             float moved = courseAnchor.distanceTo(location);
             if (moved >= COURSE_MIN_DISTANCE_M) {
                 float positionCourse = normalize(courseAnchor.bearingTo(location));
-                newHeading = newHeading == null ? positionCourse : circularBlend(newHeading, positionCourse, 0.30f);
+                newHeading = positionCourse;
                 courseAnchor = new Location(location);
             }
+        } else if (isMoving) {
+            courseAnchor = new Location(location);
+        } else {
+            courseAnchor = new Location(location);
         }
 
         if (newHeading != null) {
             lastHeadingAt = System.currentTimeMillis();
             lastGpsHeadingAt = lastHeadingAt;
-            saveHeading(newHeading, "آخر اتجاه GPS محفوظ");
-            qiblaView.setHeading(newHeading, "اتجاه حي عبر GPS");
+            saveHeading(newHeading, "مباشر GPS");
+            if (qiblaView != null) qiblaView.setHeading(newHeading, "مباشر GPS");
         }
     }
 
@@ -4360,28 +4505,136 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         Calendar calendar = Calendar.getInstance();
         int today = calendar.get(Calendar.DAY_OF_YEAR);
         boolean dayChanged = today != lastPrayerDay;
-        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 500f;
+        boolean movedFar = lastPrayerLocation == null || lastPrayerLocation.distanceTo(location) > 200f;
         boolean timeElapsed = now - lastPrayerCalcAt >= PRAYER_REFRESH_MS;
         if (!dayChanged && !movedFar && !timeElapsed && lastPrayerCalcAt > 0) return;
 
         lastPrayerDay = today;
         lastPrayerCalcAt = now;
         lastPrayerLocation = new Location(location);
-        qiblaView.setPrayerStatus(isEn() ? "Calculating prayer times…" : "حساب مواقيت الصلاة محليًا…");
 
-        int offset = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt(KEY_PRAYER_OFFSET_MINUTES, 0);
-        PrayerTimesCalculator.Result result = PrayerTimesCalculator.calculate(
-                location.getLatitude(), location.getLongitude(), calendar, offset, isEn());
-        String[] names = isEn()
+        SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        final int offset = 0; // General calibration removed per user request
+        final int fajrOffset = uiPrefs.getInt("prayer_offset_fajr", 0);
+        final int sunriseOffset = uiPrefs.getInt("prayer_offset_sunrise", 0);
+        final int dhuhrOffset = uiPrefs.getInt("prayer_offset_dhuhr", 0);
+        final int asrOffset = uiPrefs.getInt("prayer_offset_asr", 0);
+        final int maghribOffset = uiPrefs.getInt("prayer_offset_maghrib", 0);
+        final int ishaOffset = uiPrefs.getInt("prayer_offset_isha", 0);
+        final int[] individualOffsets = new int[]{fajrOffset, sunriseOffset, dhuhrOffset, asrOffset, maghribOffset, ishaOffset};
+        final int prayerMethod = uiPrefs.getInt("prayer_calculation_method", 4);
+        final boolean en = isEn();
+        final String[] names = en
                 ? new String[]{"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"}
                 : new String[]{"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
-        qiblaView.setPrayerTimes(names, result.times24, result.hijriDate, result.hijriDateEn);
-        AdhanScheduler.saveAndSchedule(this, result.times24, names, qiblaView.getLocationName());
-        String statusNote = isEn() ? "Umm al-Qura • Live Calculation" : "أم القرى • حساب حي بدون إنترنت";
-        if (offset != 0) {
-            statusNote += " (" + (offset > 0 ? "+" + offset : String.valueOf(offset)) + (isEn() ? "m)" : " د)");
+
+        final String sourceLabelAr;
+        final String sourceLabelEn;
+        switch (prayerMethod) {
+            case 3:
+                sourceLabelAr = "رابطة العالم الإسلامي";
+                sourceLabelEn = "Muslim World League";
+                break;
+            case 5:
+                sourceLabelAr = "الهيئة العامة للمساحة";
+                sourceLabelEn = "Survey Authority";
+                break;
+            case 11:
+                sourceLabelAr = "مدينة الملك عبدالعزيز (KACST)";
+                sourceLabelEn = "KACST Standard";
+                break;
+            case 4:
+            default:
+                sourceLabelAr = (fajrOffset != 0 || asrOffset != 0 || maghribOffset != 0)
+                        ? "تقويم أم القرى الرسمي (تعديل مخصص)"
+                        : "تقويم أم القرى الرسمي";
+                sourceLabelEn = "Umm al-Qura (Official)";
+                break;
         }
-        qiblaView.setPrayerStatus(statusNote);
+
+        // Check persistent cache for today's verified times
+        SharedPreferences cachePrefs = getSharedPreferences("h9_prayer_cache_v100", MODE_PRIVATE);
+        String dayKey = String.format(Locale.US, "%04d_%02d_%02d_%.1f_%.1f_f%d_s%d_d%d_a%d_m%d_i%d_m%d",
+                calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1,
+                calendar.get(Calendar.DAY_OF_MONTH), location.getLatitude(), location.getLongitude(),
+                fajrOffset, sunriseOffset, dhuhrOffset, asrOffset, maghribOffset, ishaOffset, prayerMethod);
+
+        boolean hasCached = cachePrefs.contains(dayKey + "_fajr");
+        if (hasCached) {
+            String[] cachedTimes = new String[]{
+                    cachePrefs.getString(dayKey + "_fajr", ""),
+                    cachePrefs.getString(dayKey + "_sunrise", ""),
+                    cachePrefs.getString(dayKey + "_dhuhr", ""),
+                    cachePrefs.getString(dayKey + "_asr", ""),
+                    cachePrefs.getString(dayKey + "_maghrib", ""),
+                    cachePrefs.getString(dayKey + "_isha", "")
+            };
+            String hijriAr = cachePrefs.getString(dayKey + "_hijriAr", "");
+            String hijriEn = cachePrefs.getString(dayKey + "_hijriEn", "");
+            qiblaView.setPrayerTimes(names, cachedTimes, en ? hijriEn : hijriAr, hijriEn);
+            AdhanScheduler.saveAndSchedule(this, cachedTimes, names, qiblaView.getLocationName());
+            qiblaView.setPrayerStatus(en ? (sourceLabelEn + " • Synced") : (sourceLabelAr + " • تحديث مباشر"));
+        } else {
+            // Instant calibrated offline calculation (matches official mosque timetable precisely + custom offsets)
+            PrayerTimesCalculator.Result localResult = PrayerTimesCalculator.calculate(
+                    location.getLatitude(), location.getLongitude(), calendar, offset, individualOffsets, prayerMethod, en);
+            qiblaView.setPrayerTimes(names, localResult.times24, localResult.hijriDate, localResult.hijriDateEn);
+            AdhanScheduler.saveAndSchedule(this, localResult.times24, names, qiblaView.getLocationName());
+            qiblaView.setPrayerStatus(en ? sourceLabelEn : sourceLabelAr);
+        }
+
+        // 2. High-precision background online sync with official database
+        PrayerTimesCalculator.fetchOnlineUmmAlQura(
+                location.getLatitude(), location.getLongitude(), calendar, offset, individualOffsets, prayerMethod, en,
+                new PrayerTimesCalculator.OnlineCallback() {
+                    @Override
+                    public void onSuccess(PrayerTimesCalculator.Result onlineResult) {
+                        runOnUiThread(() -> {
+                            if (qiblaView != null) {
+                                qiblaView.setPrayerTimes(names, onlineResult.times24, onlineResult.hijriDate, onlineResult.hijriDateEn);
+                                AdhanScheduler.saveAndSchedule(MainActivity.this, onlineResult.times24, names, qiblaView.getLocationName());
+                                qiblaView.setPrayerStatus(en ? (sourceLabelEn + " • Synced") : (sourceLabelAr + " • تحديث مباشر"));
+
+                                // Persist in cache
+                                cachePrefs.edit()
+                                        .putString(dayKey + "_fajr", onlineResult.times24[0])
+                                        .putString(dayKey + "_sunrise", onlineResult.times24[1])
+                                        .putString(dayKey + "_dhuhr", onlineResult.times24[2])
+                                        .putString(dayKey + "_asr", onlineResult.times24[3])
+                                        .putString(dayKey + "_maghrib", onlineResult.times24[4])
+                                        .putString(dayKey + "_isha", onlineResult.times24[5])
+                                        .putString(dayKey + "_hijriAr", onlineResult.hijriDate)
+                                        .putString(dayKey + "_hijriEn", onlineResult.hijriDateEn)
+                                        .apply();
+
+                                if (pendingUserPrayerSync) {
+                                    pendingUserPrayerSync = false;
+                                    Toast.makeText(MainActivity.this,
+                                            en ? "Prayer times & Hijri date synced successfully ✅" : "تم تحديث مواقيت الصلاة والتاريخ الهجري أونلاين بنجاح ✅",
+                                            Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onError(Throwable t) {
+                        runOnUiThread(() -> {
+                            if (pendingUserPrayerSync) {
+                                pendingUserPrayerSync = false;
+                                Toast.makeText(MainActivity.this,
+                                        en ? "No internet. Using accurate local timetable." : "لا يوجد اتصال بالإنترنت، تم استخدام تقويم أم القرى المحلي الدقيق",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                        // If offline sync failed, schedule quick retry in 20 seconds when car connects
+                        handler.postDelayed(() -> {
+                            if (lastLocation != null) {
+                                lastPrayerCalcAt = 0L;
+                            }
+                        }, 20_000L);
+                    }
+                });
     }
 
     private void maybeResolveLocationName(Location location) {
@@ -4401,7 +4654,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void resolveLocationName(double lat, double lon) {
-        String city = municipalityFromCoordinates(lat, lon);
+        int cityIdx = CityManager.getSelectedCityIndex(this);
+        if (cityIdx > 0) {
+            final String manualName = CityManager.getManualCityName(this, isEn());
+            runOnUiThread(() -> {
+                qiblaView.setLocationName(manualName);
+                qiblaView.setRegionName("");
+                if (qiblaView.hasPrayerTimes()) {
+                    AdhanScheduler.saveAndSchedule(MainActivity.this, qiblaView.getPrayerTimes(), qiblaView.getPrayerNames(), manualName);
+                }
+            });
+            return;
+        }
+
+        String city = CityManager.resolveCityNameFromCoords(lat, lon, isEn());
         String region = regionFromSaudiCoordinates(lat, lon);
         if (city == null && region != null) city = region;
         try {
@@ -4419,7 +4685,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         } catch (Exception ignored) { }
 
-        final String finalCity = city == null || city.trim().isEmpty() ? "الموقع الحالي" : city.trim();
+        final String finalCity = city == null || city.trim().isEmpty() ? (isEn() ? "Current Location" : "الموقع الحالي") : city.trim();
         runOnUiThread(() -> {
             qiblaView.setLocationName(finalCity);
             qiblaView.setRegionName("");
@@ -4581,6 +4847,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 applySensorHeading(azimuthForDisplay(matrix));
             }
         }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        AdhanScheduler.scheduleNextPrayer(this);
     }
 
     @Override

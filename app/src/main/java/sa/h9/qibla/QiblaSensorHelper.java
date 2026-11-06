@@ -46,6 +46,7 @@ public class QiblaSensorHelper implements SensorEventListener {
     private Sensor rotationVectorSensor;
     private Sensor accelerometerSensor;
     private Sensor magneticSensor;
+    private Sensor orientationSensor;
 
     private boolean isListening = false;
     private int currentAccuracy = SensorManager.SENSOR_STATUS_UNRELIABLE;
@@ -94,6 +95,9 @@ public class QiblaSensorHelper implements SensorEventListener {
         // Tertiary fallback: Discrete accelerometer & magnetometer
         accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
+        // Quaternary fallback: Orientation sensor (supported on car head-units)
+        orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION);
     }
 
     public void setListener(OnQiblaCompassListener listener) {
@@ -145,6 +149,10 @@ public class QiblaSensorHelper implements SensorEventListener {
             boolean aReg = sensorManager.registerListener(this, accelerometerSensor, samplingPeriodUs);
             boolean mReg = sensorManager.registerListener(this, magneticSensor, samplingPeriodUs);
             registered = aReg && mReg;
+        }
+
+        if (!registered && orientationSensor != null) {
+            registered = sensorManager.registerListener(this, orientationSensor, samplingPeriodUs);
         }
 
         isListening = registered;
@@ -222,6 +230,9 @@ public class QiblaSensorHelper implements SensorEventListener {
                     computedAzimuth = calculateAzimuthFromMatrix(rotationMatrix);
                 }
             }
+        } else if (event.sensor.getType() == Sensor.TYPE_ORIENTATION) {
+            computedAzimuth = normalize(event.values[0]);
+            currentAccuracy = event.accuracy;
         }
 
         if (!Float.isNaN(computedAzimuth)) {
@@ -229,14 +240,19 @@ public class QiblaSensorHelper implements SensorEventListener {
             float trueNorthAzimuth = applyMagneticDeclination(computedAzimuth);
             lastRawAzimuth = trueNorthAzimuth;
 
-            // Apply smooth circular blending to minimize sensor jitter
+            // Apply smooth circular blending to minimize sensor jitter and magnetic noise
             if (Float.isNaN(smoothedAzimuth)) {
                 smoothedAzimuth = trueNorthAzimuth;
+                dispatchUpdate();
             } else {
-                smoothedAzimuth = circularBlend(smoothedAzimuth, trueNorthAzimuth, SMOOTHING_FACTOR);
+                float diff = Math.abs(signedAngle(trueNorthAzimuth - smoothedAzimuth));
+                // Deadband filter: ignore electrical sensor noise and vibrations below 0.6 degrees
+                if (diff >= 0.6f) {
+                    float factor = (diff > 20f) ? 0.35f : 0.12f;
+                    smoothedAzimuth = circularBlend(smoothedAzimuth, trueNorthAzimuth, factor);
+                    dispatchUpdate();
+                }
             }
-
-            dispatchUpdate();
         }
     }
 
@@ -366,6 +382,13 @@ public class QiblaSensorHelper implements SensorEventListener {
     public static float normalize(float degrees) {
         degrees %= 360f;
         if (degrees < 0) degrees += 360f;
+        return degrees;
+    }
+
+    public static float signedAngle(float degrees) {
+        degrees %= 360f;
+        if (degrees > 180f) degrees -= 360f;
+        if (degrees < -180f) degrees += 360f;
         return degrees;
     }
 

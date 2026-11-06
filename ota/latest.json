@@ -1,9 +1,9 @@
 {
-  "versionCode": 100,
-  "versionName": "9.1.0",
-  "apkUrl": "https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v8.9.apk",
-  "sha256": "A5CC7AD246DF8DCAB71B76E624FDFC31122DB9BD9DF7320C546E2AEC35E7B189",
-  "notes": "أهم مميزات الإصدار 9.1.0:\n• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة حتى لو كان الراديو مغلقاً.\n• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen).\n• إنزال وترتيب مربعات المعلومات لتناسب اتجاه القراءة العربي.\n• إصلاح تداخل النصوص والعناوين عند اختيار (خط كبير جداً).\n• تكبير زر الإعدادات أسفل الشاشة لسهولة الضغط أثناء القيادة.\n• إزالة الرمز الأحمر من شريط الأذكار لمظهر إسلامي أنيق.",
-  "notes_ar": "أهم مميزات الإصدار 9.1.0:\n• تشغيل صوت تكبيرات الأذان عبر سماعات السيارة حتى لو كان الراديو مغلقاً.\n• تكبير البوصلة في وضع الشاشة المقسومة (Split Screen).\n• إنزال وترتيب مربعات المعلومات لتناسب اتجاه القراءة العربي.\n• إصلاح تداخل النصوص والعناوين عند اختيار (خط كبير جداً).\n• تكبير زر الإعدادات أسفل الشاشة لسهولة الضغط أثناء القيادة.\n• إزالة الرمز الأحمر من شريط الأذكار لمظهر إسلامي أنيق.",
-  "notes_en": "Highlights of Version 9.1.0:\n• Audio Routing: Adhan Takbeerat plays on car speakers even if radio is off.\n• Enlarged Compass dial in Split-Screen mode.\n• Telemetry cards repositioned downward and reordered for Arabic RTL reading.\n• Fixed Extra Large font text overlaps in prayer header and countdown.\n• Enlarged bottom Settings button for easier in-car access.\n• Removed red beads icon from Athkar bar."
+  "versionCode": 114,
+  "versionName": "9.9.8",
+  "apkUrl": "https://raw.githubusercontent.com/bandar-sul/HQibla/main/Qibla-v9.9.8.apk",
+  "sha256": "519de02cb08fc997261bd976665b380493269567202205ca5656414f194a3e22",
+  "notes": "أهم مميزات وإصلاحات الإصدار 9.9.8:\n• تعديل زر التحديث: حذف التاريخ المكرر من داخل بطاقة الصلوات ووضع أيقونة وزر التحديث بجانب عنوان 'مواقيت الصلاة  🔄' مباشرة.\n• تصغير وتجميل نافذة تم حفظ الإعدادات: شارة أنيقة مدمجة ذات زوايا دائرية فخمة باللون الزمردي المتناسق مع الشاشة لا تحجب الرؤية.\n• ثبات فائق للبوصلة وإلغاء الاهتزاز والتردد، مع خروج الصوت عبر سماعات السيارة STREAM_MUSIC وقناة إشعار عالية الأولوية qibla_adhan_v8.\n• حذف الرادار النرويجي المعطل واعتماد طقس Open-Meteo المفتوح المباشر.",
+  "notes_ar": "أهم مميزات وإصلاحات الإصدار 9.9.8:\n• تعديل زر التحديث: حذف التاريخ المكرر من داخل بطاقة الصلوات ووضع أيقونة وزر التحديث بجانب عنوان 'مواقيت الصلاة  🔄' مباشرة.\n• تصغير وتجميل نافذة تم حفظ الإعدادات: شارة أنيقة مدمجة ذات زوايا دائرية فخمة باللون الزمردي المتناسق مع الشاشة لا تحجب الرؤية.\n• ثبات فائق للبوصلة وإلغاء الاهتزاز والتردد، مع خروج الصوت عبر سماعات السيارة STREAM_MUSIC وقناة إشعار عالية الأولوية qibla_adhan_v8.\n• حذف الرادار النرويجي المعطل واعتماد طقس Open-Meteo المفتوح المباشر.",
+  "notes_en": "Highlights & Fixes in Version 9.9.8:\n• Streamlined Prayer Sync Button: Removed redundant date from inside prayer card and placed the sync icon directly next to 'Prayer Times 🔄'.\n• Compact & Elegant Settings Saved Toast: Replaced bulky white box with a sleek, compact floating dark-emerald pill with glowing cyan border.\n• Damped stable compass, loud car stereo audio via STREAM_MUSIC, and open-source Open-Meteo weather."
 }
