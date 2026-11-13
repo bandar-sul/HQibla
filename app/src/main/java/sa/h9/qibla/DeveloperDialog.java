@@ -34,13 +34,16 @@ public final class DeveloperDialog {
         if (activity == null || activity.isFinishing()) return;
         Context ctx = activity;
 
-        Dialog dialog = new Dialog(activity);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        final String overlayTag = "h9_overlay_developer";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+        final Dialog dialog = embedded ? null : new Dialog(activity);
+        if (dialog != null) {
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawableResource(android.R.color.transparent);
+                window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+            }
         }
 
         ScrollView scroll = new ScrollView(ctx);
@@ -61,7 +64,7 @@ public final class DeveloperDialog {
         title.setText(isEn ? "👑 About Developer" : "👑 حول المطور");
         title.setTextSize(22f);
         title.setTextColor(0xFFE5B64A);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
         root.addView(title);
 
@@ -70,7 +73,7 @@ public final class DeveloperDialog {
         nameView.setText(isEn ? "Developer: Bandar Bin Sulaiman" : "المطور / بندر بن سليمان");
         nameView.setTextSize(19f);
         nameView.setTextColor(0xFFFFFFFF);
-        nameView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        nameView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         nameView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         nameLp.setMargins(0, dp(ctx, 8), 0, dp(ctx, 4));
@@ -80,6 +83,7 @@ public final class DeveloperDialog {
         roleView.setText(isEn ? "Developer of H9 Automotive & Qibla Systems" : "تطوير تطبيقات وتحديثات أنظمة وشاشات سيارات H9");
         roleView.setTextSize(13f);
         roleView.setTextColor(0xFF2FE0C7);
+        roleView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
         roleView.setGravity(Gravity.CENTER);
         root.addView(roleView);
 
@@ -95,7 +99,9 @@ public final class DeveloperDialog {
         socialHeader.setText(isEn ? "📱 Follow & Connect on Social Media" : "📱 تابعوني على وسائل التواصل الاجتماعي");
         socialHeader.setTextSize(15f);
         socialHeader.setTextColor(0xFFE5B64A);
-        socialHeader.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        socialHeader.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        socialHeader.setTextDirection(isEn ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
+        socialHeader.setGravity(Gravity.CENTER_VERTICAL | (isEn ? Gravity.LEFT : Gravity.RIGHT));
         root.addView(socialHeader);
 
         // TikTok Button
@@ -122,7 +128,9 @@ public final class DeveloperDialog {
         storeHeader.setText(isEn ? "🛍️ Official Online Store" : "🛍️ متجرنا الإلكتروني الرسمي");
         storeHeader.setTextSize(15f);
         storeHeader.setTextColor(0xFFE5B64A);
-        storeHeader.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        storeHeader.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        storeHeader.setTextDirection(isEn ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
+        storeHeader.setGravity(Gravity.CENTER_VERTICAL | (isEn ? Gravity.LEFT : Gravity.RIGHT));
         root.addView(storeHeader);
 
         Button storeBtn = createSocialButton(ctx, "🌐  متجر H9 الإلكتروني (h9-story.com)", 0xFF12434E, 0xFF2FE0C7, () -> {
@@ -135,7 +143,7 @@ public final class DeveloperDialog {
         closeBtn.setText(isEn ? "✕ Close" : "✕ إغلاق والعودة");
         closeBtn.setTextSize(15f);
         closeBtn.setTextColor(0xFFFFFFFF);
-        closeBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        closeBtn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         GradientDrawable closeBg = new GradientDrawable();
         closeBg.setColor(0xDD1B2932);
         closeBg.setCornerRadius(dp(ctx, 14));
@@ -143,20 +151,29 @@ public final class DeveloperDialog {
         closeBtn.setBackground(closeBg);
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(ctx, 48));
         closeLp.setMargins(0, dp(ctx, 20), 0, 0);
-        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        closeBtn.setOnClickListener(v -> {
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (dialog != null) {
+                dialog.dismiss();
+            }
+        });
         root.addView(closeBtn, closeLp);
 
         scroll.addView(root);
-        dialog.setContentView(scroll);
 
-        // Responsive width constraints for automotive landscape
-        int screenW = ctx.getResources().getDisplayMetrics().widthPixels;
-        int maxDialogW = Math.min(screenW - dp(ctx, 48), dp(ctx, 580));
-        if (window != null) {
-            window.setLayout(maxDialogW, WindowManager.LayoutParams.WRAP_CONTENT);
+        int screenW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : ctx.getResources().getDisplayMetrics().widthPixels;
+        int maxDialogW = Math.min(Math.max(dp(ctx, 250), screenW - dp(ctx, 32)), dp(ctx, 580));
+        if (embedded) {
+            ((MainActivity) activity).showModalCardOverlay(overlayTag, scroll, maxDialogW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
+        } else if (dialog != null) {
+            dialog.setContentView(scroll);
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setLayout(maxDialogW, WindowManager.LayoutParams.WRAP_CONTENT);
+            }
+            dialog.show();
         }
-
-        dialog.show();
     }
 
     private static Button createSocialButton(Context ctx, String text, int bgColor, int strokeColor, Runnable onClick) {
@@ -164,7 +181,7 @@ public final class DeveloperDialog {
         btn.setText(text);
         btn.setTextSize(14.5f);
         btn.setTextColor(0xFFFFFFFF);
-        btn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        btn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         btn.setAllCaps(false);
 
         GradientDrawable bg = new GradientDrawable();

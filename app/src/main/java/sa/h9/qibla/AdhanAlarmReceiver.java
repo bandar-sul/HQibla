@@ -15,13 +15,15 @@ import android.net.Uri;
 import androidx.core.app.NotificationCompat;
 
 /**
- * Handles background Adhan alarm events: displays high-priority notification with prayer info
- * and plays male voice alert / Takbeerat audio safely.
+ * Handles background Adhan alarm events: displays high-priority notification with prayer info,
+ * wakes the device/screen, plays male voice alert / Takbeerat audio safely,
+ * and notifies active components via broadcast.
  */
 public class AdhanAlarmReceiver extends BroadcastReceiver {
     private static final String TAG = "AdhanAlarmReceiver";
     public static final String ACTION_DISMISS_ADHAN = "sa.h9.qibla.ACTION_DISMISS_ADHAN";
-    public static final String CHANNEL_ID = "qibla_adhan_v8";
+    public static final String ACTION_ADHAN_TRIGGERED = "sa.h9.qibla.ACTION_ADHAN_TRIGGERED";
+    public static final String CHANNEL_ID = "qibla_adhan_v10";
     public static final int NOTIFICATION_ID = 9910;
 
     @Override
@@ -44,16 +46,21 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
             if (AdhanScheduler.ACTION_ADHAN_ALARM.equals(action)) {
                 String prayerName = intent.getStringExtra(AdhanScheduler.EXTRA_PRAYER_NAME);
                 String prayerTime = intent.getStringExtra(AdhanScheduler.EXTRA_PRAYER_TIME);
-                if (prayerName == null) prayerName = "الصلاة";
+                int prayerIndex = intent.getIntExtra(AdhanScheduler.EXTRA_PRAYER_INDEX, -1);
+                if (prayerName == null || prayerName.trim().isEmpty()) {
+                    prayerName = "الصلاة";
+                }
 
                 SharedPreferences sp = context.getSharedPreferences(AdhanScheduler.PREFS_NAME, Context.MODE_PRIVATE);
                 java.util.Calendar now = java.util.Calendar.getInstance();
-                String todayPrayerKey = String.format(java.util.Locale.US, "%04d-%02d-%02d_%s",
-                        now.get(java.util.Calendar.YEAR), now.get(java.util.Calendar.DAY_OF_YEAR), prayerName);
+                String todayPrayerKey = String.format(java.util.Locale.US, "%04d-%02d_idx%d_%s",
+                        now.get(java.util.Calendar.YEAR), now.get(java.util.Calendar.DAY_OF_YEAR),
+                        prayerIndex, prayerName);
+
                 String lastKey = sp.getString("last_triggered_prayer_key", "");
                 if (todayPrayerKey.equals(lastKey)) {
                     Log.w(TAG, "Adhan already triggered for " + todayPrayerKey + ", skipping duplicate receiver execution.");
-                    AdhanScheduler.scheduleNextPrayer(context);
+                    AdhanScheduler.scheduleAllPrayers(context);
                     if (pendingResult != null) pendingResult.finish();
                     return;
                 }
@@ -65,12 +72,26 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
                 boolean soundEnabled = uiPrefs.getBoolean("adhan_sound_enabled", true);
                 int soundMode = uiPrefs.getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
 
+                // 1. Display High-Priority Heads-Up Notification
                 try {
                     showNotification(context, prayerName, prayerTime, cityName);
                 } catch (Throwable t) {
                     Log.e(TAG, "Failed to show Adhan notification", t);
                 }
 
+                // 2. Broadcast to active in-app components (MainActivity & FloatingSpeedBubbleService)
+                try {
+                    Intent notifyActiveUi = new Intent(ACTION_ADHAN_TRIGGERED);
+                    notifyActiveUi.setPackage(context.getPackageName());
+                    notifyActiveUi.putExtra(AdhanScheduler.EXTRA_PRAYER_NAME, prayerName);
+                    notifyActiveUi.putExtra(AdhanScheduler.EXTRA_PRAYER_TIME, prayerTime);
+                    notifyActiveUi.putExtra(AdhanScheduler.EXTRA_PRAYER_INDEX, prayerIndex);
+                    context.sendBroadcast(notifyActiveUi);
+                } catch (Throwable t) {
+                    Log.e(TAG, "Failed to send ACTION_ADHAN_TRIGGERED broadcast", t);
+                }
+
+                // 3. Play Adhan / Voice alert audio safely with WakeLock
                 if (soundEnabled && soundMode != SoundManager.SOUND_MODE_MUTED) {
                     android.os.PowerManager pm = null;
                     try {
@@ -84,7 +105,7 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
                                 flags |= android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP;
                             }
                             wl = pm.newWakeLock(flags, "sa.h9.qibla:AdhanWakeLock");
-                            wl.acquire(50000L); // 50 seconds for full audio
+                            wl.acquire(60000L); // 60 seconds
                         } catch (Throwable ignored) { }
                     }
                     final android.os.PowerManager.WakeLock finalWl = wl;
@@ -102,8 +123,8 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
                     if (pendingResult != null) pendingResult.finish();
                 }
 
-                // Immediately schedule the subsequent prayer
-                AdhanScheduler.scheduleNextPrayer(context);
+                // Schedule subsequent prayers
+                AdhanScheduler.scheduleAllPrayers(context);
             } else {
                 if (pendingResult != null) pendingResult.finish();
             }
@@ -133,14 +154,16 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
             try {
                 nm.deleteNotificationChannel("qibla_adhan_v6");
                 nm.deleteNotificationChannel("qibla_adhan_v7");
+                nm.deleteNotificationChannel("qibla_adhan_v8");
+                nm.deleteNotificationChannel("qibla_adhan_v9");
             } catch (Throwable ignored) { }
 
             NotificationChannel channel = new NotificationChannel(
                     channelId,
-                    "تنبيهات دخول أوقات الصلاة والأذان (معتمد)",
+                    "تنبيهات دخول أوقات الصلاة والأذان",
                     NotificationManager.IMPORTANCE_HIGH
             );
-            channel.setDescription("تنبيهات صوتية فورية لدخول وقت كل صلاة والأذان المكي");
+            channel.setDescription("تنبيهات فورية وشريط علوي عند دخول وقت الصلاة والأذان");
             channel.enableLights(true);
             channel.setLightColor(Color.YELLOW);
             channel.enableVibration(true);
@@ -151,7 +174,7 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
             if (soundUri != null) {
                 android.media.AudioAttributes audioAttrs = new android.media.AudioAttributes.Builder()
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
                         .build();
                 channel.setSound(soundUri, audioAttrs);
             }
@@ -170,13 +193,19 @@ public class AdhanAlarmReceiver extends BroadcastReceiver {
         dismissIntent.setAction(ACTION_DISMISS_ADHAN);
         PendingIntent pendingDismiss = PendingIntent.getBroadcast(context, 7703, dismissIntent, piFlags);
 
-        String title = "🕌 دخل الآن وقت صلاة " + prayerName;
-        String locationDesc = (cityName != null && !cityName.trim().isEmpty())
-                ? ("وفق توقيت " + cityName + " • تقويم أم القرى")
-                : "وفق تقويم أم القرى الرسمي";
-        if (prayerTime != null && !prayerTime.isEmpty()) {
-            locationDesc = locationDesc + " (" + prayerTime + ")";
-        }
+        boolean isEn = false;
+        try {
+            isEn = context.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
+                    .getBoolean(MainActivity.KEY_ENGLISH_MODE, false);
+        } catch (Throwable ignored) { }
+        String formatted12h = PrayerTimesCalculator.format12Hour(prayerTime, isEn);
+
+        String title = isEn
+                ? ("🕌 Time for " + prayerName + " (" + formatted12h + ")")
+                : ("🕌 دخل الآن وقت صلاة " + prayerName + (formatted12h.isEmpty() ? "" : (" (" + formatted12h + ")")));
+        String locationDesc = isEn
+                ? ((cityName != null && !cityName.trim().isEmpty()) ? ("Umm al-Qura Standard • " + cityName) : "Umm al-Qura Official Standard")
+                : ((cityName != null && !cityName.trim().isEmpty()) ? ("وفق توقيت " + cityName + " • تقويم أم القرى") : "وفق تقويم أم القرى الرسمي");
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(R.mipmap.ic_launcher)

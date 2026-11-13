@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Window;
 import android.view.Gravity;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.Button;
@@ -108,9 +109,13 @@ public final class UpdateManager {
     private static void showUpdateDialog(Activity activity, int code, String name, String apkUrl, String sha256, String notes) {
         if (activity.isFinishing()) return;
         final boolean en = isEn(activity);
-        final Dialog dialog = new Dialog(activity);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(true);
+        final String overlayTag = "h9_overlay_update";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+        final Dialog dialog = embedded ? null : new Dialog(activity);
+        if (dialog != null) {
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            dialog.setCancelable(true);
+        }
 
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -129,7 +134,7 @@ public final class UpdateManager {
         title.setTextColor(0xFFFFC857);
         title.setTextSize(27f);
         title.setGravity(Gravity.CENTER);
-        title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        title.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         card.addView(title, new LinearLayout.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 58)));
 
@@ -138,7 +143,7 @@ public final class UpdateManager {
         version.setTextColor(0xFF2FE0C7);
         version.setTextSize(20f);
         version.setGravity(Gravity.CENTER);
-        version.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        version.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams versionLp = new LinearLayout.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 46));
         versionLp.bottomMargin = dp(activity, 8);
@@ -173,11 +178,17 @@ public final class UpdateManager {
         laterBg.setCornerRadius(dp(activity, 20));
         laterBg.setStroke(dp(activity, 1), 0xFFE5B64A);
         later.setBackground(laterBg);
-        later.setOnClickListener(v -> dialog.dismiss());
+        later.setOnClickListener(v -> {
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (dialog != null) {
+                dialog.dismiss();
+            }
+        });
 
         Button install = new Button(activity);
         install.setText(en ? "Download & Install" : "تنزيل وتثبيت");
-        install.setTextSize(18f);
+        install.setTextSize(16f);
         install.setTextColor(Color.WHITE);
         install.setAllCaps(false);
         GradientDrawable installBg = new GradientDrawable();
@@ -186,27 +197,37 @@ public final class UpdateManager {
         installBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
         install.setBackground(installBg);
         install.setOnClickListener(v -> {
-            dialog.dismiss();
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (dialog != null) {
+                dialog.dismiss();
+            }
             downloadAndInstall(activity, code, apkUrl, sha256);
         });
 
-        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(dp(activity, 180), dp(activity, 54));
-        btnLp1.rightMargin = dp(activity, 12);
+        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(0, dp(activity, 50), 1.0f);
+        btnLp1.rightMargin = dp(activity, 10);
         buttons.addView(later, btnLp1);
-        buttons.addView(install, new LinearLayout.LayoutParams(dp(activity, 220), dp(activity, 54)));
-        card.addView(buttons);
+        buttons.addView(install, new LinearLayout.LayoutParams(0, dp(activity, 50), 1.3f));
+        card.addView(buttons, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        dialog.setContentView(card);
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            WindowManager.LayoutParams attrs = window.getAttributes();
-            attrs.dimAmount = 0.72f;
-            window.setAttributes(attrs);
-            window.setLayout(dp(activity, 620), WindowManager.LayoutParams.WRAP_CONTENT);
-            window.setGravity(Gravity.CENTER);
+        int paneW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : activity.getResources().getDisplayMetrics().widthPixels;
+        int maxW = Math.min(Math.max(dp(activity, 260), paneW - dp(activity, 32)), dp(activity, 620));
+        if (embedded) {
+            ((MainActivity) activity).showModalCardOverlay(overlayTag, card, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
+        } else if (dialog != null) {
+            dialog.setContentView(card);
+            dialog.show();
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.dimAmount = 0.72f;
+                window.setAttributes(attrs);
+                window.setLayout(maxW, WindowManager.LayoutParams.WRAP_CONTENT);
+                window.setGravity(Gravity.CENTER);
+            }
         }
     }
 
@@ -228,9 +249,13 @@ public final class UpdateManager {
     public static void showDownloadFallbackDialog(Activity activity, String apkUrl) {
         if (activity == null || activity.isFinishing()) return;
         final boolean en = isEn(activity);
-        final Dialog d = new Dialog(activity);
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        d.setCancelable(true);
+        final String overlayTag = "h9_overlay_update_fallback";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+        final Dialog d = embedded ? null : new Dialog(activity);
+        if (d != null) {
+            d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            d.setCancelable(true);
+        }
 
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -247,7 +272,7 @@ public final class UpdateManager {
         t.setText(en ? "Download Qibla Update" : "تنزيل تحديث القبلة");
         t.setTextColor(0xFFFFC857);
         t.setTextSize(20f);
-        t.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        t.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         t.setGravity(Gravity.CENTER);
         card.addView(t, new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 46)));
 
@@ -314,7 +339,11 @@ public final class UpdateManager {
         obBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
         openBrowser.setBackground(obBg);
         openBrowser.setOnClickListener(v -> {
-            d.dismiss();
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (d != null) {
+                d.dismiss();
+            }
             try {
                 Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl));
                 browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -323,16 +352,22 @@ public final class UpdateManager {
                 Toast.makeText(activity, en ? "Unable to open browser" : "تعذر فتح المتصفح", Toast.LENGTH_SHORT).show();
             }
         });
-        row.addView(openBrowser, new LinearLayout.LayoutParams(dp(activity, 160), dp(activity, 44)));
-        card.addView(row);
+        row.addView(openBrowser, new LinearLayout.LayoutParams(0, dp(activity, 44), 1.1f));
+        card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        d.setContentView(card);
-        d.show();
-        Window w = d.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            w.setLayout(dp(activity, 560), WindowManager.LayoutParams.WRAP_CONTENT);
-            w.setGravity(Gravity.CENTER);
+        int paneW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : activity.getResources().getDisplayMetrics().widthPixels;
+        int maxW = Math.min(Math.max(dp(activity, 250), paneW - dp(activity, 32)), dp(activity, 560));
+        if (embedded) {
+            ((MainActivity) activity).showModalCardOverlay(overlayTag, card, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
+        } else if (d != null) {
+            d.setContentView(card);
+            d.show();
+            Window w = d.getWindow();
+            if (w != null) {
+                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                w.setLayout(maxW, WindowManager.LayoutParams.WRAP_CONTENT);
+                w.setGravity(Gravity.CENTER);
+            }
         }
     }
 

@@ -176,42 +176,56 @@ public final class FullScreenWeatherDialog {
         final String city = (cityName != null && !cityName.isEmpty()) ? cityName : (isEn ? "Saudi Arabia" : "المملكة العربية السعودية");
         final ThemePalette pal = getThemePalette(ctx);
 
-        Dialog dialog = new Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        final String overlayTag = "h9_overlay_weather";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+        final Dialog dialog = embedded ? null : new Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        if (dialog != null) {
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+                window.setBackgroundDrawableResource(android.R.color.transparent);
+                window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
         }
 
         LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(pal.rootBg);
-        root.setFitsSystemWindows(true);
+        root.setClickable(true);
+        root.setFocusable(true);
+        root.setLayoutDirection(isEn ? View.LAYOUT_DIRECTION_LTR : View.LAYOUT_DIRECTION_RTL);
+        if (!embedded) {
+            root.setFitsSystemWindows(true);
+        }
 
         // --- TOP BAR ---
         LinearLayout topBar = new LinearLayout(ctx);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(ctx, 20), dp(ctx, 14), dp(ctx, 20), dp(ctx, 14));
+        topBar.setPadding(dp(ctx, 16), dp(ctx, 12), dp(ctx, 16), dp(ctx, 12));
         topBar.setBackgroundColor(pal.topBarBg);
 
         // Close / Return Button
         Button closeBtn = new Button(ctx);
         closeBtn.setText(isEn ? "✕ Close" : "✕ إغلاق والعودة");
-        closeBtn.setTextSize(15f);
+        closeBtn.setTextSize(14.5f);
         closeBtn.setTextColor(0xFFFFFFFF);
-        closeBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        closeBtn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         GradientDrawable closeBg = new GradientDrawable();
         closeBg.setColor(pal.activeTabBg);
         closeBg.setCornerRadius(dp(ctx, 14));
         closeBg.setStroke(dp(ctx, 1.5f), pal.accentColor);
         closeBtn.setBackground(closeBg);
-        closeBtn.setPadding(dp(ctx, 18), dp(ctx, 8), dp(ctx, 18), dp(ctx, 8));
-        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        closeBtn.setPadding(dp(ctx, 14), dp(ctx, 8), dp(ctx, 14), dp(ctx, 8));
+        closeBtn.setOnClickListener(v -> {
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (dialog != null) {
+                dialog.dismiss();
+            }
+        });
         topBar.addView(closeBtn);
 
         // Title and Location Header
@@ -226,13 +240,14 @@ public final class FullScreenWeatherDialog {
         titleView.setText(isEn ? ("🌦️ Weather & Live Radar • " + city) : ("🌦️ طقس " + city + " • الرادار الأوروبي"));
         titleView.setTextSize(17f);
         titleView.setTextColor(pal.goldHighlight);
-        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        titleView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         titleBox.addView(titleView);
 
         TextView subtitleView = new TextView(ctx);
         subtitleView.setText(isEn ? "Live Open-Meteo Satellite & European ECMWF Radar" : "تحديثات الأرصاد المباشرة والرادار الأوروبي التفاعلي للأمطار مع GPS");
         subtitleView.setTextSize(12f);
         subtitleView.setTextColor(pal.textSecondary);
+        subtitleView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
         titleBox.addView(subtitleView);
         topBar.addView(titleBox);
 
@@ -241,7 +256,7 @@ public final class FullScreenWeatherDialog {
             offlineBadge.setText(isEn ? "📡 Offline GPS" : "📡 أوفلاين (GPS)");
             offlineBadge.setTextSize(12f);
             offlineBadge.setTextColor(0xFFFFD768);
-            offlineBadge.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            offlineBadge.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
             offlineBadge.setPadding(dp(ctx, 10), dp(ctx, 4), dp(ctx, 10), dp(ctx, 4));
             GradientDrawable oBg = new GradientDrawable();
             oBg.setColor(0x882A1B0A);
@@ -256,7 +271,7 @@ public final class FullScreenWeatherDialog {
         refreshBtn.setText(isEn ? "🔄 Refresh" : "🔄 تحديث الآن");
         refreshBtn.setTextSize(13f);
         refreshBtn.setTextColor(0xFFFFFFFF);
-        refreshBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        refreshBtn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         GradientDrawable rBg = new GradientDrawable();
         rBg.setColor(0xAA0277BD);
         rBg.setCornerRadius(dp(ctx, 12));
@@ -267,9 +282,13 @@ public final class FullScreenWeatherDialog {
         rLp.setMargins(dp(ctx, 8), 0, 0, 0);
         refreshBtn.setLayoutParams(rLp);
         refreshBtn.setOnClickListener(v -> {
-            Toast.makeText(ctx, isEn ? "🌐 Refreshing open-source weather data (Open-Meteo)..." : "🌐 جاري تحديث بيانات الأرصاد المفتوحة (Open-Meteo)...", Toast.LENGTH_SHORT).show();
+            FullScreenSettingsDialog.showCompactToast(ctx, isEn ? "🔄 Updating Weather Data..." : "🔄 جاري تحديث بيانات الطقس...");
             WeatherManager.fetchWeather(ctx, lat, lon, true, updatedInfo -> {
-                dialog.dismiss();
+                if (embedded) {
+                    ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+                } else if (dialog != null) {
+                    dialog.dismiss();
+                }
                 show(activity, updatedInfo, location, cityName);
             });
         });
@@ -287,12 +306,12 @@ public final class FullScreenWeatherDialog {
         Button tabForecast = new Button(ctx);
         tabForecast.setText(isEn ? "📊 Forecast & Conditions" : "📊 الأحوال وتوقعات الأيام");
         tabForecast.setTextSize(14f);
-        tabForecast.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        tabForecast.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
 
         Button tabRadar = new Button(ctx);
         tabRadar.setText(isEn ? "🛰️ Live European Radar" : "🛰️ الرادار الأوروبي المباشر (GPS)");
         tabRadar.setTextSize(14f);
-        tabRadar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        tabRadar.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
 
         // Content Containers
         ScrollView forecastScroll = new ScrollView(ctx);
@@ -333,8 +352,17 @@ public final class FullScreenWeatherDialog {
         root.addView(forecastScroll);
         root.addView(radarContainer);
 
-        dialog.setContentView(root);
-        dialog.show();
+        if (embedded) {
+            FrameLayout host = ((MainActivity) activity).getRootContainer();
+            ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            root.setTag(overlayTag);
+            host.addView(root, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            root.bringToFront();
+        } else if (dialog != null) {
+            dialog.setContentView(root);
+            dialog.show();
+        }
     }
 
     private static void updateTabStyles(Context ctx, Button activeTab, Button inactiveTab, boolean firstActive, ThemePalette pal) {
@@ -385,14 +413,14 @@ public final class FullScreenWeatherDialog {
         tempView.setText((info != null) ? String.format(Locale.US, "%.0f°C", info.tempC) : "--°C");
         tempView.setTextSize(42f);
         tempView.setTextColor(pal.textPrimary);
-        tempView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        tempView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         tempBox.addView(tempView);
 
         TextView descView = new TextView(ctx);
         descView.setText((info != null) ? info.getLocalizedDesc(isEn) : (isEn ? "Fair Weather" : "صحو بوجه عام"));
         descView.setTextSize(17f);
         descView.setTextColor(pal.accentColor);
-        descView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        descView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         tempBox.addView(descView);
 
         TextView feelsView = new TextView(ctx);
@@ -401,6 +429,7 @@ public final class FullScreenWeatherDialog {
                 : String.format(Locale.US, "الإحساس الفعلي: %.0f°م", apparent));
         feelsView.setTextSize(13f);
         feelsView.setTextColor(pal.textSecondary);
+        feelsView.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
         tempBox.addView(feelsView);
 
         rowMain.addView(tempBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
@@ -445,6 +474,16 @@ public final class FullScreenWeatherDialog {
                 String.format(Locale.US, "%.1f", uv), pal));
         heroCard.addView(grid2);
 
+        // Radar Diagnostic Status Bar (Tap to view full logs)
+        TextView diagStatusTv = new TextView(ctx);
+        diagStatusTv.setText("📡 " + WeatherManager.getDiagnosticStatus(ctx, isEn));
+        diagStatusTv.setTextSize(11.5f);
+        diagStatusTv.setTextColor(pal.textSecondary);
+        diagStatusTv.setPadding(dp(ctx, 4), dp(ctx, 10), dp(ctx, 4), dp(ctx, 2));
+        diagStatusTv.setGravity(Gravity.CENTER);
+        diagStatusTv.setOnClickListener(v -> showDiagnosticLogsDialog(ctx, pal, isEn));
+        heroCard.addView(diagStatusTv);
+
         parent.addView(heroCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // 2. Hourly Forecast Section
@@ -453,7 +492,7 @@ public final class FullScreenWeatherDialog {
             hTitle.setText(isEn ? "⏱️ Hourly Forecast (Next 24 Hours)" : "⏱️ توقعات درجات الحرارة بالساعات القادمة");
             hTitle.setTextSize(16f);
             hTitle.setTextColor(pal.goldHighlight);
-            hTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            hTitle.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
             LinearLayout.LayoutParams hTitleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             hTitleLp.setMargins(0, dp(ctx, 22), 0, dp(ctx, 10));
             parent.addView(hTitle, hTitleLp);
@@ -478,6 +517,7 @@ public final class FullScreenWeatherDialog {
                 tvHour.setText(hf.hourStr);
                 tvHour.setTextSize(12f);
                 tvHour.setTextColor(pal.textSecondary);
+                tvHour.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
                 card.addView(tvHour);
 
                 TextView tvIcon = new TextView(ctx);
@@ -489,7 +529,7 @@ public final class FullScreenWeatherDialog {
                 tvTemp.setText(String.format(Locale.US, "%.0f°", hf.tempC));
                 tvTemp.setTextSize(15f);
                 tvTemp.setTextColor(pal.textPrimary);
-                tvTemp.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                tvTemp.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
                 card.addView(tvTemp);
 
                 if (hf.rainProb > 0) {
@@ -497,6 +537,7 @@ public final class FullScreenWeatherDialog {
                     tvRain.setText("💧 " + hf.rainProb + "%");
                     tvRain.setTextSize(11f);
                     tvRain.setTextColor(pal.accentColor);
+                    tvRain.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
                     card.addView(tvRain);
                 }
 
@@ -514,7 +555,7 @@ public final class FullScreenWeatherDialog {
             dTitle.setText(isEn ? "📅 7-Day Daily Weather Forecast" : "📅 توقعات الطقس للأيام السبعة القادمة");
             dTitle.setTextSize(16f);
             dTitle.setTextColor(pal.goldHighlight);
-            dTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            dTitle.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
             LinearLayout.LayoutParams dTitleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             dTitleLp.setMargins(0, dp(ctx, 22), 0, dp(ctx, 10));
             parent.addView(dTitle, dTitleLp);
@@ -537,13 +578,14 @@ public final class FullScreenWeatherDialog {
                 tvDay.setText(df.dayName.isEmpty() ? df.dateStr : df.dayName);
                 tvDay.setTextSize(15f);
                 tvDay.setTextColor(pal.textPrimary);
-                tvDay.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                tvDay.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
                 dayRow.addView(tvDay, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.3f));
 
                 TextView tvDayIcon = new TextView(ctx);
                 tvDayIcon.setText(df.icon + " " + (isEn ? df.descEn : df.descAr));
                 tvDayIcon.setTextSize(14f);
                 tvDayIcon.setTextColor(pal.accentColor);
+                tvDayIcon.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
                 dayRow.addView(tvDayIcon, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2.0f));
 
                 if (df.rainProb > 0) {
@@ -551,6 +593,7 @@ public final class FullScreenWeatherDialog {
                     tvRain.setText("💧 " + df.rainProb + "%");
                     tvRain.setTextSize(12f);
                     tvRain.setTextColor(pal.isLight ? 0xFF00758A : 0xFF7DE3F4);
+                    tvRain.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
                     dayRow.addView(tvRain, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.9f));
                 }
 
@@ -558,7 +601,7 @@ public final class FullScreenWeatherDialog {
                 tvTemps.setText(String.format(Locale.US, "%.0f° / %.0f°", df.maxTemp, df.minTemp));
                 tvTemps.setTextSize(15f);
                 tvTemps.setTextColor(pal.goldHighlight);
-                tvTemps.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                tvTemps.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
                 tvTemps.setGravity(Gravity.END);
                 dayRow.addView(tvTemps, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
@@ -584,6 +627,7 @@ public final class FullScreenWeatherDialog {
         lbl.setText(label);
         lbl.setTextSize(11f);
         lbl.setTextColor(pal.textSecondary);
+        lbl.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.NORMAL);
         lbl.setGravity(Gravity.CENTER);
         box.addView(lbl);
 
@@ -591,7 +635,7 @@ public final class FullScreenWeatherDialog {
         val.setText(value);
         val.setTextSize(13f);
         val.setTextColor(pal.textPrimary);
-        val.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        val.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         val.setGravity(Gravity.CENTER);
         box.addView(val);
 
@@ -619,21 +663,18 @@ public final class FullScreenWeatherDialog {
         radarLabel.setText(isEn ? "🛰️ European ECMWF & GPS Rain Radar" : "🛰️ الرادار الأوروبي ورادار الأمطار المباشر (GPS)");
         radarLabel.setTextSize(14f);
         radarLabel.setTextColor(pal.goldHighlight);
-        radarLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        radarLabel.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         bar.addView(radarLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         // URLs:
         // 1. Windy European ECMWF live radar embed (with closer default zoom = 9 centered on coordinates)
         final int[] windyZoom = {9};
-        final String[] activeMode = {"leaflet"}; // "leaflet", "ventusky", "windy"
+        final String[] activeMode = {"ventusky"}; // "ventusky", "windy"
 
-        // 2. Ventusky live radar alternative (smooth interactive precipitation & clouds)
+        // 2. Ventusky live radar (smooth interactive precipitation & clouds)
         final String ventuskyUrl = String.format(Locale.US,
                 "https://www.ventusky.com/?p=%.4f;%%20%.4f;8&l=rain-3h",
                 lat, lon);
-
-        // 3. Leaflet RainViewer direct tile HTML (100% free OpenStreetMap & Esri imagery, ZERO API key watermarks, with GPS locate button)
-        final String leafletRainHtml = buildLeafletRainViewerHtml(lat, lon, isEn, pal, city);
 
         // WebView setup with full automotive hardware & DOM storage options
         WebView webView = new WebView(ctx);
@@ -663,27 +704,18 @@ public final class FullScreenWeatherDialog {
         });
         webView.setWebViewClient(new WebViewClient());
 
-        // Default to Leaflet RainViewer Direct Radar with OpenStreetMap tiles & GPS centering!
-        webView.loadDataWithBaseURL("https://api.rainviewer.com/", leafletRainHtml, "text/html", "UTF-8", null);
+        // Default to Ventusky Live Radar with rain and cloud layers
+        activeMode[0] = "ventusky";
+        webView.loadUrl(ventuskyUrl);
 
-        Button btnTileRain = createRadarSmallBtn(ctx, isEn ? "🌧️ Open Rain Radar (GPS)" : "🌧️ رادار الأمطار المفتوح (سريع)", true, pal);
-        Button btnVentusky = createRadarSmallBtn(ctx, isEn ? "🌪️ Ventusky Radar" : "🌪️ رادار فينتوسكي الحي (أمطار وسحب)", false, pal);
+        Button btnVentusky = createRadarSmallBtn(ctx, isEn ? "🌪️ Ventusky Radar" : "🌪️ رادار فينتوسكي الحي (أمطار وسحب)", true, pal);
         Button btnWindy = createRadarSmallBtn(ctx, isEn ? "🇪🇺 ECMWF Radar" : "🇪🇺 رادار ويندي الأوروبي", false, pal);
-        Button btnGpsCenter = createRadarSmallBtn(ctx, isEn ? "🎯 Street GPS Zoom" : "🎯 تقريب موقعي GPS", false, pal);
+        Button btnGpsCenter = createRadarSmallBtn(ctx, isEn ? "🎯 Center GPS" : "🎯 تقريب موقعي GPS", false, pal);
         Button btnZoomIn = createRadarSmallBtn(ctx, isEn ? "➕ Zoom In" : "➕ تكبير", false, pal);
         Button btnZoomOut = createRadarSmallBtn(ctx, isEn ? "➖ Zoom Out" : "➖ تصغير", false, pal);
 
-        btnTileRain.setOnClickListener(v -> {
-            activeMode[0] = "leaflet";
-            updateRadarSmallBtn(ctx, btnTileRain, true, pal);
-            updateRadarSmallBtn(ctx, btnVentusky, false, pal);
-            updateRadarSmallBtn(ctx, btnWindy, false, pal);
-            webView.loadDataWithBaseURL("https://api.rainviewer.com/", leafletRainHtml, "text/html", "UTF-8", null);
-        });
-
         btnVentusky.setOnClickListener(v -> {
             activeMode[0] = "ventusky";
-            updateRadarSmallBtn(ctx, btnTileRain, false, pal);
             updateRadarSmallBtn(ctx, btnVentusky, true, pal);
             updateRadarSmallBtn(ctx, btnWindy, false, pal);
             webView.loadUrl(ventuskyUrl);
@@ -692,7 +724,6 @@ public final class FullScreenWeatherDialog {
 
         btnWindy.setOnClickListener(v -> {
             activeMode[0] = "windy";
-            updateRadarSmallBtn(ctx, btnTileRain, false, pal);
             updateRadarSmallBtn(ctx, btnVentusky, false, pal);
             updateRadarSmallBtn(ctx, btnWindy, true, pal);
             String url = String.format(Locale.US,
@@ -703,14 +734,6 @@ public final class FullScreenWeatherDialog {
         });
 
         btnGpsCenter.setOnClickListener(v -> {
-            if (!"leaflet".equals(activeMode[0])) {
-                activeMode[0] = "leaflet";
-                updateRadarSmallBtn(ctx, btnTileRain, true, pal);
-                updateRadarSmallBtn(ctx, btnVentusky, false, pal);
-                updateRadarSmallBtn(ctx, btnWindy, false, pal);
-                webView.loadDataWithBaseURL("https://api.rainviewer.com/", leafletRainHtml, "text/html", "UTF-8", null);
-            }
-
             Location freshLoc = null;
             if (ctx instanceof MainActivity) {
                 freshLoc = ((MainActivity) ctx).getLastLocation();
@@ -726,22 +749,23 @@ public final class FullScreenWeatherDialog {
                 } catch (Exception ignored) { }
             }
 
-            if (freshLoc != null) {
-                String js = String.format(Locale.US,
-                        "if (typeof centerOnGPS === 'function') { centerOnGPS(%.6f, %.6f, %.1f); }",
-                        freshLoc.getLatitude(), freshLoc.getLongitude(), freshLoc.getAccuracy());
-                webView.evaluateJavascript(js, null);
-                Toast.makeText(ctx, isEn ? "🎯 Zooming in to exact vehicle street location" : "🎯 تقريب وتحديد موقع المركبة بالشارع والحي", Toast.LENGTH_SHORT).show();
+            double curLat = freshLoc != null ? freshLoc.getLatitude() : lat;
+            double curLon = freshLoc != null ? freshLoc.getLongitude() : lon;
+
+            if ("windy".equals(activeMode[0])) {
+                String url = String.format(Locale.US,
+                        "https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%%C2%%B0C&metricWind=km%%2Fh&zoom=%d&overlay=radar&product=ecmwf&level=surface&lat=%.4f&lon=%.4f&message=true",
+                        windyZoom[0], curLat, curLon);
+                webView.loadUrl(url);
             } else {
-                webView.evaluateJavascript("if (typeof centerOnGPS === 'function') { centerOnGPS(); }", null);
-                Toast.makeText(ctx, isEn ? "Locating vehicle via GPS..." : "جاري تحديد موقع المركبة بالـ GPS...", Toast.LENGTH_SHORT).show();
+                String vUrl = String.format(Locale.US, "https://www.ventusky.com/?p=%.4f;%.4f;8&l=rain-3h", curLat, curLon);
+                webView.loadUrl(vUrl);
             }
+            Toast.makeText(ctx, isEn ? "🎯 Centering radar on vehicle GPS..." : "🎯 جاري تقريب وتحديد موقع المركبة بالـ GPS...", Toast.LENGTH_SHORT).show();
         });
 
         btnZoomIn.setOnClickListener(v -> {
-            if ("leaflet".equals(activeMode[0])) {
-                webView.evaluateJavascript("if (typeof map !== 'undefined') { map.zoomIn(); }", null);
-            } else if ("windy".equals(activeMode[0])) {
+            if ("windy".equals(activeMode[0])) {
                 if (windyZoom[0] < 14) {
                     windyZoom[0]++;
                     String url = String.format(Locale.US,
@@ -755,9 +779,7 @@ public final class FullScreenWeatherDialog {
         });
 
         btnZoomOut.setOnClickListener(v -> {
-            if ("leaflet".equals(activeMode[0])) {
-                webView.evaluateJavascript("if (typeof map !== 'undefined') { map.zoomOut(); }", null);
-            } else if ("windy".equals(activeMode[0])) {
+            if ("windy".equals(activeMode[0])) {
                 if (windyZoom[0] > 4) {
                     windyZoom[0]--;
                     String url = String.format(Locale.US,
@@ -772,7 +794,6 @@ public final class FullScreenWeatherDialog {
 
         HorizontalScrollView barScroll = new HorizontalScrollView(ctx);
         barScroll.setHorizontalScrollBarEnabled(false);
-        bar.addView(btnTileRain);
         bar.addView(btnVentusky);
         bar.addView(btnWindy);
         bar.addView(btnGpsCenter);
@@ -815,14 +836,6 @@ public final class FullScreenWeatherDialog {
                 "      background: rgba(8, 22, 28, 0.94); border: 1.5px solid " + accentHex + ";\n" +
                 "      color: " + accentHex + "; padding: 8px 16px; border-radius: 14px;\n" +
                 "      font-size: 13px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5);\n" +
-                "    }\n" +
-                "    .gps-btn {\n" +
-                "      position: absolute; top: 12px; left: 12px; z-index: 1000;\n" +
-                "      background: " + accentHex + "; color: #041E18; border: 2px solid " + goldHex + ";\n" +
-                "      border-radius: 20px; padding: 8px 16px; font-size: 13px; font-weight: bold;\n" +
-                "      cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 6px;\n" +
-                "    }\n" +
-                "    .gps-btn:active { transform: scale(0.96); }\n" +
                 "    .controls-bar {\n" +
                 "      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;\n" +
                 "      background: rgba(10, 24, 32, 0.94); border: 1.5px solid " + goldHex + ";\n" +
@@ -842,7 +855,6 @@ public final class FullScreenWeatherDialog {
                 "<body>\n" +
                 "  <div id=\"map\"></div>\n" +
                 "  <div class=\"status-badge\" id=\"status\">" + statusConnecting + "</div>\n" +
-                "  <button class=\"gps-btn\" onclick=\"centerOnGPS()\">" + gpsBtnText + "</button>\n" +
                 "  <div class=\"controls-bar\" id=\"controls\" style=\"display:none;\">\n" +
                 "    <button class=\"play-btn\" id=\"playBtn\" onclick=\"togglePlay()\">⏸</button>\n" +
                 "    <div class=\"time-badge\" id=\"timeLabel\">مباشر</div>\n" +
@@ -1050,7 +1062,7 @@ public final class FullScreenWeatherDialog {
         Button btn = new Button(ctx);
         btn.setText(text);
         btn.setTextSize(12f);
-        btn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        btn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         updateRadarSmallBtn(ctx, btn, active, pal);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(ctx, 36));
         lp.setMargins(dp(ctx, 4), 0, dp(ctx, 4), 0);
@@ -1066,6 +1078,97 @@ public final class FullScreenWeatherDialog {
         bg.setStroke(dp(ctx, 1f), active ? pal.accentColor : ((pal.cardStroke & 0x55FFFFFF) | 0x44000000));
         btn.setBackground(bg);
         btn.setTextColor(active ? 0xFFFFFFFF : pal.textSecondary);
+    }
+
+    private static void showDiagnosticLogsDialog(Context ctx, ThemePalette pal, boolean isEn) {
+        if (ctx == null) return;
+        final String overlayTag = "h9_overlay_weather_logs";
+        final boolean embedded = (ctx instanceof MainActivity) && ((MainActivity) ctx).getRootContainer() != null;
+        final Dialog d = embedded ? null : new Dialog(ctx);
+        if (d != null) {
+            d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            d.setCancelable(true);
+            if (d.getWindow() != null) {
+                d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            }
+        }
+
+        int dpVal = (int) ctx.getResources().getDisplayMetrics().density;
+        LinearLayout root = new LinearLayout(ctx);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(18 * dpVal, 16 * dpVal, 18 * dpVal, 16 * dpVal);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(pal.isLight ? 0xFFFFFFFF : 0xFF0D1E2C);
+        bg.setCornerRadius(16 * dpVal);
+        bg.setStroke(dp(ctx, 1.4f), pal.accentColor);
+        root.setBackground(bg);
+
+        TextView title = new TextView(ctx);
+        title.setText(isEn ? "🛰️ Weather & Radar Diagnostics" : "🛰️ سجل تشخيص رادار وبيانات الطقس");
+        title.setTextSize(16f);
+        title.setTextColor(pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFFFD768);
+        title.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        title.setPadding(0, 0, 0, 10 * dpVal);
+        root.addView(title);
+
+        ScrollView sv = new ScrollView(ctx);
+        LinearLayout logsLayout = new LinearLayout(ctx);
+        logsLayout.setOrientation(LinearLayout.VERTICAL);
+
+        java.util.List<WeatherManager.DiagnosticRecord> logs = WeatherManager.getRecentDiagnostics();
+        if (logs.isEmpty()) {
+            TextView emptyTv = new TextView(ctx);
+            emptyTv.setText(isEn ? "No diagnostic events recorded yet." : "لا توجد أحداث تشخيص مسجلة حتى الآن.");
+            emptyTv.setTextColor(pal.textSecondary);
+            emptyTv.setTextSize(13f);
+            logsLayout.addView(emptyTv);
+        } else {
+            for (int i = logs.size() - 1; i >= 0; i--) {
+                WeatherManager.DiagnosticRecord r = logs.get(i);
+                TextView tv = new TextView(ctx);
+                tv.setText(r.toString());
+                tv.setTextSize(11f);
+                tv.setTypeface(Typeface.MONOSPACE);
+                int textColor;
+                if ("ERROR".equals(r.level)) textColor = 0xFFFF5252;
+                else if ("WARN".equals(r.level)) textColor = 0xFFFFD740;
+                else if ("SUCCESS".equals(r.level)) textColor = 0xFF69F0AE;
+                else textColor = pal.textPrimary;
+                tv.setTextColor(textColor);
+                tv.setPadding(0, 2 * dpVal, 0, 4 * dpVal);
+                logsLayout.addView(tv);
+            }
+        }
+        sv.addView(logsLayout);
+        root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 260 * dpVal));
+
+        Button closeBtn = new Button(ctx);
+        closeBtn.setText(isEn ? "Close" : "إغلاق");
+        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setTextSize(13.5f);
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setColor(pal.accentColor);
+        btnBg.setCornerRadius(12 * dpVal);
+        closeBtn.setBackground(btnBg);
+        closeBtn.setOnClickListener(v -> {
+            if (embedded) {
+                ((MainActivity) ctx).dismissOverlayByTag(overlayTag);
+            } else if (d != null) {
+                d.dismiss();
+            }
+        });
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 40 * dpVal);
+        btnLp.topMargin = 12 * dpVal;
+        root.addView(closeBtn, btnLp);
+
+        int screenW = embedded ? ((MainActivity) ctx).getVisiblePaneWidth() : ctx.getResources().getDisplayMetrics().widthPixels;
+        int maxW = Math.min(Math.max(250 * dpVal, screenW - 32 * dpVal), 520 * dpVal);
+        if (embedded) {
+            ((MainActivity) ctx).showModalCardOverlay(overlayTag, root, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
+        } else if (d != null) {
+            d.setContentView(root, new ViewGroup.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT));
+            d.show();
+        }
     }
 
     private static int dp(Context ctx, float dpVal) {

@@ -11,9 +11,10 @@ import android.util.Log;
 import java.util.Calendar;
 
 /**
- * Schedules background Adhan alarms using AlarmManager so that Takbeerat and notifications
- * trigger at the exact prayer minute even when the app is closed or the user is using
- * car navigation / radio.
+ * High-reliability background Adhan alarm scheduler.
+ * Schedules exact alarms for all upcoming daily prayers with AlarmClock/ExactAndAllowWhileIdle,
+ * ensuring Takbeerat and notifications trigger even when the car headunit is locked, sleeping,
+ * running navigation, or when the app is in the background.
  */
 public final class AdhanScheduler {
     private static final String TAG = "AdhanScheduler";
@@ -34,7 +35,7 @@ public final class AdhanScheduler {
     private AdhanScheduler() {}
 
     /**
-     * Updates stored prayer times and reschedules the next upcoming prayer alarm.
+     * Updates stored prayer times and reschedules all upcoming prayers.
      */
     public static void saveAndSchedule(Context context, String[] times, String[] names, String cityName) {
         if (context == null || times == null || names == null || times.length < 6 || names.length < 6) return;
@@ -57,13 +58,21 @@ public final class AdhanScheduler {
                 .putString(KEY_CITY_NAME, cityName != null ? cityName : "")
                 .apply();
 
-        scheduleNextPrayer(context);
+        scheduleAllPrayers(context);
     }
 
     /**
-     * Finds the next prayer (excluding Sunrise) and sets an exact alarm.
+     * Backward-compatible alias for scheduling.
      */
     public static void scheduleNextPrayer(Context context) {
+        scheduleAllPrayers(context);
+    }
+
+    /**
+     * Schedules alarms for ALL remaining prayers today, plus tomorrow's Fajr,
+     * so that each prayer has its own dedicated system alarm.
+     */
+    public static void scheduleAllPrayers(Context context) {
         if (context == null) return;
         SharedPreferences sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String timesCsv = sp.getString(KEY_PRAYER_TIMES, null);
@@ -74,97 +83,139 @@ public final class AdhanScheduler {
         String[] names = namesCsv.split(",");
         if (times.length < 6 || names.length < 6) return;
 
+        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+
         Calendar now = Calendar.getInstance();
         int nowMinute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
-        int nowSecond = now.get(Calendar.SECOND);
+        long nowMillis = System.currentTimeMillis();
 
-        int targetIndex = -1;
-        int targetMinute = -1;
-        boolean isTomorrow = false;
+        long firstUpcomingMillis = Long.MAX_VALUE;
+        String firstUpcomingName = "";
+        String firstUpcomingTime = "";
+        int firstUpcomingIndex = -1;
 
-        // Check remaining prayers today (skip index 1 = Sunrise)
+        // Schedule remaining prayers for today (skip index 1 = Sunrise)
         for (int i = 0; i < 6; i++) {
             if (i == 1) continue; // Sunrise has no Adhan
             int m = parseMinute(times[i]);
             if (m < 0) continue;
-            // CRITICAL FIX: Target MUST be strictly in the future.
-            // Never re-select current minute or past minutes for today!
-            if (m > nowMinute) {
-                targetIndex = i;
-                targetMinute = m;
-                break;
+
+            Calendar targetCal = Calendar.getInstance();
+            targetCal.set(Calendar.HOUR_OF_DAY, m / 60);
+            targetCal.set(Calendar.MINUTE, m % 60);
+            targetCal.set(Calendar.SECOND, 0);
+            targetCal.set(Calendar.MILLISECOND, 0);
+
+            long triggerAtMillis = targetCal.getTimeInMillis();
+
+            // If this prayer is still in the future today
+            if (triggerAtMillis > nowMillis - 30000L) {
+                PendingIntent pi = buildPendingIntent(context, i, names[i], times[i]);
+                scheduleAlarm(am, triggerAtMillis, pi);
+                Log.d(TAG, "Scheduled alarm for " + names[i] + " at " + targetCal.getTime());
+
+                if (triggerAtMillis < firstUpcomingMillis) {
+                    firstUpcomingMillis = triggerAtMillis;
+                    firstUpcomingName = names[i];
+                    firstUpcomingTime = times[i];
+                    firstUpcomingIndex = i;
+                }
             }
         }
 
-        // If all prayers today passed, schedule Fajr tomorrow (index 0)
-        if (targetIndex < 0) {
-            targetIndex = 0;
-            targetMinute = parseMinute(times[0]);
-            isTomorrow = true;
+        // Always schedule tomorrow's Fajr (index 0) as guaranteed future anchor
+        int fajrM = parseMinute(times[0]);
+        if (fajrM >= 0) {
+            Calendar tomorrowFajr = Calendar.getInstance();
+            tomorrowFajr.add(Calendar.DAY_OF_YEAR, 1);
+            tomorrowFajr.set(Calendar.HOUR_OF_DAY, fajrM / 60);
+            tomorrowFajr.set(Calendar.MINUTE, fajrM % 60);
+            tomorrowFajr.set(Calendar.SECOND, 0);
+            tomorrowFajr.set(Calendar.MILLISECOND, 0);
+
+            long fajrMillis = tomorrowFajr.getTimeInMillis();
+            PendingIntent piFajr = buildPendingIntent(context, 10, names[0], times[0]);
+            scheduleAlarm(am, fajrMillis, piFajr);
+            Log.d(TAG, "Scheduled tomorrow's Fajr at " + tomorrowFajr.getTime());
+
+            if (firstUpcomingIndex < 0) {
+                firstUpcomingMillis = fajrMillis;
+                firstUpcomingName = names[0];
+                firstUpcomingTime = times[0];
+                firstUpcomingIndex = 0;
+            }
         }
 
-        if (targetMinute < 0) return;
-
-        Calendar targetCal = Calendar.getInstance();
-        if (isTomorrow) {
-            targetCal.add(Calendar.DAY_OF_YEAR, 1);
+        if (firstUpcomingIndex >= 0) {
+            sp.edit()
+                    .putLong(KEY_NEXT_ALARM_MILLIS, firstUpcomingMillis)
+                    .putString(KEY_NEXT_PRAYER_NAME, firstUpcomingName)
+                    .putString(KEY_NEXT_PRAYER_TIME, firstUpcomingTime)
+                    .putInt(KEY_NEXT_PRAYER_INDEX, firstUpcomingIndex)
+                    .apply();
         }
-        targetCal.set(Calendar.HOUR_OF_DAY, targetMinute / 60);
-        targetCal.set(Calendar.MINUTE, targetMinute % 60);
-        targetCal.set(Calendar.SECOND, 0);
-        targetCal.set(Calendar.MILLISECOND, 0);
+    }
 
-        long triggerAtMillis = targetCal.getTimeInMillis();
-        if (triggerAtMillis <= System.currentTimeMillis() + 15000L) {
-            // Safety guard: if calculated time is in the past, push to tomorrow
-            targetCal.add(Calendar.DAY_OF_YEAR, 1);
-            triggerAtMillis = targetCal.getTimeInMillis();
-        }
-
-        sp.edit()
-                .putLong(KEY_NEXT_ALARM_MILLIS, triggerAtMillis)
-                .putString(KEY_NEXT_PRAYER_NAME, names[targetIndex])
-                .putString(KEY_NEXT_PRAYER_TIME, times[targetIndex])
-                .putInt(KEY_NEXT_PRAYER_INDEX, targetIndex)
-                .apply();
-
-        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (am == null) return;
-
+    private static PendingIntent buildPendingIntent(Context context, int requestCodeOffset, String prayerName, String prayerTime) {
         Intent intent = new Intent(context, AdhanAlarmReceiver.class);
         intent.setAction(ACTION_ADHAN_ALARM);
-        intent.putExtra(EXTRA_PRAYER_NAME, names[targetIndex]);
-        intent.putExtra(EXTRA_PRAYER_TIME, times[targetIndex]);
-        intent.putExtra(EXTRA_PRAYER_INDEX, targetIndex);
+        intent.putExtra(EXTRA_PRAYER_NAME, prayerName);
+        intent.putExtra(EXTRA_PRAYER_TIME, prayerTime);
+        intent.putExtra(EXTRA_PRAYER_INDEX, requestCodeOffset % 6);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent pi = PendingIntent.getBroadcast(context, 7701, intent, flags);
+        return PendingIntent.getBroadcast(context, 7700 + requestCodeOffset, intent, flags);
+    }
 
+    private static void scheduleAlarm(AlarmManager am, long triggerAtMillis, PendingIntent pi) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // setAlarmClock gives highest priority and wakes device reliably on automotive headunits
-                am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAtMillis, pi), pi);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (am.canScheduleExactAlarms()) {
+                    am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAtMillis, pi), pi);
+                } else {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 am.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
             } else {
                 am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
             }
-            Log.d(TAG, "Scheduled Adhan for " + names[targetIndex] + " at " + targetCal.getTime());
         } catch (SecurityException se) {
-            Log.w(TAG, "Exact alarm permission missing, fallback to setWindow/set", se);
+            Log.w(TAG, "Exact alarm permission restricted, falling back to setAndAllowWhileIdle", se);
             try {
-                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
-            } catch (Exception ignored) {}
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi);
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            Log.e(TAG, "Error scheduling alarm", t);
         }
     }
 
-    private static int parseMinute(String s) {
+    public static int parseMinute(String s) {
         if (s == null) return -1;
         try {
-            String[] parts = s.trim().split(":");
+            StringBuilder sb = new StringBuilder();
+            for (char c : s.toCharArray()) {
+                if (c >= '٠' && c <= '٩') {
+                    sb.append((char) ('0' + (c - '٠')));
+                } else {
+                    sb.append(c);
+                }
+            }
+            String clean = sb.toString().trim();
+            int space = clean.indexOf(' ');
+            if (space > 0) clean = clean.substring(0, space).trim();
+            String[] parts = clean.split(":");
+            if (parts.length < 2) return -1;
             return Integer.parseInt(parts[0].trim()) * 60 + Integer.parseInt(parts[1].trim());
         } catch (Exception e) {
             return -1;

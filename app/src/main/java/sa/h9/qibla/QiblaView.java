@@ -151,15 +151,33 @@ public class QiblaView extends View {
         this.onPrayerClickListener = listener;
     }
 
+    public interface OnSettingsClickListener {
+        void onSettingsClicked();
+    }
+    private OnSettingsClickListener onSettingsClickListener;
+
+    public void setOnSettingsClickListener(OnSettingsClickListener listener) {
+        this.onSettingsClickListener = listener;
+    }
+
     private final RectF weatherCardRect = new RectF();
     private final RectF weatherPrayerRowRect = new RectF();
     private final RectF prayerCardRect = new RectF();
+    private final RectF topBarSettingsRect = new RectF();
 
-    private static final int RAIN_COUNT = 45;
+    private static final int RAIN_COUNT = 65;
+    private static final int MIST_COUNT = 45;
+    private static final int SUN_MOTE_COUNT = 16;
     private static final int STAR_COUNT = 36;
     private final float[] rainX = new float[RAIN_COUNT];
     private final float[] rainY = new float[RAIN_COUNT];
     private final float[] rainSpeed = new float[RAIN_COUNT];
+    private final float[] mistX = new float[MIST_COUNT];
+    private final float[] mistY = new float[MIST_COUNT];
+    private final float[] mistSpeed = new float[MIST_COUNT];
+    private final float[] sunMoteX = new float[SUN_MOTE_COUNT];
+    private final float[] sunMoteY = new float[SUN_MOTE_COUNT];
+    private final float[] sunMotePhase = new float[SUN_MOTE_COUNT];
     private final float[] starX = new float[STAR_COUNT];
     private final float[] starY = new float[STAR_COUNT];
     private final float[] starAlpha = new float[STAR_COUNT];
@@ -175,7 +193,17 @@ public class QiblaView extends View {
         for (int i = 0; i < RAIN_COUNT; i++) {
             rainX[i] = rnd.nextFloat();
             rainY[i] = rnd.nextFloat();
-            rainSpeed[i] = 0.55f + rnd.nextFloat() * 0.45f;
+            rainSpeed[i] = 0.65f + rnd.nextFloat() * 0.55f;
+        }
+        for (int i = 0; i < MIST_COUNT; i++) {
+            mistX[i] = rnd.nextFloat();
+            mistY[i] = rnd.nextFloat();
+            mistSpeed[i] = 0.35f + rnd.nextFloat() * 0.35f;
+        }
+        for (int i = 0; i < SUN_MOTE_COUNT; i++) {
+            sunMoteX[i] = rnd.nextFloat();
+            sunMoteY[i] = rnd.nextFloat() * 0.45f;
+            sunMotePhase[i] = rnd.nextFloat() * 6.28f;
         }
         for (int i = 0; i < STAR_COUNT; i++) {
             starX[i] = rnd.nextFloat();
@@ -185,8 +213,28 @@ public class QiblaView extends View {
         weatherParticlesInit = true;
     }
 
+    public static final int WEATHER_MODE_AUTO = 0;
+    public static final int WEATHER_MODE_THUNDERSTORM = 1;
+    public static final int WEATHER_MODE_RAIN = 2;
+    public static final int WEATHER_MODE_CLOUDS = 3;
+    public static final int WEATHER_MODE_SUN = 4;
+    public static final int WEATHER_MODE_OFF = 5;
+
+    private int weatherEffectMode = WEATHER_MODE_AUTO;
+
+    public void setWeatherEffectMode(int mode) {
+        this.weatherEffectMode = mode;
+        this.weatherEffectsEnabled = (mode != WEATHER_MODE_OFF);
+        postInvalidate();
+    }
+
+    public int getWeatherEffectMode() {
+        return weatherEffectMode;
+    }
+
     public void setWeatherEffectsEnabled(boolean enabled) {
         this.weatherEffectsEnabled = enabled;
+        if (!enabled) this.weatherEffectMode = WEATHER_MODE_OFF;
         invalidate();
     }
 
@@ -402,7 +450,6 @@ public class QiblaView extends View {
         hijriDate = hijri == null ? "" : hijri;
         hijriDateEn = hijriEn == null ? "" : hijriEn;
         hasPrayerTimes = true;
-        prayerStatus = "طريقة الحساب: أم القرى";
         invalidate();
     }
 
@@ -414,10 +461,11 @@ public class QiblaView extends View {
     public String[] getPrayerNames() { return prayerNames; }
 
     public void showAdhanBanner(String prayerName, String timeStr) {
+        String formatted12h = PrayerTimesCalculator.format12Hour(timeStr, englishMode);
         if (englishMode) {
-            adhanBannerText = "🕌 Time for " + prayerName + " Prayer (" + timeStr + ") • May Allah accept";
+            adhanBannerText = "🕌 Time for " + prayerName + " Prayer (" + formatted12h + ") • May Allah accept";
         } else {
-            adhanBannerText = "🕌 حان الآن موعد أذان " + prayerName + " (" + timeStr + ") • تقبل الله طاعتكم";
+            adhanBannerText = "🕌 حان الآن موعد أذان " + prayerName + " (" + formatted12h + ") • تقبل الله طاعتكم";
         }
         adhanBannerUntil = System.currentTimeMillis() + 25000L;
         invalidate();
@@ -802,7 +850,7 @@ public class QiblaView extends View {
 
         // 3. Prayer Times Card in Prayer pane (bottom aligns with Row 0 cards)
         float px = rightPaneX;
-        float py = h * 0.130f;
+        float py = h * 0.175f;
         float pw = paneW;
         float ph = (row0Y + cardH) - py;
         prayerCardRect.set(px, py, px + pw, py + ph);
@@ -853,6 +901,15 @@ public class QiblaView extends View {
                 drawFittedTextAligned(c, format12Hour(prayerTimes[i]), px + pw - padX, ry, maxColW);
             }
             p.setFakeBoldText(false);
+
+            // Subtle divider line between prayer rows
+            if (i < 5 && i != next && (i + 1) != next) {
+                stroke.setStyle(Paint.Style.STROKE);
+                stroke.setStrokeWidth(1.0f);
+                stroke.setColor(0x18FFFFFF);
+                float lineY = ry + rowH * 0.26f;
+                c.drawLine(px + padX * 0.8f, lineY, px + pw - padX * 0.8f, lineY, stroke);
+            }
         }
 
         // 4. Next Prayer Card in Prayer pane (aligned precisely with Row 1 cards)
@@ -875,17 +932,18 @@ public class QiblaView extends View {
         drawFittedText(c, formatNextPrayerCountdown(), px + pw * 0.5f, ny + nh * 0.78f, pw * 0.92f);
         p.setFakeBoldText(false);
 
-        // 5. Bottom Athkar Bar
+        // 5. Bottom Athkar Bar (Strictly positioned above bottom settings button)
         float barX = w * .030f;
         float barW = w * .940f;
-        float barH = Math.max(h * 0.068f, h * 0.055f * fontScale);
-        float barY = Math.min(h * 0.785f, h * 0.860f - barH);
+        float reservedBottom = dp(64);
+        float barH = Math.min(h * 0.090f, dp(48));
+        float barY = h - reservedBottom - barH - dp(4);
         RectF barRect = new RectF(barX, barY, barX + barW, barY + barH);
         roundCard(c, barRect, 14f, 1.2f);
 
         p.setTextAlign(Paint.Align.CENTER);
-        float maxTextSize = barH * 0.45f;
-        p.setTextSize(Math.min(maxTextSize, barH * 0.40f * fontScale));
+        float maxTextSize = dp(17f);
+        p.setTextSize(Math.min(maxTextSize, barH * 0.46f * fontScale));
         p.setFakeBoldText(true);
         boolean playing = SoundManager.isPlaying();
         p.setColor(playing ? 0xFF00F5C8 : goldColor());
@@ -900,55 +958,99 @@ public class QiblaView extends View {
     }
 
     private void drawPortraitLayout(Canvas c, float w, float h) {
-        float compassR = Math.min(w * .19f, h * .105f);
-        drawCompass(c, w * .50f, h * .215f, compassR);
+        float pad = dp(12);
+        float gap = dp(8);
+        boolean rtl = !englishMode;
 
-        float pad = w * .025f;
-        float gap = w * .015f;
-        float cardW = (w - pad * 2f - gap * 3f) / 4f;
-        float cardH = h * .085f;
-        float cardY = h * .360f;
+        // Top bar reservation and bottom settings button reservation
+        float topReserved = Math.max(dp(54), h * 0.105f);
+        float bottomReserved = dp(64); // clearance for elevated mainSettingsButton
+        float usableH = Math.max(dp(300), h - topReserved - bottomReserved);
 
+        // 1. Compass - Centered in upper area below top bar
+        float compassR = Math.min(w * 0.20f, usableH * 0.140f);
+        float compassCx = w * 0.50f;
+        float compassCy = topReserved + compassR * 1.05f;
+        drawCompass(c, compassCx, compassCy, compassR);
+
+        // 2. Telemetry Cards (2x2 Grid) - starting cleanly below compass
+        float cardW = (w - pad * 2f - gap) / 2f;
+        float cardH = Math.min(usableH * 0.070f, dp(40));
+        float cardY0 = compassCy + compassR * 1.15f;
+        float cardY1 = cardY0 + cardH + dp(5);
+
+        float cLeft = pad;
+        float cRight = pad + cardW + gap;
+        float primaryColX = rtl ? cRight : cLeft;
+        float secondaryColX = rtl ? cLeft : cRight;
+
+        // Row 0 - Weather
         String wIcon = (weatherInfo != null && weatherInfo.icon != null && !weatherInfo.icon.isEmpty()) ? weatherInfo.icon : "🌤️";
         String wVal = (weatherInfo != null) ? String.format(Locale.US, "%.0f°C", weatherInfo.tempC) : "--";
         String wDesc = (weatherInfo != null) ? weatherInfo.getLocalizedDesc(englishMode) : (englishMode ? "Tap for Radar" : "انقر للرادار");
         if (weatherInfo != null && weatherInfo.isOffline) {
             wDesc += englishMode ? " (GPS)" : " (أوفلاين)";
         }
-        weatherCardRect.set(pad, cardY, pad + cardW, cardY + cardH);
-        drawInfoCard(c, pad + 0 * (cardW + gap), cardY, cardW, cardH,
+        weatherCardRect.set(primaryColX, cardY0, primaryColX + cardW, cardY0 + cardH);
+        drawInfoCard(c, primaryColX, cardY0, cardW, cardH,
                 englishMode ? "Weather 🌧️" : "الطقس 🌧️",
                 wIcon + " " + wVal,
                 "", prayerAccentColor(), wDesc);
-        drawInfoCard(c, pad + 1 * (cardW + gap), cardY, cardW, cardH,
+
+        // Row 0 - Vehicle Heading
+        drawInfoCard(c, secondaryColX, cardY0, cardW, cardH,
                 englishMode ? "Heading" : "اتجاه المركبة",
                 hasHeading ? String.format(Locale.US, "%.0f°", heading) : "—",
                 "↗", hasHeading ? prayerAccentColor() : 0xFFE5B64A);
-        boolean showSpeed = speedKmh > 1f;
-        drawInfoCard(c, pad + 2 * (cardW + gap), cardY, cardW, cardH,
+
+        // Row 1 - Speed / Accuracy
+        boolean showSpeed = speedKmh > 1.8f;
+        drawInfoCard(c, primaryColX, cardY1, cardW, cardH,
                 showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
                 showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
                 showSpeed ? "🚗" : "◎", prayerAccentColor());
-        drawInfoCard(c, pad + 3 * (cardW + gap), cardY, cardW, cardH,
+
+        // Row 1 - Heading Source / Qibla
+        drawInfoCard(c, secondaryColX, cardY1, cardW, cardH,
                 englishMode ? "Heading Source" : "مصدر الاتجاه",
                 localizedHeadingSource(),
                 "🧭", goldColor());
 
-        float px = pad, py = h * .465f, pw = w - pad * 2f, ph = h * .275f;
-        roundCard(c, new RectF(px, py, px + pw, py + ph));
-        p.setTextAlign(englishMode ? Paint.Align.LEFT : Paint.Align.RIGHT);
+        // Proportional distribution for Lower Section:
+        float lowerSectionTop = cardY1 + cardH + dp(6);
+        float lowerSectionBottom = h - bottomReserved;
+        float lowerSpace = Math.max(dp(180), lowerSectionBottom - lowerSectionTop);
+
+        float ph = Math.max(dp(125), lowerSpace * 0.58f);
+        float nh = Math.max(dp(26), lowerSpace * 0.16f);
+        float athkarH = Math.max(dp(26), lowerSpace * 0.16f);
+        float interGap = Math.max(dp(4), lowerSpace * 0.05f);
+
+        // 3. Prayer Times Card
+        float px = pad;
+        float py = lowerSectionTop;
+        float pw = w - pad * 2f;
+        prayerCardRect.set(px, py, px + pw, py + ph);
+        roundCard(c, new RectF(px, py, px + pw, py + ph), 16f, 1.2f);
+
+        // Header Title with inline sync button
+        p.setTextAlign(Paint.Align.CENTER);
         p.setColor(goldColor());
-        ts(ph * .115f);
+        ts(ph * 0.088f);
         p.setFakeBoldText(true);
+        float headerY = py + ph * 0.125f;
         String prayerHeader = englishMode
-                ? ("Prayer Times (" + localizedLocationName() + ")")
-                : ("مواقيت الصلاة (" + localizedLocationName() + ")");
-        drawFittedTextAligned(c, prayerHeader, englishMode ? (px + pw * .05f) : (px + pw * .95f), py + ph * .14f, pw * .88f);
+                ? ("🕌 Prayer Times (" + localizedLocationName() + ")  🔄")
+                : ("🕌 مواقيت الصلاة (" + localizedLocationName() + ")  🔄");
+        drawFittedText(c, prayerHeader, px + pw * 0.5f, headerY, pw * 0.90f);
         p.setFakeBoldText(false);
 
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = py + ph * .27f, rowH = ph * .118f;
+        float rowStart = py + ph * 0.245f;
+        float rowH = (ph * 0.70f) / 6f;
+        float padX = pw * 0.06f;
+
         for (int i = 0; i < 6; i++) {
             float ry = rowStart + i * rowH;
             if (i == next) {
@@ -959,35 +1061,46 @@ public class QiblaView extends View {
                 stroke.setColor(0xBBFFD768);
                 c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
             }
-            ts(ph * .095f);
+            ts(Math.min(rowH * 0.48f, dp(15f) * fontScale));
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
+            p.setFakeBoldText(i == next);
             if (englishMode) {
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(icon + " " + names[i], px + pw * .06f, ry, p);
+                c.drawText(icon + "  " + names[i], px + padX, ry, p);
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(format12Hour(prayerTimes[i]), px + pw * .94f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), px + pw - padX, ry, p);
             } else {
                 p.setTextAlign(Paint.Align.RIGHT);
-                c.drawText(icon + " " + names[i], px + pw * .94f, ry, p);
+                c.drawText(icon + "  " + names[i], px + pw - padX, ry, p);
                 p.setTextAlign(Paint.Align.LEFT);
-                c.drawText(format12Hour(prayerTimes[i]), px + pw * .06f, ry, p);
+                c.drawText(format12Hour(prayerTimes[i]), px + padX, ry, p);
+            }
+            p.setFakeBoldText(false);
+
+            // Divider lines between prayer rows
+            if (i < 5 && i != next && (i + 1) != next) {
+                stroke.setStyle(Paint.Style.STROKE);
+                stroke.setStrokeWidth(1.0f);
+                stroke.setColor(0x18FFFFFF);
+                float lineY = ry + rowH * 0.26f;
+                c.drawLine(px + padX * 0.8f, lineY, px + pw - padX * 0.8f, lineY, stroke);
             }
         }
 
-        // Next Prayer Card
-        float ny = h * .755f;
-        float nh = h * .065f;
-        roundCard(c, new RectF(px, ny, px + pw, ny + nh));
+        // 4. Next Prayer Countdown Card
+        float ny = py + ph + interGap;
+        roundCard(c, new RectF(px, ny, px + pw, ny + nh), 14f, 1.2f);
         p.setTextAlign(Paint.Align.CENTER);
-        ts(nh * .36f);
+        ts(nh * 0.44f);
         p.setColor(goldColor());
         p.setFakeBoldText(true);
-        drawFittedText(c, nextPrayerText(), px + pw * .5f, ny + nh * 0.65f, pw * .90f);
+        drawFittedText(c, nextPrayerText(), px + pw * 0.5f, ny + nh * 0.65f, pw * 0.90f);
         p.setFakeBoldText(false);
 
-        // Portrait Bottom Athkar Bar
-        drawPortraitBottomAthkar(c, w, h);
+        // 5. Portrait Bottom Athkar Bar
+        float athkarY = ny + nh + interGap;
+        drawPortraitBottomAthkar(c, w, h, athkarY, athkarH);
     }
 
     private void drawBackground(Canvas c, float w, float h) {
@@ -1038,123 +1151,258 @@ public class QiblaView extends View {
     }
 
     private void drawWeatherEffects(Canvas c, float w, float h) {
-        if (!weatherEffectsEnabled) return;
+        if (!weatherEffectsEnabled || weatherEffectMode == WEATHER_MODE_OFF) return;
         initWeatherParticles();
 
         int code = (weatherInfo != null) ? weatherInfo.code : 0;
+        float currentRainMm = (weatherInfo != null) ? weatherInfo.currentRainMm : 0f;
         boolean day = isDaytime();
         long now = System.currentTimeMillis();
 
-        // 1. Realistic Rain / Drizzle / Thunderstorm (codes 51..67, 80..82, 95..99)
-        boolean isRain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99);
+        boolean isRain = false;
+        boolean isThunder = false;
+
+        if (weatherEffectMode == WEATHER_MODE_THUNDERSTORM) {
+            isRain = true;
+            isThunder = true;
+        } else if (weatherEffectMode == WEATHER_MODE_RAIN) {
+            isRain = true;
+            isThunder = false;
+        } else if (weatherEffectMode == WEATHER_MODE_CLOUDS) {
+            code = 2;
+        } else if (weatherEffectMode == WEATHER_MODE_SUN) {
+            day = true;
+            code = 0;
+        } else {
+            // Auto Live Mode: Check rain codes, current rainfall mm, or thunderstorm
+            isRain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99) || (currentRainMm > 0.05f);
+            isThunder = (code >= 95 && code <= 99);
+        }
+
         if (isRain) {
-            // Overcast rainy atmosphere tint
+            // Overcast stormy atmosphere tint (keeps UI 100% legible)
             p.setStyle(Paint.Style.FILL);
-            p.setColor(isNightTheme() ? 0x1A051218 : 0x22102530);
+            p.setColor(isNightTheme() ? 0x18051218 : 0x1C10222D);
             c.drawRect(0, 0, w, h, p);
 
-            float windSlant = dp(5.5f);
-            stroke.setStyle(Paint.Style.STROKE);
+            // Volumetric Dark Storm Clouds brooding along the upper sky
+            float cloudDrift = (now * 0.000018f * w) % (w * 1.6f) - w * 0.3f;
+            int sc1 = isNightTheme() ? 0x24121E25 : 0x2A20303C;
+            int sc2 = isNightTheme() ? 0x1A0A1318 : 0x20182630;
+            p.setColor(sc1);
+            c.drawCircle(cloudDrift, h * 0.08f, h * 0.16f, p);
+            c.drawCircle(cloudDrift + h * 0.15f, h * 0.06f, h * 0.19f, p);
+            c.drawCircle(cloudDrift + h * 0.32f, h * 0.09f, h * 0.16f, p);
+            p.setColor(sc2);
+            c.drawCircle(cloudDrift + w * 0.50f, h * 0.09f, h * 0.17f, p);
+            c.drawCircle(cloudDrift + w * 0.50f + h * 0.16f, h * 0.07f, h * 0.20f, p);
 
-            // Layer 1: Background distant fine rain
-            stroke.setStrokeWidth(dp(0.9f));
-            stroke.setColor(isNightTheme() ? 0x3380D4FF : 0x4455A2DE);
-            float bgLen = dp(11f);
-            for (int i = 0; i < RAIN_COUNT / 2; i++) {
-                float progress = ((now * rainSpeed[i] * 0.0009f) + rainY[i]) % 1.0f;
-                float px = (rainX[i] * w + (now * 0.00015f * w)) % w;
-                float py = progress * h;
-                c.drawLine(px, py, px - windSlant * 0.7f, py + bgLen, stroke);
+            // Thunderstorm Lightning & Thunder (واقع افتراضي حقيقي للبرق والرعد)
+            if (isThunder) {
+                long strikeCycle = now % 6200L;
+                if (strikeCycle >= 100L && strikeCycle <= 420L) {
+                    // Multi-stage illumination pulse
+                    int flashAlpha;
+                    if (strikeCycle < 170L) {
+                        flashAlpha = (int) (45 * ((strikeCycle - 100L) / 70.0f));
+                    } else if (strikeCycle < 210L) {
+                        flashAlpha = 20; // Inter-pulse dip
+                    } else if (strikeCycle < 330L) {
+                        float pVal = 1.0f - ((strikeCycle - 210L) / 120.0f);
+                        flashAlpha = (int) (90 * pVal); // Main blinding strike
+                    } else {
+                        float pVal = 1.0f - ((strikeCycle - 330L) / 90.0f);
+                        flashAlpha = (int) (28 * pVal); // Thunder echo afterglow
+                    }
+                    if (flashAlpha > 0) {
+                        p.setStyle(Paint.Style.FILL);
+                        p.setColor((flashAlpha << 24) | 0xD8ECFF);
+                        c.drawRect(0, 0, w, h, p);
+                    }
+
+                    // Branching electric lightning bolt across sky
+                    if (strikeCycle >= 160L && strikeCycle <= 340L) {
+                        long strikeId = now / 6200L;
+                        java.util.Random bRnd = new java.util.Random(strikeId * 31337L);
+                        float boltStartX = (0.22f + bRnd.nextFloat() * 0.56f) * w;
+                        float boltStartY = h * 0.04f;
+
+                        Path mainBolt = new Path();
+                        mainBolt.moveTo(boltStartX, boltStartY);
+                        Path branches = new Path();
+
+                        float curX = boltStartX;
+                        float curY = boltStartY;
+                        int segments = 8;
+                        float segH = (h * 0.52f) / segments;
+
+                        for (int s = 0; s < segments; s++) {
+                            float nY = curY + segH * (0.8f + bRnd.nextFloat() * 0.4f);
+                            float dx = (bRnd.nextFloat() - 0.5f) * dp(26f);
+                            float nX = curX + dx;
+                            mainBolt.lineTo(nX, nY);
+
+                            if (s == 2 || s == 4 || s == 6) {
+                                branches.moveTo(nX, nY);
+                                float brX = nX;
+                                float brY = nY;
+                                float brDir = (dx >= 0) ? 1.0f : -1.0f;
+                                for (int b = 0; b < 3; b++) {
+                                    brX += brDir * (dp(12f) + bRnd.nextFloat() * dp(14f));
+                                    brY += segH * 0.60f * (0.7f + bRnd.nextFloat() * 0.5f);
+                                    branches.lineTo(brX, brY);
+                                }
+                            }
+                            curX = nX;
+                            curY = nY;
+                        }
+
+                        // Outer electric aura
+                        stroke.setStyle(Paint.Style.STROKE);
+                        stroke.setColor(0x887AE5FF);
+                        stroke.setStrokeWidth(dp(4.8f));
+                        c.drawPath(mainBolt, stroke);
+                        stroke.setStrokeWidth(dp(2.8f));
+                        c.drawPath(branches, stroke);
+
+                        // Inner brilliant electric core
+                        stroke.setColor(0xFFFFFFFF);
+                        stroke.setStrokeWidth(dp(2.0f));
+                        c.drawPath(mainBolt, stroke);
+                        stroke.setColor(0xEEFFFFFF);
+                        stroke.setStrokeWidth(dp(1.2f));
+                        c.drawPath(branches, stroke);
+                    }
+                }
             }
 
-            // Layer 2: Foreground bright raindrops
-            stroke.setStrokeWidth(dp(1.4f));
-            stroke.setColor(isNightTheme() ? 0x77AEE5FF : 0x8868BAF0);
-            float fgLen = dp(18f);
+            float windSlant = dp(6.0f);
+            stroke.setStyle(Paint.Style.STROKE);
+
+            // Layer 1: Distant fine rain mist
+            stroke.setStrokeWidth(dp(0.75f));
+            stroke.setColor(isNightTheme() ? 0x2A80D4FF : 0x3855A2DE);
+            float mistLen = dp(9f);
+            for (int i = 0; i < MIST_COUNT; i++) {
+                float progress = ((now * mistSpeed[i] * 0.0007f) + mistY[i]) % 1.0f;
+                float px = (mistX[i] * w + (now * 0.00010f * w)) % w;
+                float py = progress * h;
+                c.drawLine(px, py, px - windSlant * 0.6f, py + mistLen, stroke);
+            }
+
+            // Layer 2: Mid-ground raindrops
+            stroke.setStrokeWidth(dp(1.2f));
+            stroke.setColor(isNightTheme() ? 0x55AEE5FF : 0x6568BAF0);
+            float midLen = dp(14f);
+            for (int i = 0; i < RAIN_COUNT / 2; i++) {
+                float progress = ((now * rainSpeed[i] * 0.0011f) + rainY[i]) % 1.0f;
+                float px = (rainX[i] * w + (now * 0.00018f * w)) % w;
+                float py = progress * h;
+                c.drawLine(px, py, px - windSlant * 0.85f, py + midLen, stroke);
+            }
+
+            // Layer 3: Foreground bright raindrops & surface splashes
+            stroke.setStrokeWidth(dp(1.5f));
+            stroke.setColor(isNightTheme() ? 0x88D6F2FF : 0x9078C8F8);
+            float fgLen = dp(19f);
             for (int i = RAIN_COUNT / 2; i < RAIN_COUNT; i++) {
-                float progress = ((now * rainSpeed[i] * 0.0014f) + rainY[i]) % 1.0f;
-                float px = (rainX[i] * w + (now * 0.00025f * w)) % w;
+                float progress = ((now * rainSpeed[i] * 0.0015f) + rainY[i]) % 1.0f;
+                float px = (rainX[i] * w + (now * 0.00028f * w)) % w;
                 float py = progress * h;
                 c.drawLine(px, py, px - windSlant, py + fgLen, stroke);
 
-                // Small realistic droplet splash near bottom
-                if (py > h * 0.85f && (i % 3 == 0)) {
-                    stroke.setStrokeWidth(dp(0.8f));
-                    stroke.setColor(0x338AD4FF);
-                    float rippleR = dp(3.5f) * ((py - h * 0.85f) / (h * 0.15f));
-                    c.drawOval(new RectF(px - rippleR * 2f, py - rippleR * 0.5f, px + rippleR * 2f, py + rippleR * 0.5f), stroke);
-                    stroke.setStrokeWidth(dp(1.4f));
+                // Realistic splash ripples on bottom ground/glass
+                if (py > h * 0.82f && (i % 2 == 0)) {
+                    stroke.setStrokeWidth(dp(0.9f));
+                    stroke.setColor(0x388AD4FF);
+                    float rippleR = dp(4.0f) * ((py - h * 0.82f) / (h * 0.18f));
+                    c.drawOval(new RectF(px - rippleR * 2.2f, py - rippleR * 0.5f, px + rippleR * 2.2f, py + rippleR * 0.5f), stroke);
+                    stroke.setStrokeWidth(dp(1.5f));
                 }
             }
+            postInvalidateDelayed(33L);
             return;
         }
 
         // 2. Realistic Fog / Dust / Haze (codes 45, 48)
         if (code == 45 || code == 48) {
             p.setStyle(Paint.Style.FILL);
-            p.setColor(isNightTheme() ? 0x22FFD54F : 0x2CFFE082);
+            p.setColor(isNightTheme() ? 0x18FFD54F : 0x20FFE082);
             c.drawRect(0, 0, w, h, p);
             float mistDrift = (now * 0.00004f * w) % (w * 1.5f) - w * 0.25f;
-            p.setColor(0x18FFF8E1);
+            p.setColor(0x12FFF8E1);
             c.drawCircle(mistDrift, h * 0.25f, h * 0.35f, p);
             c.drawCircle(mistDrift + w * 0.5f, h * 0.30f, h * 0.40f, p);
+            postInvalidateDelayed(33L);
             return;
         }
 
-        // 3. Realistic Volumetric Clouds (codes 2, 3)
-        if (code == 2 || code == 3) {
+        // 3. Realistic Volumetric Clouds (codes 1, 2, 3) - 3D Puffy Clouds with sun highlights and soft depth
+        if (code >= 1 && code <= 3) {
             p.setStyle(Paint.Style.FILL);
-            float drift1 = (now * 0.000025f * w) % (w * 1.5f) - w * 0.25f;
-            float drift2 = ((now * 0.000018f * w) + w * 0.6f) % (w * 1.5f) - w * 0.25f;
+            float drift1 = (now * 0.000022f * w) % (w * 1.6f) - w * 0.3f;
+            float drift2 = ((now * 0.000016f * w) + w * 0.55f) % (w * 1.6f) - w * 0.3f;
 
-            // Soft layered cloud lobes
-            int cloudColor1 = isNightTheme() ? 0x184A6573 : 0x247A9DAE;
-            int cloudColor2 = isNightTheme() ? 0x103A525E : 0x1C6A8D9E;
+            // Ambient translucent cloud body
+            int bodyColor = isNightTheme() ? 0x144A6573 : 0x1C7A9DAE;
+            int shadowColor = isNightTheme() ? 0x102E424C : 0x15456272;
+            int highlightColor = isNightTheme() ? 0x1E708E9D : 0x30FFF8E7;
 
-            p.setColor(cloudColor1);
-            c.drawCircle(drift1, h * 0.14f, h * 0.15f, p);
-            c.drawCircle(drift1 + h * 0.12f, h * 0.12f, h * 0.18f, p);
-            c.drawCircle(drift1 + h * 0.24f, h * 0.15f, h * 0.13f, p);
+            // Cloud Cluster 1
+            // Shaded base
+            p.setColor(shadowColor);
+            c.drawCircle(drift1 + h * 0.14f, h * 0.13f, h * 0.17f, p);
+            // Main body
+            p.setColor(bodyColor);
+            c.drawCircle(drift1, h * 0.11f, h * 0.15f, p);
+            c.drawCircle(drift1 + h * 0.13f, h * 0.09f, h * 0.18f, p);
+            c.drawCircle(drift1 + h * 0.26f, h * 0.12f, h * 0.14f, p);
+            // Sunlit rim highlight on top
+            p.setColor(highlightColor);
+            c.drawCircle(drift1 + h * 0.13f, h * 0.075f, h * 0.13f, p);
 
-            p.setColor(cloudColor2);
-            c.drawCircle(drift2, h * 0.20f, h * 0.17f, p);
-            c.drawCircle(drift2 + h * 0.15f, h * 0.18f, h * 0.21f, p);
-            c.drawCircle(drift2 + h * 0.30f, h * 0.21f, h * 0.15f, p);
+            // Cloud Cluster 2
+            p.setColor(shadowColor);
+            c.drawCircle(drift2 + h * 0.15f, h * 0.18f, h * 0.19f, p);
+            p.setColor(bodyColor);
+            c.drawCircle(drift2, h * 0.16f, h * 0.16f, p);
+            c.drawCircle(drift2 + h * 0.15f, h * 0.14f, h * 0.19f, p);
+            c.drawCircle(drift2 + h * 0.30f, h * 0.17f, h * 0.15f, p);
+            p.setColor(highlightColor);
+            c.drawCircle(drift2 + h * 0.15f, h * 0.125f, h * 0.14f, p);
+
+            postInvalidateDelayed(33L);
             return;
         }
 
-        // 4. Realistic Clear Sky (Day = Volumetric Sunbeams & Warm Corona, Night = Twinkling Stars & Shooting Star)
+        // 4. Realistic Clear Sky (Day = Radiant VR Sun & Floating Golden Motes, Night = Twinkling Stars & Shooting Star)
         if (day) {
-            // Sun location
-            float sunCx = panelSwapped ? (w * 0.88f) : (w * 0.12f);
-            float sunCy = h * 0.07f;
-            float pulse = (float) Math.sin(now * 0.0018) * dp(5f);
+            // Sun location (discrete corner glow)
+            float sunCx = panelSwapped ? (w * 0.90f) : (w * 0.10f);
+            float sunCy = h * 0.06f;
+            float pulse = (float) Math.sin(now * 0.0016) * dp(6f);
 
-            // Radiant corona glow
+            // Radiant corona glow (smooth multi-layer concentric disks without harsh line stripes)
             p.setStyle(Paint.Style.FILL);
+            p.setColor(0x06FFE89E);
+            c.drawCircle(sunCx, sunCy, h * 0.45f + pulse, p);
             p.setColor(0x0EFFF0B8);
-            c.drawCircle(sunCx, sunCy, h * 0.38f + pulse, p);
+            c.drawCircle(sunCx, sunCy, h * 0.30f + pulse * 0.6f, p);
             p.setColor(0x1CFFE082);
-            c.drawCircle(sunCx, sunCy, h * 0.22f + pulse * 0.5f, p);
+            c.drawCircle(sunCx, sunCy, h * 0.18f + pulse * 0.3f, p);
             p.setColor(0x35FFF9C4);
-            c.drawCircle(sunCx, sunCy, h * 0.11f, p);
-            p.setColor(0x70FFFFFF);
-            c.drawCircle(sunCx, sunCy, h * 0.045f, p);
+            c.drawCircle(sunCx, sunCy, h * 0.09f, p);
+            p.setColor(0xEEFFFDF5);
+            c.drawCircle(sunCx, sunCy, h * 0.038f, p);
 
-            // Volumetric soft God Rays radiating diagonally across screen
-            stroke.setStyle(Paint.Style.STROKE);
-            float dir = panelSwapped ? -1.0f : 1.0f;
-            for (int r = 0; r < 4; r++) {
-                double angleDeg = (r * 18.0) + (Math.sin(now * 0.0008 + r) * 3.0);
-                double angleRad = Math.toRadians(35.0 + angleDeg);
-                float rayLen = Math.min(w, h) * 0.85f;
-                float ex = sunCx + (float) Math.cos(angleRad) * rayLen * dir;
-                float ey = sunCy + (float) Math.sin(angleRad) * rayLen;
-
-                int rayAlpha = (int) (12 + 8 * Math.sin(now * 0.0012 + r * 1.5));
-                stroke.setColor((rayAlpha << 24) | 0xFFEAA6);
-                stroke.setStrokeWidth(dp(18f + r * 6f));
-                c.drawLine(sunCx, sunCy, ex, ey, stroke);
+            // Floating Golden Solar Motes (ذرات ضوئية ذهبية تسبح في أشعة الشمس - واقع افتراضي)
+            for (int i = 0; i < SUN_MOTE_COUNT; i++) {
+                float mx = (sunMoteX[i] * w + (float) Math.cos(now * 0.0006 + sunMotePhase[i]) * dp(14f)) % w;
+                float my = sunMoteY[i] * h + (float) Math.sin(now * 0.0012 + sunMotePhase[i]) * dp(12f);
+                float mPulse = (float) (0.40 + 0.60 * Math.sin(now * 0.0020 + sunMotePhase[i]));
+                int mAlpha = (int) (mPulse * 65);
+                p.setColor((mAlpha << 24) | 0xFFE082);
+                c.drawCircle(mx, my, dp(1.8f), p);
             }
         } else {
             // Realistic Night Sky
@@ -1208,6 +1456,7 @@ public class QiblaView extends View {
                 c.drawCircle(curMx, curMy, dp(2.2f), p);
             }
         }
+        postInvalidateDelayed(33L);
     }
 
     private void drawArabesqueGeometry(Canvas c, float w, float h, float cx, float cy, boolean wide, boolean split) {
@@ -1287,6 +1536,9 @@ public class QiblaView extends View {
         ts(minDim * (landscape ? .018f : .016f));
         p.setColor(goldColor());
         c.drawText(BuildConfig.VERSION_NAME, textX + minDim * .006f, logoCy + logoR * .72f, p);
+
+        // Top-left brand/logo touch area opens settings (convenient direct access)
+        topBarSettingsRect.set(0, 0, Math.max(textX + minDim * .20f, dp(180)), Math.max(logoCy + logoR * 1.6f, dp(58)));
 
         // Top center is kept clean with the guidance badge placed at the very top
 
@@ -1752,16 +2004,16 @@ public class QiblaView extends View {
         float w = getWidth();
         boolean landscape = (w / h) >= 1.35f;
 
-        float badgeW = Math.max(r * 1.25f, 210f);
-        float badgeH = Math.max(r * 0.135f, 26f);
+        float badgeW = Math.min(w * 0.85f, Math.max(r * 1.35f, dp(150)));
+        float badgeH = Math.max(r * 0.145f, dp(24));
 
         float badgeY;
-        if (headingMode == 1) {
-            // Standard Classic Mode: directly on top of the compass dial
-            badgeY = Math.max(dp(6), cy - r * 1.28f);
+        if (headingMode == 1 || !landscape) {
+            // Standard Classic Mode OR Portrait on mobile: directly on top of the compass dial
+            badgeY = Math.max(dp(44), cy - r * 1.25f);
         } else {
-            // Elevated Mode: raised to the very top bar
-            badgeY = landscape ? (h * 0.038f) : (h * 0.024f);
+            // Elevated Mode (landscape car screens): raised to the top bar
+            badgeY = h * 0.038f;
         }
 
         RectF badgeRect = new RectF(cx - badgeW * 0.5f, badgeY, cx + badgeW * 0.5f, badgeY + badgeH);
@@ -1902,12 +2154,12 @@ public class QiblaView extends View {
         float cw = w * .315f;
         float x = onLeft ? margin : (w - margin - cw);
 
-        float yTop = h * .145f;
-        float gap = h * .014f;
+        float yTop = h * .175f;
+        float gap = h * .010f;
 
-        float ch1 = h * .415f;
-        float ch2 = h * .140f; // Next Prayer Card
-        float ch3 = h * .175f; // Location & Status Card
+        float ch1 = h * .350f;
+        float ch2 = h * .125f; // Next Prayer Card
+        float ch3 = h * .145f; // Location & Status Card
 
         float y1 = yTop;
         float y2 = y1 + ch1 + gap;
@@ -1945,7 +2197,7 @@ public class QiblaView extends View {
                 c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .70f, x + cw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
             }
 
-            ts(ch1 * .074f);
+            ts(ch1 * .068f);
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             p.setFakeBoldText(i == next);
@@ -1962,6 +2214,15 @@ public class QiblaView extends View {
                 c.drawText(format12Hour(prayerTimes[i]), x + cw - padX, ry, p);
             }
             p.setFakeBoldText(false);
+
+            // Divider lines between prayer rows (restored with subtle elegance)
+            if (i < 5 && i != next && (i + 1) != next) {
+                stroke.setStyle(Paint.Style.STROKE);
+                stroke.setStrokeWidth(1.0f);
+                stroke.setColor(0x18FFFFFF);
+                float lineY = ry + rowH * 0.26f;
+                c.drawLine(x + padX * 0.8f, lineY, x + cw - padX * 0.8f, lineY, stroke);
+            }
         }
 
         // Card 2: الصلاة القادمة (Next Prayer Card - ENLARGED!)
@@ -1990,7 +2251,10 @@ public class QiblaView extends View {
 
         ts(ch3 * 0.17f);
         p.setColor(prayerAccentColor());
-        String placeLine = "📍 " + localizedLocationName() + "  •  " + (englishMode ? "Umm al-Qura" : "تقويم أم القرى");
+        String statusTag = (prayerStatus != null && !prayerStatus.trim().isEmpty())
+                ? prayerStatus.trim()
+                : (englishMode ? "Umm al-Qura" : "تقويم أم القرى");
+        String placeLine = "📍 " + localizedLocationName() + "  •  " + statusTag;
         drawFittedTextAligned(c, placeLine, alignX, y3 + ch3 * 0.26f, cw * 0.86f);
 
         p.setColor(prayerSecondaryColor());
@@ -2015,8 +2279,8 @@ public class QiblaView extends View {
     private void drawBottomAthkarBar(Canvas c, float w, float h) {
         float barH = Math.max(h * 0.064f, h * 0.054f * fontScale);
         float barY = Math.min(h * 0.925f, h * 0.986f - barH);
-        float startX = panelSwapped ? (w * 0.035f) : (w * 0.350f);
-        float endX = panelSwapped ? (w * 0.635f) : (w * 0.965f);
+        float startX = w * 0.345f;
+        float endX = w * 0.655f;
         RectF barRect = new RectF(startX, barY, endX, barY + barH);
 
         roundCard(c, barRect, 14f, 1.2f);
@@ -2038,16 +2302,14 @@ public class QiblaView extends View {
         p.setFakeBoldText(false);
     }
 
-    private void drawPortraitBottomAthkar(Canvas c, float w, float h) {
-        float pad = w * .025f;
-        float barH = Math.max(h * 0.060f, h * 0.050f * fontScale);
-        float barY = Math.min(h * 0.830f, h * 0.890f - barH);
+    private void drawPortraitBottomAthkar(Canvas c, float w, float h, float barY, float barH) {
+        float pad = dp(12);
         RectF barRect = new RectF(pad, barY, w - pad, barY + barH);
         roundCard(c, barRect, 14f, 1.2f);
 
         p.setTextAlign(Paint.Align.CENTER);
-        float maxTextSize = barH * 0.45f;
-        p.setTextSize(Math.min(maxTextSize, barH * 0.40f * fontScale));
+        float maxTextSize = barH * 0.46f;
+        p.setTextSize(Math.min(maxTextSize, barH * 0.42f * fontScale));
         p.setFakeBoldText(true);
         boolean playing = SoundManager.isPlaying();
         p.setColor(playing ? 0xFF00F5C8 : goldColor());
@@ -2110,8 +2372,8 @@ public class QiblaView extends View {
                 return true;
             }
 
-            // 2. Tapping on Weather card or Weather telemetry row or Prayer Times card
-            if (weatherCardRect.contains(x, y) || weatherPrayerRowRect.contains(x, y) || prayerCardRect.contains(x, y)) {
+            // 2. Tapping on Top bar logo/settings zone, Weather card, or Prayer Times card
+            if (topBarSettingsRect.contains(x, y) || weatherCardRect.contains(x, y) || weatherPrayerRowRect.contains(x, y) || prayerCardRect.contains(x, y)) {
                 return true;
             }
 
@@ -2129,6 +2391,10 @@ public class QiblaView extends View {
                 }
             }
         } else if (event.getAction() == MotionEvent.ACTION_UP) {
+            if (topBarSettingsRect.contains(x, y) && onSettingsClickListener != null) {
+                onSettingsClickListener.onSettingsClicked();
+                return true;
+            }
             if ((weatherCardRect.contains(x, y) || weatherPrayerRowRect.contains(x, y)) && onWeatherClickListener != null) {
                 onWeatherClickListener.onWeatherClicked();
                 return true;
