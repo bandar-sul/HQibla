@@ -342,101 +342,113 @@ public final class UpdateManager {
                 if (outFile.exists()) outFile.delete();
 
                 String currentUrl = apkUrl;
-                int redirects = 0;
-                while (redirects < 5) {
-                    URL u = new URL(currentUrl);
-                    conn = (HttpURLConnection) u.openConnection();
-                    conn.setConnectTimeout(12000);
-                    conn.setReadTimeout(20000);
-                    conn.setInstanceFollowRedirects(true);
-                    conn.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
-                    int codeResp = conn.getResponseCode();
-                    if (codeResp == HttpURLConnection.HTTP_MOVED_PERM
-                            || codeResp == HttpURLConnection.HTTP_MOVED_TEMP
-                            || codeResp == 307 || codeResp == 308) {
-                        String loc = conn.getHeaderField("Location");
-                        conn.disconnect();
-                        if (loc == null || loc.isEmpty()) break;
-                        currentUrl = loc;
-                        redirects++;
-                        continue;
-                    }
-                    break;
-                }
+                String[] mirrorCandidates = buildCandidateUrls(apkUrl);
+                Exception lastDownloadErr = null;
+                boolean downloadedOk = false;
 
-                if (conn == null || conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                    throw new IllegalStateException("HTTP " + (conn == null ? -1 : conn.getResponseCode()));
-                }
-
-                final int totalBytes = conn.getContentLength();
-                MessageDigest md = MessageDigest.getInstance("SHA-256");
-                byte[] buf = new byte[16384];
-                long downloaded = 0L;
-                long lastUiUpdate = 0L;
-
-                try (InputStream in = new BufferedInputStream(conn.getInputStream());
-                     FileOutputStream fos = new FileOutputStream(outFile)) {
-                    int n;
-                    while ((n = in.read(buf)) != -1) {
-                        if (cancelled.get()) {
-                            outFile.delete();
-                            return;
+                for (String candidateUrl : mirrorCandidates) {
+                    if (cancelled.get()) break;
+                    HttpURLConnection attemptConn = null;
+                    try {
+                        currentUrl = candidateUrl;
+                        int redirects = 0;
+                        while (redirects < 5) {
+                            URL u = new URL(currentUrl);
+                            attemptConn = (HttpURLConnection) u.openConnection();
+                            attemptConn.setConnectTimeout(12000);
+                            attemptConn.setReadTimeout(20000);
+                            attemptConn.setInstanceFollowRedirects(true);
+                            attemptConn.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
+                            int codeResp = attemptConn.getResponseCode();
+                            if (codeResp == HttpURLConnection.HTTP_MOVED_PERM
+                                    || codeResp == HttpURLConnection.HTTP_MOVED_TEMP
+                                    || codeResp == 307 || codeResp == 308) {
+                                String loc = attemptConn.getHeaderField("Location");
+                                attemptConn.disconnect();
+                                if (loc == null || loc.isEmpty()) break;
+                                currentUrl = loc;
+                                redirects++;
+                                continue;
+                            }
+                            break;
                         }
-                        fos.write(buf, 0, n);
-                        md.update(buf, 0, n);
-                        downloaded += n;
-                        long now = System.currentTimeMillis();
-                        if (now - lastUiUpdate >= 120L) {
-                            lastUiUpdate = now;
-                            final long dl = downloaded;
-                            activity.runOnUiThread(() -> {
-                                if (totalBytes > 0) {
-                                    int pct = (int) Math.min(100, (dl * 100L) / totalBytes);
-                                    progressBar.setIndeterminate(false);
-                                    progressBar.setProgress(pct);
-                                    status.setText(String.format(Locale.US,
-                                            en ? "Downloaded %d%% (%.1f / %.1f MB)" : "تم التحميل %d%% (%.1f / %.1f م.ب)",
-                                            pct, dl / 1048576f, totalBytes / 1048576f));
-                                } else {
-                                    status.setText(String.format(Locale.US,
-                                            en ? "Downloaded %.1f MB..." : "جاري التحميل (%.1f م.ب)...",
-                                            dl / 1048576f));
+
+                        if (attemptConn == null || attemptConn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                            throw new IllegalStateException("HTTP " + (attemptConn == null ? -1 : attemptConn.getResponseCode()));
+                        }
+
+                        if (outFile.exists()) outFile.delete();
+                        final int totalBytes = attemptConn.getContentLength();
+                        MessageDigest md = MessageDigest.getInstance("SHA-256");
+                        byte[] buf = new byte[16384];
+                        long downloaded = 0L;
+                        long lastUiUpdate = 0L;
+
+                        try (InputStream in = new BufferedInputStream(attemptConn.getInputStream());
+                             FileOutputStream fos = new FileOutputStream(outFile)) {
+                            int n;
+                            while ((n = in.read(buf)) != -1) {
+                                if (cancelled.get()) {
+                                    outFile.delete();
+                                    return;
                                 }
-                            });
+                                fos.write(buf, 0, n);
+                                md.update(buf, 0, n);
+                                downloaded += n;
+                                long now = System.currentTimeMillis();
+                                if (now - lastUiUpdate >= 120L) {
+                                    lastUiUpdate = now;
+                                    final long dl = downloaded;
+                                    activity.runOnUiThread(() -> {
+                                        if (totalBytes > 0) {
+                                            int pct = (int) Math.min(100, (dl * 100L) / totalBytes);
+                                            progressBar.setIndeterminate(false);
+                                            progressBar.setProgress(pct);
+                                            status.setText(String.format(Locale.US,
+                                                    en ? "Downloaded %d%% (%.1f / %.1f MB)" : "تم التحميل %d%% (%.1f / %.1f م.ب)",
+                                                    pct, dl / 1048576f, totalBytes / 1048576f));
+                                        } else {
+                                            status.setText(String.format(Locale.US,
+                                                    en ? "Downloaded %.1f MB..." : "جاري التحميل (%.1f م.ب)...",
+                                                    dl / 1048576f));
+                                        }
+                                    });
+                                }
+                            }
+                            fos.getFD().sync();
                         }
+
+                        String actualSha = toHex(md.digest());
+                        if (expectedSha256 != null && !expectedSha256.isEmpty() && !expectedSha256.equals(actualSha)) {
+                            outFile.delete();
+                            lastDownloadErr = new SecurityException("SHA-256 mismatch");
+                            continue;
+                        }
+
+                        downloadedOk = true;
+                        break;
+                    } catch (Exception attemptErr) {
+                        lastDownloadErr = attemptErr;
+                    } finally {
+                        if (attemptConn != null) attemptConn.disconnect();
                     }
-                    fos.getFD().sync();
                 }
 
-                String actualSha = toHex(md.digest());
-                if (expectedSha256 != null && !expectedSha256.isEmpty() && !expectedSha256.equals(actualSha)) {
-                    outFile.delete();
-                    activity.runOnUiThread(() -> {
-                        closeProgress.run();
-                        Toast.makeText(activity,
-                                en ? "Downloaded update failed SHA-256 security check"
-                                   : "فشل التحقق من بصمة الأمان SHA-256 لملف التحديث",
-                                Toast.LENGTH_LONG).show();
-                        showDownloadFallbackDialog(activity, apkUrl);
-                    });
-                    return;
+                if (!downloadedOk) {
+                    throw (lastDownloadErr != null ? lastDownloadErr : new IllegalStateException("Download failed"));
                 }
 
                 final File verifiedApk = outFile;
                 activity.runOnUiThread(() -> {
                     closeProgress.run();
-                    launchApkInstaller(activity, verifiedApk, apkUrl);
+                    launchApkInstaller(activity, code, verifiedApk, apkUrl, expectedSha256);
                 });
             } catch (Throwable t) {
                 if (outFile != null && outFile.exists()) outFile.delete();
                 if (!cancelled.get()) {
                     activity.runOnUiThread(() -> {
                         closeProgress.run();
-                        Toast.makeText(activity,
-                                en ? "Direct download unavailable — opening alternative options"
-                                   : "تعذر التنزيل المباشر — تم فتح خيارات التنزيل البديلة",
-                                Toast.LENGTH_SHORT).show();
-                        showDownloadFallbackDialog(activity, apkUrl);
+                        showOnlineRetryDialog(activity, code, apkUrl, expectedSha256);
                     });
                 }
             } finally {
@@ -445,12 +457,26 @@ public final class UpdateManager {
         }, "H9-OTA-Download").start();
     }
 
-    private static void launchApkInstaller(Activity activity, File apkFile, String fallbackUrl) {
+    private static String[] buildCandidateUrls(String apkUrl) {
+        if (apkUrl == null) return new String[0];
+        String fileName = "Qibla-v" + BuildConfig.VERSION_NAME + ".apk";
+        int slash = apkUrl.lastIndexOf('/');
+        if (slash >= 0 && slash < apkUrl.length() - 1) {
+            fileName = apkUrl.substring(slash + 1);
+        }
+        String otaMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/" + fileName;
+        if (otaMirror.equals(apkUrl)) {
+            return new String[]{apkUrl};
+        }
+        return new String[]{apkUrl, otaMirror};
+    }
+
+    private static void launchApkInstaller(Activity activity, int code, File apkFile, String apkUrl, String expectedSha256) {
         if (activity == null || activity.isFinishing() || apkFile == null || !apkFile.isFile()) return;
         final boolean en = isEn(activity);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.getPackageManager().canRequestPackageInstalls()) {
-            showInstallPermissionPrompt(activity, apkFile, fallbackUrl);
+            showInstallPermissionPrompt(activity, code, apkFile, apkUrl, expectedSha256);
             return;
         }
 
@@ -471,14 +497,14 @@ public final class UpdateManager {
                 activity.startActivity(viewIntent);
             } catch (Throwable secondErr) {
                 Toast.makeText(activity,
-                        en ? "Unable to open installer directly" : "تعذر فتح مُثبّت النظام تلقائياً",
+                        en ? "Unable to launch system package installer" : "تعذر تشغيل مُثبّت النظام تلقائياً",
                         Toast.LENGTH_LONG).show();
-                showDownloadFallbackDialog(activity, fallbackUrl);
+                showOnlineRetryDialog(activity, code, apkUrl, expectedSha256);
             }
         }
     }
 
-    private static void showInstallPermissionPrompt(Activity activity, File apkFile, String fallbackUrl) {
+    private static void showInstallPermissionPrompt(Activity activity, int code, File apkFile, String apkUrl, String expectedSha256) {
         final boolean en = isEn(activity);
         final String tag = "h9_overlay_install_perm";
         final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
@@ -552,7 +578,7 @@ public final class UpdateManager {
         retryBtn.setBackground(rBg);
         retryBtn.setOnClickListener(v -> {
             if (embedded) ((MainActivity) activity).dismissOverlayByTag(tag);
-            launchApkInstaller(activity, apkFile, fallbackUrl);
+            launchApkInstaller(activity, code, apkFile, apkUrl, expectedSha256);
         });
 
         LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, dp(activity, 48), 1f);
@@ -573,7 +599,7 @@ public final class UpdateManager {
         }
     }
 
-    public static void showDownloadFallbackDialog(Activity activity, String apkUrl) {
+    public static void showOnlineRetryDialog(Activity activity, int code, String apkUrl, String expectedSha256) {
         if (activity == null || activity.isFinishing()) return;
         final boolean en = isEn(activity);
         final String overlayTag = "h9_overlay_update_fallback";
@@ -590,13 +616,13 @@ public final class UpdateManager {
         card.setPadding(dp(activity, 24), dp(activity, 20), dp(activity, 24), dp(activity, 20));
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF171D23);
+        bg.setColor(0xF6171D23);
         bg.setCornerRadius(dp(activity, 24));
         bg.setStroke(dp(activity, 2), 0xFFE5B64A);
         card.setBackground(bg);
 
         TextView t = new TextView(activity);
-        t.setText(en ? "Download Qibla Update" : "تنزيل تحديث القبلة");
+        t.setText(en ? "Online In-App Update" : "التحديث الأونلاين داخل التطبيق");
         t.setTextColor(0xFFFFC857);
         t.setTextSize(20f);
         t.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
@@ -605,80 +631,64 @@ public final class UpdateManager {
 
         TextView msg = new TextView(activity);
         msg.setText(en
-                ? "You can download the APK from H9 Store (h9-story.com) or copy the direct link below:"
-                : "يمكنك تنزيل ملف التحديث عبر متجر هافال (h9-story.com) أو نسخ الرابط المباشر أدناه:");
+                ? "Online download did not complete. Please make sure the car is connected to the internet and tap Retry to update directly inside the app."
+                : "لم يكتمل تنزيل التحديث أونلاين. تأكد من اتصال السيارة بالإنترنت ثم اضغط إعادة المحاولة للتحديث مباشرة من داخل التطبيق دون فتح أي برامج خارجية.");
         msg.setTextColor(0xFFF1F5F6);
         msg.setTextSize(15f);
         msg.setGravity(Gravity.CENTER);
         msg.setTypeface(FontHelper.getArabicTypeface(activity));
         msg.setTextDirection(en ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
         LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-        msgLp.bottomMargin = dp(activity, 14);
+        msgLp.topMargin = dp(activity, 6);
+        msgLp.bottomMargin = dp(activity, 18);
         card.addView(msg, msgLp);
-
-        TextView urlView = new TextView(activity);
-        urlView.setText(apkUrl);
-        urlView.setTextColor(0xFF2FE0C7);
-        urlView.setTextSize(12f);
-        urlView.setGravity(Gravity.CENTER);
-        urlView.setPadding(dp(activity, 8), dp(activity, 8), dp(activity, 8), dp(activity, 8));
-        GradientDrawable urlBg = new GradientDrawable();
-        urlBg.setColor(0xFF0C1820);
-        urlBg.setCornerRadius(dp(activity, 12));
-        urlBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
-        urlView.setBackground(urlBg);
-        LinearLayout.LayoutParams urlLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-        urlLp.bottomMargin = dp(activity, 16);
-        card.addView(urlView, urlLp);
 
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
 
-        Button copyBtn = new Button(activity);
-        copyBtn.setText(en ? "📋 Copy URL" : "📋 نسخ الرابط");
-        copyBtn.setTextSize(14f);
-        copyBtn.setTextColor(0xFFFFC857);
-        copyBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
-        copyBtn.setAllCaps(false);
-        GradientDrawable copyBg = new GradientDrawable();
-        copyBg.setColor(0xFF25323A);
-        copyBg.setCornerRadius(dp(activity, 16));
-        copyBg.setStroke(dp(activity, 1), 0xFFE5B64A);
-        copyBtn.setBackground(copyBg);
-        copyBtn.setOnClickListener(v -> {
-            try {
-                android.content.ClipboardManager cm = (android.content.ClipboardManager) activity.getSystemService(Activity.CLIPBOARD_SERVICE);
-                if (cm != null) {
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Qibla APK URL", apkUrl));
-                    Toast.makeText(activity, en ? "URL copied to clipboard" : "تم نسخ الرابط للحافظة", Toast.LENGTH_SHORT).show();
-                }
-            } catch (Throwable ignored) { }
-        });
-        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(0, dp(activity, 46), 1.0f);
-        copyLp.rightMargin = dp(activity, 10);
-        row.addView(copyBtn, copyLp);
-
-        Button storeQrBtn = new Button(activity);
-        storeQrBtn.setText(en ? "📱 Store QR" : "📱 باركود المتجر");
-        storeQrBtn.setTextSize(14f);
-        storeQrBtn.setTextColor(Color.WHITE);
-        storeQrBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
-        storeQrBtn.setAllCaps(false);
-        GradientDrawable qrBg = new GradientDrawable();
-        qrBg.setColor(0xFF117A7C);
-        qrBg.setCornerRadius(dp(activity, 16));
-        qrBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
-        storeQrBtn.setBackground(qrBg);
-        storeQrBtn.setOnClickListener(v -> {
+        Button closeBtn = new Button(activity);
+        closeBtn.setText(en ? "✕ Close" : "✕ إغلاق");
+        closeBtn.setTextSize(14f);
+        closeBtn.setTextColor(0xFFFFC857);
+        closeBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        closeBtn.setAllCaps(false);
+        GradientDrawable closeBg = new GradientDrawable();
+        closeBg.setColor(0xFF25323A);
+        closeBg.setCornerRadius(dp(activity, 16));
+        closeBg.setStroke(dp(activity, 1), 0xFFE5B64A);
+        closeBtn.setBackground(closeBg);
+        closeBtn.setOnClickListener(v -> {
             if (embedded) {
                 ((MainActivity) activity).dismissOverlayByTag(overlayTag);
             } else if (d != null) {
                 d.dismiss();
             }
-            HavalStoreQrDialog.show(activity);
         });
-        row.addView(storeQrBtn, new LinearLayout.LayoutParams(0, dp(activity, 46), 1.0f));
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(0, dp(activity, 46), 0.9f);
+        closeLp.rightMargin = dp(activity, 10);
+        row.addView(closeBtn, closeLp);
+
+        Button retryBtn = new Button(activity);
+        retryBtn.setText(en ? "🔄 Retry Online" : "🔄 إعادة المحاولة أونلاين");
+        retryBtn.setTextSize(14f);
+        retryBtn.setTextColor(Color.WHITE);
+        retryBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        retryBtn.setAllCaps(false);
+        GradientDrawable retryBg = new GradientDrawable();
+        retryBg.setColor(0xFF117A7C);
+        retryBg.setCornerRadius(dp(activity, 16));
+        retryBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
+        retryBtn.setBackground(retryBg);
+        retryBtn.setOnClickListener(v -> {
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(overlayTag);
+            } else if (d != null) {
+                d.dismiss();
+            }
+            downloadAndInstall(activity, code, apkUrl, expectedSha256);
+        });
+        row.addView(retryBtn, new LinearLayout.LayoutParams(0, dp(activity, 46), 1.3f));
         card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         int paneW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : activity.getResources().getDisplayMetrics().widthPixels;

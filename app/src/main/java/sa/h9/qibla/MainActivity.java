@@ -119,7 +119,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private volatile Object microGFusedClient;
     private FrameLayout rootContainer;
     private final java.util.Map<String, Runnable> overlayDismissMap = new java.util.HashMap<>();
-    private volatile boolean startupPostDialogScheduled = false;
     private QiblaView qiblaView;
     private QiblaSensorHelper qiblaSensorHelper;
     private TextView middlewareDiagnosticText;
@@ -170,6 +169,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private int lastAdhanAlertDay = -1;
     private int lastAdhanAlertMinute = -1;
     private int lastAdhanAlertIndex = -1;
+    private volatile boolean startupPostDialogScheduled = false;
 
     private void checkAdhanAlert() {
         try {
@@ -636,33 +636,29 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 handler.postDelayed(() -> {
                     startupPostDialogScheduled = false;
                     if (!isFinishing()) {
-                        HavalStoreQrDialog.show(MainActivity.this,
-                                isEn()
-                                        ? "✅ Installed Successfully! Scan QR for Haval H9 Store & Updates"
-                                        : "✅ تم التثبيت بنجاح — امسح الباركود لمتجر هافال H9 والتحديثات");
+                        HavalStoreQrDialog.show(this, isEn()
+                                ? "Welcome! Scan QR code with your phone for direct H9 Store downloads & future updates"
+                                : "أهلاً بك! امسح الباركود بكاميرا الجوال لمتجر هافال H9 والتحديثات القادمة");
                     }
-                }, 220L);
+                }, 450L);
             }, true);
         } else if (lastChangelogVer < BuildConfig.VERSION_CODE) {
             startupPostDialogScheduled = true;
-            uiPrefs.edit().putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE).apply();
+            uiPrefs.edit()
+                    .putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE)
+                    .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                    .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                    .apply();
             handler.postDelayed(() -> {
                 if (!isFinishing()) {
-                    showChangelogDialog(() -> {
-                        uiPrefs.edit()
-                                .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
-                                .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
-                                .apply();
-                        handler.postDelayed(() -> {
-                            startupPostDialogScheduled = false;
-                            if (!isFinishing()) {
-                                HavalStoreQrDialog.show(MainActivity.this,
-                                        isEn()
-                                                ? "🎉 Updated to v" + BuildConfig.VERSION_NAME + "! Scan QR for Haval H9 Store"
-                                                : "🎉 تم التحديث إلى الإصدار " + BuildConfig.VERSION_NAME + " — امسح الباركود لمتجر هافال H9");
-                            }
-                        }, 220L);
-                    });
+                    showChangelogDialog(() -> handler.postDelayed(() -> {
+                        startupPostDialogScheduled = false;
+                        if (!isFinishing()) {
+                            HavalStoreQrDialog.show(this, isEn()
+                                    ? "Updated to v" + BuildConfig.VERSION_NAME + "! Scan QR code to visit H9 Store"
+                                    : "تم التحديث إلى الإصدار " + BuildConfig.VERSION_NAME + "! امسح الباركود لمتجر هافال H9");
+                        }
+                    }, 350L));
                 } else {
                     startupPostDialogScheduled = false;
                 }
@@ -676,10 +672,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             handler.postDelayed(() -> {
                 startupPostDialogScheduled = false;
                 if (!isFinishing()) {
-                    HavalStoreQrDialog.show(MainActivity.this,
-                            isEn()
-                                    ? "🎉 Updated / Installed Successfully! Scan QR for Haval H9 Store"
-                                    : "🎉 تم التثبيت والتحديث بنجاح — امسح الباركود لمتجر هافال H9");
+                    HavalStoreQrDialog.show(this, isEn()
+                            ? "Installation complete! Scan QR code to share or update via H9 Store"
+                            : "تم التثبيت بنجاح! امسح الباركود بكاميرا الجوال لمتجر هافال H9");
                 }
             }, 1200L);
         }
@@ -1327,11 +1322,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         String changelogText = isEn()
                 ? "◈ Version 10.0.0 — Official Automotive Release (Build 116):\n" +
-                  "• Direct In-App OTA Downloader & Installer (Fixes Car URL Error): Downloads the APK directly inside Qibla with progress bar, verifies SHA-256, and launches the native Android installer without browser URL blocks.\n" +
-                  "• Dual-Stage Prayer Engine: Astronomical GPS calculation first (NOAA + Umm Al-Qura rounding & Ramadan +120m Isha), plus optional UAQ online confirmation.\n" +
-                  "• 4-Face Swipeable Luxury Dial: 3D Kaaba Qibla Compass (Makkah distance cleanly below the vehicle Qibla badge), 12h Digital Clock + Speed, 360° Sport Compass, and Pure Analog Watch.\n" +
-                  "• 7 Royal Luxury Themes: Added Royal Burgundy & Rose Gold and Platinum Smoked Titanium synced across all screens & Floating Ball.\n" +
-                  "• Direct Auto-Launch, Primary Home Mode, True Edge-to-Edge Fullscreen, Enlarged Quick Apps, Fixed Settings QR/Developer Modals & Auto Store QR Barcode after install/update.\n\n" +
+                  "• Online-Only In-App Update (No External Apps/Browsers): Downloads and verifies SHA-256 directly inside Qibla with a live progress bar, and installs directly without opening any browser or third-party app.\n" +
+                  "• Quick Apps Button Added: Dedicated enlarged Quick Apps launcher button below Weather & inside the Floating Ball dock for instant access while driving.\n" +
+                  "• Direct Car Auto-Launch: Option to auto-open Qibla automatically on vehicle ignition or set it as your Primary Car Home Launcher + True Edge-to-Edge Fullscreen.\n" +
+                  "• Two New Ultra-Luxury Themes (7 Themes Total): Added Royal Burgundy & Rose Gold and Platinum Smoked Titanium synced across all screens & Floating Ball.\n" +
+                  "• Pure Analog Watch, Makkah Distance Under Vehicle Qibla Badge, Dual-Stage Prayer Engine (GPS + UAQ), Windy ECMWF First & Custom Adhan Upload.\n\n" +
                   "◈ Version 9.9.8 (Automotive Base):\n" +
                   "• Added multiple prayer alert sounds (2 Takbeers, Calm Chime, Makkah Takbeerat, Custom Upload, Mute) with Auto-Media Ducking (lowers car radio 70% during alert).\n" +
                   "• Pure Black OLED Night Mode: Complete glare-free black theme designed for midnight highway driving without eye fatigue.\n" +
@@ -1342,11 +1337,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                   "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
                   "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
                 : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 116):\n" +
-                  "• التحديث الهوائي المباشر داخل التطبيق (إصلاح خطأ رابط URL): تنزيل الحزمة مباشرة مع شريط تقدم، فحص بصمة الأمان SHA-256، وفتح مُثبّت النظام مباشرة دون متصفح السيارة.\n" +
-                  "• الحل الجذري لمواقيت الصلاة (مرحلتان): حساب فلكي فوري عبر GPS (معادلات NOAA وتقريب أم القرى الرسمي و+120 دقيقة في رمضان) متبوعاً بتأكيد إضافي عبر الإنترنت (UAQ).\n" +
-                  "• القرص الفاخر بـ 4 أوجه بالسحب: بوصلة القبلة الفاخرة (ونقل مسافة مكة أسفل «القبلة على يسارك»)، الساعة الرقمية + السرعة، البوصلة 360°، والساعة التناظرية الفاخرة الصافية.\n" +
-                  "• 7 ثيمات ملكية: إضافة ثيمي «🍷 عنابي ملكي وذهب وردي» و«⚜️ بلاتينيوم وتيتانيوم ملكي» على كامل الشاشات والكرة العائمة.\n" +
-                  "• فتح تلقائي كأساسي + فل سكرين كامل + تكبير صفحة التطبيقات السريعة + إصلاح استجابة الباركود وحول المطور داخل الإعدادات + خروج باركود المتجر تلقائياً بعد أي تثبيت أو تحديث.\n\n" +
+                  "• إصلاح التحديث ليكون من داخل التطبيق أونلاين فقط (دون فتح أي برامج أخرى): تنزيل الحزمة والتحقق من بصمة SHA-256 وتثبيتها مباشرة من داخل التطبيق دون فتح متصفح السيارة أو أي برنامج خارجي.\n" +
+                  "• تم إضافة زر للتطبيقات السريعة: زر مخصص أسفل الطقس وفي الكرة العائمة مع نافذة مكبرة وواضحة للوصول للتطبيقات أثناء القيادة.\n" +
+                  "• إمكانية تشغيل البرنامج تلقائياً: خيار الفتح التلقائي فور تشغيل السيارة أو التعيين كشاشة رئيسية أساسية + وضع فل سكرين لكامل الشاشة.\n" +
+                  "• إضافة ثيمين فخامة عالية (7 ثيمات ملكية): «🍷 عنابي ملكي وذهب وردي» و«⚜️ بلاتينيوم وتيتانيوم ملكي» على كامل الواجهات والكرة العائمة.\n" +
+                  "• الساعة التناظرية الصافية + نقل مسافة مكة أسفل «القبلة على يسارك» + رادار ويندي الأوروبي أولاً + تكبيرتين للأذان مع رفع الصوت المخصص + مواقيت أم القرى الجذرية.\n\n" +
                   "◈ الإصدار 9.9.8 (التحديث الجديد للسيارات):\n" +
                   "• صوتيات الأذان المتقدمة للسيارة: تكبيرتين فقط بصوت الحرم المكي الطبيعي، نغمة هادئة، أذان مخصص مرفوع، وكتم + خفض صوت ميديا السيارة تلقائياً 70% أثناء الأذان (Audio Ducking).\n" +
                   "• وضع القيادة الليلية الهادئة (Pure Black OLED Night): ثيم أسود نقي تماماً #000000 ومريح للعينين على الطرق المظلمة.\n" +
@@ -2003,12 +1998,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         .apply();
                 handler.postDelayed(() -> {
                     if (!isFinishing() && !hasActiveOverlay()) {
-                        HavalStoreQrDialog.show(MainActivity.this,
-                                isEn()
-                                        ? "🎉 Updated / Installed Successfully! Scan QR for Haval H9 Store"
-                                        : "🎉 تم التثبيت والتحديث بنجاح — امسح الباركود لمتجر هافال H9");
+                        HavalStoreQrDialog.show(this, isEn()
+                                ? "Updated successfully! Scan QR code to visit H9 Store"
+                                : "تم التحديث بنجاح! امسح الباركود بكاميرا الجوال لمتجر هافال H9");
                     }
-                }, 450L);
+                }, 900L);
             }
         } catch (Throwable ignored) { }
     }
