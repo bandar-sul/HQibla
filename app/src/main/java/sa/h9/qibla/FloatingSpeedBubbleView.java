@@ -51,6 +51,10 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         void onSyncRequested();
     }
 
+    public interface OnQuickAppsRequestedListener {
+        void onQuickAppsRequested();
+    }
+
     public interface OnDragLifecycleListener {
         void onDragStart();
         void onDragMove(float centerRawX, float centerRawY);
@@ -70,9 +74,9 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     private LinearLayout btnMuteAdhan;
     private TextView tvMuteIcon;
     private TextView tvMuteLabel;
-    private final LinearLayout[] btnLayouts = new LinearLayout[5];
-    private final TextView[] btnIcons = new TextView[5];
-    private final TextView[] btnLabels = new TextView[5];
+    private final LinearLayout[] btnLayouts = new LinearLayout[6];
+    private final TextView[] btnIcons = new TextView[6];
+    private final TextView[] btnLabels = new TextView[6];
     private int selectedButtonIdx = -1;
 
     // Dock Speed Circle views
@@ -84,6 +88,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     private WindowManager windowManager;
     private WindowManager.LayoutParams layoutParams;
     private OnBubbleActionListener actionListener;
+    private OnQuickAppsRequestedListener quickAppsListener;
     private OnDragLifecycleListener dragLifecycleListener;
 
     private float speedKmh = 0f;
@@ -231,6 +236,10 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         this.actionListener = listener;
     }
 
+    public void setQuickAppsListener(OnQuickAppsRequestedListener listener) {
+        this.quickAppsListener = listener;
+    }
+
     public void setDragLifecycleListener(OnDragLifecycleListener listener) {
         this.dragLifecycleListener = listener;
     }
@@ -328,9 +337,9 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         muteLp.leftMargin = dp(2);
         dockBarLayout.addView(btnMuteAdhan, muteLp);
 
-        // C. Five Clear Icon + Label Quick-Action Tiles
-        String[] icons = new String[]{"🕌", "🧭", "🌤️", "⚙️", "🤖"};
-        for (int i = 0; i < 5; i++) {
+        // C. Six Clear Icon + Label Quick-Action Tiles (including Quick Apps Launcher)
+        String[] icons = new String[]{"🕌", "🧭", "🌤️", "🚀", "⚙️", "🤖"};
+        for (int i = 0; i < 6; i++) {
             final int index = i;
             LinearLayout btnLayout = new LinearLayout(getContext());
             btnLayout.setOrientation(LinearLayout.VERTICAL);
@@ -339,7 +348,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
 
             TextView tvIcon = new TextView(getContext());
             tvIcon.setText(icons[i]);
-            tvIcon.setTextSize(18f);
+            tvIcon.setTextSize(17.5f);
             tvIcon.setGravity(Gravity.CENTER);
             tvIcon.setIncludeFontPadding(false);
             btnLayout.addView(tvIcon);
@@ -358,9 +367,9 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             btnIcons[i] = tvIcon;
             btnLabels[i] = tvLabel;
 
-            LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(dp(58), dp(54));
-            btnLp.leftMargin = dp(3);
-            btnLp.rightMargin = dp(3);
+            LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(dp(55), dp(54));
+            btnLp.leftMargin = dp(2.5f);
+            btnLp.rightMargin = dp(2.5f);
             dockBarLayout.addView(btnLayout, btnLp);
         }
         refreshDockLabels();
@@ -410,9 +419,9 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     private void refreshDockLabels() {
         if (btnLabels[0] == null) return;
         String[] labels = isEnglish
-                ? new String[]{"Prayers", "Qibla", "Weather", "Settings", "System"}
-                : new String[]{"المواقيت", "القبلة", "الطقس", "الإعدادات", "النظام"};
-        for (int i = 0; i < 5; i++) {
+                ? new String[]{"Prayers", "Qibla", "Weather", "Apps", "Settings", "System"}
+                : new String[]{"المواقيت", "القبلة", "الطقس", "التطبيقات", "الإعدادات", "النظام"};
+        for (int i = 0; i < 6; i++) {
             if (btnLabels[i] != null) {
                 btnLabels[i].setText(labels[i]);
             }
@@ -498,6 +507,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
                 pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFF59E0B, // Prayers
                 0xFF10B981, // Qibla
                 0xFFF59E0B, // Weather
+                0xFFFFD768, // Quick Apps
                 pal.accentColor, // App Settings
                 0xFF38BDF8  // Android System
         };
@@ -535,7 +545,19 @@ public class FloatingSpeedBubbleView extends FrameLayout {
                 collapseToBubble();
                 break;
 
-            case 3: // ⚙️ App Settings
+            case 3: // 🚀 Quick Apps Launcher Overlay
+                tvTooltipText.setText(isEnglish
+                        ? "🚀 Opening Quick Apps..."
+                        : "🚀 جاري فتح التطبيقات السريعة...");
+                collapseToBubble();
+                if (quickAppsListener != null) {
+                    quickAppsListener.onQuickAppsRequested();
+                } else {
+                    openMainActivity();
+                }
+                break;
+
+            case 4: // ⚙️ App Settings
                 tvTooltipText.setText(isEnglish
                         ? "⚙️ Opening App Settings..."
                         : "⚙️ جاري فتح إعدادات التطبيق...");
@@ -543,7 +565,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
                 collapseToBubble();
                 break;
 
-            case 4: // 🤖 Native Android OS Settings
+            case 5: // 🤖 Native Android OS Settings
                 tvTooltipText.setText(isEnglish
                         ? "🤖 Opening Android Settings..."
                         : "🤖 فتح إعدادات أندرويد...");
@@ -561,7 +583,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         int tileFill = pal.isLight ? 0xFFF1F5F9 : ((pal.cardBg & 0x00FFFFFF) | 0xF0000000);
         int activeFill = pal.isLight ? 0xFFE0F2FE : pal.activeTabBg;
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             if (btnLayouts[i] == null) continue;
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(13));
@@ -680,7 +702,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
 
         layoutParams.gravity = Gravity.TOP | Gravity.LEFT;
 
-        int targetW = Math.min(screenW - dp(16), SoundManager.isPlaying() ? dp(510) : dp(460));
+        int targetW = Math.min(screenW - dp(16), SoundManager.isPlaying() ? dp(572) : dp(518));
         int targetH = dp(118);
 
         int bubbleCenterX = layoutParams.x + layoutParams.width / 2;

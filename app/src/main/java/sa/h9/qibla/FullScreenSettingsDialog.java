@@ -85,6 +85,7 @@ public final class FullScreenSettingsDialog {
         if (overlay != null) {
             rootContainer.removeView(overlay);
         }
+        activity.syncMainButtonsVisibility();
         try {
             activity.applyImmersiveMode();
         } catch (Throwable ignored) { }
@@ -238,14 +239,18 @@ public final class FullScreenSettingsDialog {
                 "🌌 Obsidian Luxury Navy",
                 "🏜️ Desert Amber & Gold",
                 "⚪ Pearl Day",
-                "🌙 Pure Black OLED Night (Glare-free)"
+                "🌙 Pure Black OLED Night (Glare-free)",
+                "🍷 Royal Burgundy & Rose Gold (Signature Luxury)",
+                "⚜️ Platinum & Smoked Titanium (Executive Luxury)"
         } : new String[]{
-                "🌓 تلقائي (نهاري / ليلي ذكي)",
+                "🌓 تلقائي (نهاري / ليلي)",
                 "💎 زمردي ملكي وذهبي",
                 "🌌 كحلي فاخر (أوبسيديان)",
                 "🏜️ عنبر ذهبي دافئ",
                 "⚪ نهاري لؤلؤي أنيق",
-                "🌙 أسود OLED نقي (للقيادة الليلية الهادئة)"
+                "🌙 أسود OLED نقي (للقيادة الليلية الهادئة)",
+                "🍷 عنابي ملكي وذهب وردي (فخامة خاصة)",
+                "⚜️ بلاتينيوم وتيتانيوم ملكي (فخامة تنفيذية)"
         };
         int currentTheme = uiPrefs.getInt(MainActivity.KEY_THEME_MODE, QiblaView.THEME_AUTO);
         cardAppearanceContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Color Theme:" : "المظهر وثيم الألوان:", themeOptions, currentTheme, pal, isEn, pos -> {
@@ -257,22 +262,25 @@ public final class FullScreenSettingsDialog {
             new Handler(Looper.getMainLooper()).post(() -> show(activity));
         }));
 
-        // 2. Fullscreen Mode Spinner (استرجاع خيار تكبير وملء الشاشة)
+        // 2. Fullscreen Mode Spinner (True Edge-to-Edge Fullscreen)
         String[] fullscreenOptions = isEn ? new String[]{
-                "📺 Fullscreen Enabled (Hide system bars)",
-                "📱 Standard Windowed (Show system bars)"
+                "📺 True Fullscreen (Hide Status, Navigation & Cutouts)",
+                "📱 Standard Windowed (Show System Bars)"
         } : new String[]{
-                "📺 ملء وتكبير الشاشة بالكامل (إخفاء أشرطة النظام)",
+                "📺 فل سكرين لكامل الشاشة (إخفاء شريط الحالة والتنقل بالكامل)",
                 "📱 وضع النوافذ العادي (إظهار أشرطة النظام)"
         };
         boolean fullScreenOn = uiPrefs.getBoolean(MainActivity.KEY_FULLSCREEN_ENABLED, true);
-        cardAppearanceContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Fullscreen Mode:" : "ملء وتكبير الشاشة:", fullscreenOptions, fullScreenOn ? 0 : 1, pal, isEn, pos -> {
+        cardAppearanceContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Fullscreen Mode:" : "خيار فل سكرين لكامل الشاشة:", fullscreenOptions, fullScreenOn ? 0 : 1, pal, isEn, pos -> {
             boolean enabled = (pos == 0);
             uiPrefs.edit().putBoolean(MainActivity.KEY_FULLSCREEN_ENABLED, enabled).apply();
             if (activity instanceof MainActivity) {
                 activity.runOnUiThread(() -> {
                     try {
                         activity.applyImmersiveMode();
+                        showCompactToast(ctx, enabled
+                                ? (isEn ? "📺 Fullscreen Mode Enabled" : "📺 تم تفعيل وضع ملء الشاشة بالكامل")
+                                : (isEn ? "📱 System Bars Restored" : "📱 تم إظهار أشرطة النظام"));
                     } catch (Exception ignored) {}
                 });
             }
@@ -437,6 +445,28 @@ public final class FullScreenSettingsDialog {
             }
         }));
 
+        // 2b. Swipeable Dial Face Selector (Qibla, Digital Clock, Sport Compass, Luxury Analog Watch)
+        String[] dialFaceOptions = isEn ? new String[]{
+                "🧭 Luxury Qibla Compass",
+                "⌚ Digital Clock & Speed Gauge",
+                "🧭 Sport 360° Compass",
+                "🕰️ Luxury Analog Watch (Hands)"
+        } : new String[]{
+                "🧭 بوصلة القبلة الفاخرة",
+                "⌚ الساعة الرقمية وعداد السرعة",
+                "🧭 البوصلة الرياضية 360°",
+                "🕰️ الساعة التناظرية الفاخرة (عقارب)"
+        };
+        int curDialMode = uiPrefs.getInt("compass_dial_mode", QiblaView.DIAL_MODE_COMPASS);
+        if (curDialMode < 0 || curDialMode > QiblaView.DIAL_MODE_ANALOG_CLOCK) curDialMode = 0;
+        cardDisplayContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Dial Display Face (Swipeable):" : "واجهة البوصلة والساعة (سحب يمين/يسار):", dialFaceOptions, curDialMode, pal, isEn, pos -> {
+            if (qView != null) {
+                qView.setDialMode(pos);
+            } else {
+                uiPrefs.edit().putInt("compass_dial_mode", pos).apply();
+            }
+        }));
+
         // 3. Speedometer Unit Spinner
         String[] speedOptions = isEn ? new String[]{"Kilometers / Hour (km/h)", "Miles / Hour (mph)"} : new String[]{"كيلومتر في الساعة (كم/س)", "ميل في الساعة (mph)"};
         boolean isMph = uiPrefs.getBoolean("speed_mph", false);
@@ -573,24 +603,148 @@ public final class FullScreenSettingsDialog {
             uiPrefs.edit().putBoolean(MainActivity.KEY_ADHAN_SOUND_ENABLED, pos == 0).apply();
         }));
 
-        // 2. Alert Tone Selection Spinner
+        // 2. Alert Tone Selection Spinner (Top #1 = Makkah 2 Takbeers; includes custom uploaded Adhan file)
+        final boolean hasCustom = SoundManager.hasCustomAudio(ctx);
+        final String customName = SoundManager.getCustomAudioDisplayName(ctx);
+        final String customDur = SoundManager.getCustomAudioDurationFormatted(ctx);
+        String customOptionLabelEn = hasCustom
+                ? ("📂 Custom Uploaded Audio (" + customName + ")")
+                : "📂 Custom Adhan Audio File (Upload from Device)";
+        String customOptionLabelAr = hasCustom
+                ? ("📂 أذان مخصص مرفوع (" + customName + ")")
+                : "📂 أذان مخصص (رفع ملف صوتي من الجهاز)";
+
         String[] toneOptions = isEn ? new String[]{
-                "🎙️ Male Voice: 'Prayer time has begun' + Takbeerat",
-                "🗣️ Male Voice Only: 'Prayer time has begun'",
-                "🕋 Makkah Haram Takbeerat Only",
-                "🔔 Calm Dignified Islamic Chime (Automotive)",
+                "🕋 Adhan Takbeerat (2 Takbeers Only - Makkah Haram) ★",
+                "🔔 Calm Masjid Chime + 2 Takbeers",
+                "🕌 Full Makkah Haram Takbeerat (4 Takbeers)",
+                "🎵 Calm Masjid Entrance Chime Only",
+                customOptionLabelEn,
                 "🔇 Visual Notification Only (Muted)"
         } : new String[]{
-                "🎙️ صوت رجل وقور (دخل الآن وقت الصلاة) + تكبيرات",
-                "🗣️ صوت رجل فقط (دخل الآن وقت صلاة...)",
-                "🕋 تكبيرات الحرم المكي الشريف فقط",
-                "🔔 نغمة إسلامية وقورة هادئة (للسيارة)",
+                "🕋 تكبيرات الأذان (تكبيرتين فقط - صوت الحرم المكي الطبيعي) ★",
+                "🔔 نغمة دخول وقت الصلاة الهادئة + تكبيرتين",
+                "🕌 تكبيرات الحرم المكي الكاملة (4 تكبيرات)",
+                "🎵 نغمة دخول وقت الصلاة الهادئة فقط",
+                customOptionLabelAr,
                 "🔇 إشعار مرئي بدون صوت"
         };
+        final int[] toneModeIds = new int[]{
+                SoundManager.SOUND_MODE_COMBINED,
+                SoundManager.SOUND_MODE_VOICE_ONLY,
+                SoundManager.SOUND_MODE_TAKBEER_ONLY,
+                SoundManager.SOUND_MODE_CHIME,
+                SoundManager.SOUND_MODE_CUSTOM,
+                SoundManager.SOUND_MODE_MUTED
+        };
         int currentTone = uiPrefs.getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
-        cardAudioContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Alert Sound Style:" : "نغمة وصوت دخول وقت الصلاة:", toneOptions, currentTone, pal, isEn, pos -> {
-            uiPrefs.edit().putInt("adhan_sound_mode", pos).apply();
+        int selectedTonePos = 0;
+        for (int i = 0; i < toneModeIds.length; i++) {
+            if (toneModeIds[i] == currentTone) {
+                selectedTonePos = i;
+                break;
+            }
+        }
+        cardAudioContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Alert Sound Style:" : "نغمة وصوت دخول وقت الصلاة:", toneOptions, selectedTonePos, pal, isEn, pos -> {
+            int chosenMode = (pos >= 0 && pos < toneModeIds.length) ? toneModeIds[pos] : SoundManager.SOUND_MODE_COMBINED;
+            uiPrefs.edit()
+                    .putInt("adhan_sound_mode", chosenMode)
+                    .putBoolean(MainActivity.KEY_ADHAN_SOUND_ENABLED, chosenMode != SoundManager.SOUND_MODE_MUTED)
+                    .apply();
+            if (chosenMode == SoundManager.SOUND_MODE_CUSTOM && !SoundManager.hasCustomAudio(ctx)) {
+                activity.launchCustomAdhanAudioPicker();
+            }
         }));
+
+        // Luxury Custom Adhan Audio Upload Card
+        LinearLayout customAudioCard = new LinearLayout(ctx);
+        customAudioCard.setOrientation(LinearLayout.VERTICAL);
+        customAudioCard.setLayoutDirection(isEn ? View.LAYOUT_DIRECTION_LTR : View.LAYOUT_DIRECTION_RTL);
+        customAudioCard.setPadding(dp(ctx, 14), dp(ctx, 12), dp(ctx, 14), dp(ctx, 12));
+        GradientDrawable customCardBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                pal.isLight
+                        ? new int[]{0xFFF4FAFC, 0xFFE6F1F5}
+                        : new int[]{0xFF0B222C, 0xFF07161E}
+        );
+        customCardBg.setCornerRadius(dp(ctx, 14));
+        customCardBg.setStroke(dp(ctx, 1.3f), hasCustom ? pal.accentColor : (pal.goldHighlight != 0 ? (0x99FFFFFF & pal.goldHighlight) | 0x88000000 : 0x88E5B64A));
+        customAudioCard.setBackground(customCardBg);
+
+        TextView customStatusTv = new TextView(ctx);
+        if (hasCustom) {
+            String meta = (customDur != null && !customDur.isEmpty()) ? ("  •  " + customDur) : "";
+            customStatusTv.setText(isEn
+                    ? ("🎙️ Saved Audio: " + customName + meta)
+                    : ("🎙️ الصوت المرفوع: " + customName + meta));
+            customStatusTv.setTextColor(pal.isLight ? 0xFF00695C : 0xFF00F5C8);
+        } else {
+            customStatusTv.setText(isEn
+                    ? "🎙️ Upload your own Adhan audio (MP3 / M4A / WAV / OGG)"
+                    : "🎙️ إمكانية رفع ملف صوتي مخصص للأذان (MP3 / M4A / WAV)");
+            customStatusTv.setTextColor(pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFFFD768);
+        }
+        customStatusTv.setTextSize(13f);
+        customStatusTv.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        customStatusTv.setTextDirection(isEn ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
+        customStatusTv.setGravity(Gravity.CENTER_VERTICAL | (isEn ? Gravity.LEFT : Gravity.RIGHT));
+        customStatusTv.setPadding(dp(ctx, 2), 0, dp(ctx, 2), dp(ctx, 8));
+        customAudioCard.addView(customStatusTv);
+
+        LinearLayout customBtnRow = new LinearLayout(ctx);
+        customBtnRow.setOrientation(LinearLayout.HORIZONTAL);
+        customBtnRow.setLayoutDirection(isEn ? View.LAYOUT_DIRECTION_LTR : View.LAYOUT_DIRECTION_RTL);
+        customBtnRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button uploadAudioBtn = new Button(ctx);
+        uploadAudioBtn.setText(hasCustom
+                ? (isEn ? "📁 Replace Custom Audio" : "📁 تغيير الملف الصوتي")
+                : (isEn ? "📁 Upload Adhan Audio File" : "📁 رفع ملف صوتي للأذان"));
+        uploadAudioBtn.setTextSize(13.5f);
+        uploadAudioBtn.setTextColor(Color.WHITE);
+        uploadAudioBtn.setAllCaps(false);
+        uploadAudioBtn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        uploadAudioBtn.setPadding(dp(ctx, 12), dp(ctx, 6), dp(ctx, 12), dp(ctx, 6));
+        GradientDrawable upBg = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFF0B5D53, 0xFF137E72}
+        );
+        upBg.setCornerRadius(dp(ctx, 12));
+        upBg.setStroke(dp(ctx, 1.3f), pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFFFD768);
+        uploadAudioBtn.setBackground(upBg);
+        uploadAudioBtn.setOnClickListener(v -> activity.launchCustomAdhanAudioPicker());
+        LinearLayout.LayoutParams upLp = new LinearLayout.LayoutParams(0, dp(ctx, 42), 1.0f);
+        customBtnRow.addView(uploadAudioBtn, upLp);
+
+        if (hasCustom) {
+            Button deleteAudioBtn = new Button(ctx);
+            deleteAudioBtn.setText(isEn ? "🗑 Remove" : "🗑 حذف");
+            deleteAudioBtn.setTextSize(13f);
+            deleteAudioBtn.setTextColor(0xFFFFD6D6);
+            deleteAudioBtn.setAllCaps(false);
+            deleteAudioBtn.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+            deleteAudioBtn.setPadding(dp(ctx, 12), dp(ctx, 6), dp(ctx, 12), dp(ctx, 6));
+            GradientDrawable delBg = new GradientDrawable();
+            delBg.setColor(0xFF541C24);
+            delBg.setCornerRadius(dp(ctx, 12));
+            delBg.setStroke(dp(ctx, 1.2f), 0xFFEF4444);
+            deleteAudioBtn.setBackground(delBg);
+            deleteAudioBtn.setOnClickListener(v -> {
+                SoundManager.clearCustomAudio(ctx);
+                showCompactToast(ctx, isEn ? "🗑 Custom audio removed" : "🗑 تم حذف الملف الصوتي المخصص");
+                new Handler(Looper.getMainLooper()).post(() -> show(activity));
+            });
+            LinearLayout.LayoutParams delLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(ctx, 42));
+            if (isEn) delLp.leftMargin = dp(ctx, 8);
+            else delLp.rightMargin = dp(ctx, 8);
+            customBtnRow.addView(deleteAudioBtn, delLp);
+        }
+
+        customAudioCard.addView(customBtnRow);
+        LinearLayout.LayoutParams customCardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        customCardLp.topMargin = dp(ctx, 2);
+        customCardLp.bottomMargin = dp(ctx, 10);
+        cardAudioContent.addView(customAudioCard, customCardLp);
 
         // 3. Audio Ducking Car Radio Spinner
         String[] duckingOptions = isEn ? new String[]{
@@ -753,6 +907,71 @@ public final class FullScreenSettingsDialog {
         tvSysInfo.setPadding(dp(ctx, 10), dp(ctx, 6), dp(ctx, 10), dp(ctx, 8));
         cardSystemContent.addView(tvSysInfo);
 
+        // Direct Auto-Launch on Car Boot / Power-On
+        String[] autoLaunchOptions = isEn ? new String[]{
+                "🚫 Disabled (Manual App Launch)",
+                "🚀 Auto-Open App Immediately on Car Startup"
+        } : new String[]{
+                "🚫 معطل (تشغيل يدوي عند الحاجة)",
+                "🚀 فتح التطبيق مباشرة عند تشغيل السيارة"
+        };
+        boolean autoLaunchOnBoot = uiPrefs.getBoolean(MainActivity.KEY_AUTO_LAUNCH_APP_ON_BOOT, false);
+        cardSystemContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Direct Car Startup:" : "الفتح المباشر عند تشغيل السيارة:", autoLaunchOptions, autoLaunchOnBoot ? 1 : 0, pal, isEn, pos -> {
+            boolean enabled = (pos == 1);
+            uiPrefs.edit().putBoolean(MainActivity.KEY_AUTO_LAUNCH_APP_ON_BOOT, enabled).apply();
+            if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+                showCompactToast(ctx, isEn
+                        ? "⚠️ Please grant 'Display over other apps' so boot auto-launch works on Android 10+"
+                        : "⚠️ يرجى منح إذن 'الظهور فوق التطبيقات' لضمان الفتح التلقائي فور تشغيل السيارة");
+                try {
+                    Intent permIntent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + ctx.getPackageName()));
+                    permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    ctx.startActivity(permIntent);
+                } catch (Throwable ignored) { }
+            } else {
+                showCompactToast(ctx, enabled
+                        ? (isEn ? "🚀 Direct auto-open on car boot enabled" : "🚀 تم تفعيل فتح التطبيق مباشرة عند تشغيل السيارة")
+                        : (isEn ? "🚫 Direct auto-open disabled" : "🚫 تم إيقاف الفتح المباشر عند الإقلاع"));
+            }
+        }));
+
+        // Primary Car Home Launcher Mode
+        String[] launcherOptions = isEn ? new String[]{
+                "🚫 Standard App Mode",
+                "🏠 Set as Primary Car Home Launcher"
+        } : new String[]{
+                "🚫 تطبيق عادي (مع واجهة السيارة الأصلية)",
+                "🏠 تعيين التطبيق كشاشة رئيسية أساسية (Launcher)"
+        };
+        boolean primaryLauncherOn = MainActivity.isHomeLauncherEnabled(ctx);
+        cardSystemContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Primary App Mode (Home Launcher):" : "جعل التطبيق أساسياً (الواجهة الرئيسية):", launcherOptions, primaryLauncherOn ? 1 : 0, pal, isEn, pos -> {
+            boolean enabled = (pos == 1);
+            MainActivity.setHomeLauncherEnabled(ctx, enabled);
+            if (enabled) {
+                uiPrefs.edit().putBoolean(MainActivity.KEY_AUTO_LAUNCH_APP_ON_BOOT, true).apply();
+                showCompactToast(ctx, isEn
+                        ? "🏠 Primary Launcher enabled — choose 'Qibla' as your Home app"
+                        : "🏠 تم تفعيل وضع الواجهة الرئيسية — اختر «قبلة» كشاشة أساسية");
+                try {
+                    Intent homeSettings = new Intent(Settings.ACTION_HOME_SETTINGS);
+                    homeSettings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    ctx.startActivity(homeSettings);
+                } catch (Throwable t1) {
+                    try {
+                        Intent homeChooser = new Intent(Intent.ACTION_MAIN);
+                        homeChooser.addCategory(Intent.CATEGORY_HOME);
+                        homeChooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        ctx.startActivity(homeChooser);
+                    } catch (Throwable ignored) { }
+                }
+            } else {
+                showCompactToast(ctx, isEn
+                        ? "📱 Restored standard app mode"
+                        : "📱 تم الرجوع لوضع التطبيق العادي");
+            }
+        }));
+
         // Check for Updates Button
         Button updateBtn = createActionBtn(ctx, isEn ? "🔄 Check for OTA Updates" : "🔄 فحص التحديثات عن بعد (OTA)",
                 pal.isLight ? 0xFF00758A : 0xFF165B63, pal.accentColor);
@@ -839,9 +1058,13 @@ public final class FullScreenSettingsDialog {
         overlayContainer.addView(root, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            overlayContainer.setElevation(dp(ctx, 24));
+        }
         hostContainer.addView(overlayContainer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         overlayContainer.bringToFront();
+        activity.syncMainButtonsVisibility();
     }
 
     private static View createSectionCard(Context ctx, String titleText, FullScreenWeatherDialog.ThemePalette pal,

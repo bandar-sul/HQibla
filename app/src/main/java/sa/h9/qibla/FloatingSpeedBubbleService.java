@@ -88,6 +88,7 @@ public class FloatingSpeedBubbleService extends Service implements LocationListe
                 s.bubbleView.setVisibility(isForeground ? android.view.View.GONE : android.view.View.VISIBLE);
                 if (isForeground) {
                     s.hideDropTarget();
+                    QuickAppsOverlay.dismissFloatingOverlay();
                 }
             });
         }
@@ -267,6 +268,11 @@ public class FloatingSpeedBubbleService extends Service implements LocationListe
 
         bubbleView.setWindowManager(windowManager, layoutParams);
         bubbleView.setActionListener(this::syncOnlinePrayerTimes);
+        bubbleView.setQuickAppsListener(() -> {
+            if (windowManager != null) {
+                QuickAppsOverlay.showFloatingOverlay(FloatingSpeedBubbleService.this, windowManager, null);
+            }
+        });
         bubbleView.setDragLifecycleListener(new FloatingSpeedBubbleView.OnDragLifecycleListener() {
             @Override
             public void onDragStart() {
@@ -569,6 +575,7 @@ public class FloatingSpeedBubbleService extends Service implements LocationListe
             try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
         }
         hideDropTarget();
+        QuickAppsOverlay.dismissFloatingOverlay();
         if (windowManager != null && bubbleView != null) {
             try { windowManager.removeView(bubbleView); } catch (Throwable ignored) { }
             bubbleView = null;

@@ -7,8 +7,10 @@ import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.SweepGradient;
 import android.graphics.Typeface;
 import android.location.Location;
 import android.view.MotionEvent;
@@ -81,11 +83,13 @@ public class QiblaView extends View {
 
     // Luxury Theme Modes
     public static final int THEME_AUTO = 0;
-    public static final int THEME_EMERALD = 1;   // Royal Emerald & Gold (زمردي ملكي)
-    public static final int THEME_OBSIDIAN = 2;  // Obsidian Luxury Navy (كحلي فاخر)
-    public static final int THEME_AMBER = 3;     // Desert Amber & Gold (عنبر ذهبي)
-    public static final int THEME_PEARL = 4;     // Pearl Day (نهاري لؤلؤي)
-    public static final int THEME_OLED_NIGHT = 5; // Pure Black OLED Night (وضع القيادة الليلية الهادئة)
+    public static final int THEME_EMERALD = 1;           // Royal Emerald & Gold (زمردي ملكي)
+    public static final int THEME_OBSIDIAN = 2;          // Obsidian Luxury Navy (كحلي فاخر)
+    public static final int THEME_AMBER = 3;             // Desert Amber & Gold (عنبر ذهبي)
+    public static final int THEME_PEARL = 4;             // Pearl Day (نهاري لؤلؤي)
+    public static final int THEME_OLED_NIGHT = 5;        // Pure Black OLED Night (وضع القيادة الليلية الهادئة)
+    public static final int THEME_ROYAL_BURGUNDY = 6;    // Royal Burgundy & Rose Gold (عنابي ملكي وذهب وردي)
+    public static final int THEME_PLATINUM_TITANIUM = 7; // Royal Platinum & Smoked Titanium (بلاتينيوم وتيتانيوم ملكي)
 
     // Backward compatibility aliases
     public static final int THEME_DAY = THEME_PEARL;
@@ -119,12 +123,34 @@ public class QiblaView extends View {
     private boolean panelSwapped = false;
     private Typeface currentTypeface;
 
+    // Swipeable Multi-Face Compass Dial (0 = Qibla Compass, 1 = Digital Clock & Speed, 2 = Sport Compass, 3 = Luxury Analog Watch)
+    public static final int DIAL_MODE_COMPASS = 0;
+    public static final int DIAL_MODE_CLOCK_SPEED = 1;
+    public static final int DIAL_MODE_SPORT_COMPASS = 2;
+    public static final int DIAL_MODE_ANALOG_CLOCK = 3;
+    private static final int DIAL_FACE_COUNT = 4;
+
+    private int dialMode = DIAL_MODE_COMPASS;
+    private float dialSwipeVisualOffset = 0f;
+    private boolean isDraggingDial = false;
+    private float dialTouchStartX = 0f;
+    private float dialTouchStartY = 0f;
+    private float lastCompassCx = 0f;
+    private float lastCompassCy = 0f;
+    private float lastCompassR = 0f;
+    private final RectF dialHitRect = new RectF();
+    private final RectF dialDotsHitRect = new RectF();
+
     public QiblaView(Context context) {
         super(context);
         updateTypeface();
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         setLayerType(LAYER_TYPE_SOFTWARE, null);
+        try {
+            dialMode = Math.max(0, Math.min(DIAL_FACE_COUNT - 1,
+                    context.getSharedPreferences("h9_qibla_ui", Context.MODE_PRIVATE).getInt("compass_dial_mode", DIAL_MODE_COMPASS)));
+        } catch (Exception ignored) { }
         try {
             logoBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_qibla_logo);
         } catch (Exception ignored) { }
@@ -160,7 +186,17 @@ public class QiblaView extends View {
         this.onSettingsClickListener = listener;
     }
 
+    public interface OnQuickAppsClickListener {
+        void onQuickAppsClicked();
+    }
+    private OnQuickAppsClickListener onQuickAppsClickListener;
+
+    public void setOnQuickAppsClickListener(OnQuickAppsClickListener listener) {
+        this.onQuickAppsClickListener = listener;
+    }
+
     private final RectF weatherCardRect = new RectF();
+    private final RectF quickAppsBtnRect = new RectF();
     private final RectF weatherPrayerRowRect = new RectF();
     private final RectF prayerCardRect = new RectF();
     private final RectF topBarSettingsRect = new RectF();
@@ -259,7 +295,7 @@ public class QiblaView extends View {
     }
 
     public void setThemeMode(int mode) {
-        if (mode >= THEME_AUTO && mode <= THEME_OLED_NIGHT) {
+        if (mode >= THEME_AUTO && mode <= THEME_PLATINUM_TITANIUM) {
             themeMode = mode;
         } else {
             themeMode = THEME_AUTO;
@@ -564,11 +600,13 @@ public class QiblaView extends View {
 
     private int getArabesqueColor() {
         switch (getEffectiveTheme()) {
-            case THEME_OLED_NIGHT: return 0x00000000; // Zero glare for OLED night driving
-            case THEME_EMERALD: return 0x16E5B64A; // soft gold
-            case THEME_OBSIDIAN: return 0x1638B6FF; // soft celestial blue
-            case THEME_AMBER: return 0x16FFA834;    // soft warm amber
-            case THEME_PEARL: return 0x16006B78;    // soft petrol teal
+            case THEME_OLED_NIGHT: return 0x00000000;        // Zero glare for OLED night driving
+            case THEME_ROYAL_BURGUNDY: return 0x18F7C9B6;    // soft rose champagne lattice
+            case THEME_PLATINUM_TITANIUM: return 0x16E2E8F0; // soft sterling silver lattice
+            case THEME_EMERALD: return 0x16E5B64A;           // soft gold
+            case THEME_OBSIDIAN: return 0x1638B6FF;          // soft celestial blue
+            case THEME_AMBER: return 0x16FFA834;             // soft warm amber
+            case THEME_PEARL: return 0x16006B78;             // soft petrol teal
             default: return 0x16E5B64A;
         }
     }
@@ -579,6 +617,14 @@ public class QiblaView extends View {
                 return new LinearGradient(0, 0, w, h,
                         new int[]{0xFF000000, 0xFF000000, 0xFF000000},
                         new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP);
+            case THEME_ROYAL_BURGUNDY:
+                return new LinearGradient(0, 0, w, h,
+                        new int[]{0xFF120308, 0xFF280713, 0xFF0D0206},
+                        new float[]{0f, 0.60f, 1f}, Shader.TileMode.CLAMP);
+            case THEME_PLATINUM_TITANIUM:
+                return new LinearGradient(0, 0, w, h,
+                        new int[]{0xFF0A0D12, 0xFF1A222D, 0xFF080B0F},
+                        new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
             case THEME_EMERALD:
                 return new LinearGradient(0, 0, w, h,
                         new int[]{0xFF02120D, 0xFF05271F, 0xFF020D0A},
@@ -602,6 +648,8 @@ public class QiblaView extends View {
     private int cardBgFill() {
         switch (getEffectiveTheme()) {
             case THEME_OLED_NIGHT: return 0xF2080808;
+            case THEME_ROYAL_BURGUNDY: return 0xCC1E060F;
+            case THEME_PLATINUM_TITANIUM: return 0xD8121821;
             case THEME_EMERALD: return 0xC8041812;
             case THEME_OBSIDIAN: return 0xC8061422;
             case THEME_AMBER: return 0xC81E1006;
@@ -613,6 +661,8 @@ public class QiblaView extends View {
     private int cardStrokeColor() {
         switch (getEffectiveTheme()) {
             case THEME_OLED_NIGHT: return 0x33FFA834;
+            case THEME_ROYAL_BURGUNDY: return 0x55F3C1A6;
+            case THEME_PLATINUM_TITANIUM: return 0x55CBD5E1;
             case THEME_EMERALD: return 0x44E5B64A;
             case THEME_OBSIDIAN: return 0x443D8BFF;
             case THEME_AMBER: return 0x44FFA834;
@@ -623,22 +673,30 @@ public class QiblaView extends View {
 
     private int primaryTextColor() {
         if (getEffectiveTheme() == THEME_OLED_NIGHT) return 0xFFEEEEEE;
+        if (getEffectiveTheme() == THEME_ROYAL_BURGUNDY) return 0xFFFFF5F0;
+        if (getEffectiveTheme() == THEME_PLATINUM_TITANIUM) return 0xFFF8FAFC;
         return (getEffectiveTheme() == THEME_PEARL) ? 0xFF0C242C : 0xFFF5F8FA;
     }
 
     private int secondaryTextColor() {
         if (getEffectiveTheme() == THEME_OLED_NIGHT) return 0xFFA0A5A8;
+        if (getEffectiveTheme() == THEME_ROYAL_BURGUNDY) return 0xFFE6C8BE;
+        if (getEffectiveTheme() == THEME_PLATINUM_TITANIUM) return 0xFFCBD5E1;
         return (getEffectiveTheme() == THEME_PEARL) ? 0xFF2B4D58 : 0xFFB8C8CE;
     }
 
     private int mutedTextColor() {
         if (getEffectiveTheme() == THEME_OLED_NIGHT) return 0xFF6C7377;
+        if (getEffectiveTheme() == THEME_ROYAL_BURGUNDY) return 0xFFB89088;
+        if (getEffectiveTheme() == THEME_PLATINUM_TITANIUM) return 0xFF94A3B8;
         return (getEffectiveTheme() == THEME_PEARL) ? 0xFF4A6F7B : 0xFF7D929B;
     }
 
     private int goldColor() {
         switch (getEffectiveTheme()) {
             case THEME_OLED_NIGHT: return 0xFFFFB74D;
+            case THEME_ROYAL_BURGUNDY: return 0xFFF7C9B6;
+            case THEME_PLATINUM_TITANIUM: return 0xFFFFE29A;
             case THEME_EMERALD: return 0xFFFFD768;
             case THEME_OBSIDIAN: return 0xFFFFD25A;
             case THEME_AMBER: return 0xFFFFBA49;
@@ -649,17 +707,23 @@ public class QiblaView extends View {
 
     private int prayerPrimaryColor() {
         if (getEffectiveTheme() == THEME_OLED_NIGHT) return 0xFFE0E0E0;
+        if (getEffectiveTheme() == THEME_ROYAL_BURGUNDY) return 0xFFFFF3ED;
+        if (getEffectiveTheme() == THEME_PLATINUM_TITANIUM) return 0xFFF1F5F9;
         return (getEffectiveTheme() == THEME_PEARL) ? 0xFF0D2832 : 0xFFEBF3F5;
     }
 
     private int prayerSecondaryColor() {
         if (getEffectiveTheme() == THEME_OLED_NIGHT) return 0xFF8A9499;
+        if (getEffectiveTheme() == THEME_ROYAL_BURGUNDY) return 0xFFD9B2A8;
+        if (getEffectiveTheme() == THEME_PLATINUM_TITANIUM) return 0xFFCBD5E1;
         return (getEffectiveTheme() == THEME_PEARL) ? 0xFF355864 : 0xFFB4C5CB;
     }
 
     private int prayerAccentColor() {
         switch (getEffectiveTheme()) {
             case THEME_OLED_NIGHT: return 0xFFFFB74D;
+            case THEME_ROYAL_BURGUNDY: return 0xFFFFB4A2;
+            case THEME_PLATINUM_TITANIUM: return 0xFFBAE6FD;
             case THEME_EMERALD: return 0xFF00F5C8;
             case THEME_OBSIDIAN: return 0xFF38B6FF;
             case THEME_AMBER: return 0xFFFFB74D;
@@ -799,10 +863,10 @@ public class QiblaView extends View {
         float paneW = w * .455f;
         boolean rtl = !englishMode;
 
-        // 1. Enlarged Compass in its pane - high visibility, perfectly balanced
-        float compassR = Math.min(paneW * 0.44f, h * 0.170f);
+        // 1. Enlarged Compass / Interactive Dial in its pane - high visibility, clean pager dot clearance
+        float compassR = Math.min(paneW * 0.43f, h * 0.165f);
         float compassCx = leftPaneX + paneW * 0.5f;
-        float compassCy = h * 0.315f;
+        float compassCy = h * 0.305f;
         drawCompass(c, compassCx, compassCy, compassR);
 
         // 2. Telemetry Cards pushed downward, with RTL-aware row/col arrangement
@@ -955,6 +1019,9 @@ public class QiblaView extends View {
         float textY = barRect.centerY() - (fm.ascent + fm.descent) / 2f;
         drawFittedText(c, thikr, barX + barW * 0.5f, textY, barW * 0.92f);
         p.setFakeBoldText(false);
+
+        // 6. Quick Apps Launcher Button paired cleanly beside bottom Settings button in Split-Screen
+        drawPairedBottomQuickAppsButton(c, w, h);
     }
 
     private void drawPortraitLayout(Canvas c, float w, float h) {
@@ -967,16 +1034,16 @@ public class QiblaView extends View {
         float bottomReserved = dp(64); // clearance for elevated mainSettingsButton
         float usableH = Math.max(dp(300), h - topReserved - bottomReserved);
 
-        // 1. Compass - Centered in upper area below top bar
-        float compassR = Math.min(w * 0.20f, usableH * 0.140f);
+        // 1. Compass / Interactive Dial - Centered in upper area below top bar
+        float compassR = Math.min(w * 0.195f, usableH * 0.135f);
         float compassCx = w * 0.50f;
         float compassCy = topReserved + compassR * 1.05f;
         drawCompass(c, compassCx, compassCy, compassR);
 
-        // 2. Telemetry Cards (2x2 Grid) - starting cleanly below compass
+        // 2. Telemetry Cards (2x2 Grid) - starting cleanly below compass pager dots
         float cardW = (w - pad * 2f - gap) / 2f;
-        float cardH = Math.min(usableH * 0.070f, dp(40));
-        float cardY0 = compassCy + compassR * 1.15f;
+        float cardH = Math.min(usableH * 0.068f, dp(40));
+        float cardY0 = compassCy + compassR * 1.25f;
         float cardY1 = cardY0 + cardH + dp(5);
 
         float cLeft = pad;
@@ -1101,6 +1168,9 @@ public class QiblaView extends View {
         // 5. Portrait Bottom Athkar Bar
         float athkarY = ny + nh + interGap;
         drawPortraitBottomAthkar(c, w, h, athkarY, athkarH);
+
+        // 6. Quick Apps Launcher Button paired cleanly beside bottom Settings button in Portrait
+        drawPairedBottomQuickAppsButton(c, w, h);
     }
 
     private void drawBackground(Canvas c, float w, float h) {
@@ -1749,6 +1819,60 @@ public class QiblaView extends View {
                 englishMode ? "Weather" : "الطقس",
                 wIcon + " " + wVal,
                 "", prayerAccentColor(), wDesc);
+
+        // Card 6 (Below Weather): Quick App Launcher Button
+        float appsBtnY = wCardY + cardH + gap;
+        float maxAppsH = (h - dp(66)) - appsBtnY;
+        float appsBtnH = Math.max(dp(34), Math.min(cardH * 0.78f, maxAppsH));
+        quickAppsBtnRect.set(x, appsBtnY, x + cardW, appsBtnY + appsBtnH);
+        drawQuickAppsButton(c, x, appsBtnY, cardW, appsBtnH);
+    }
+
+    private void drawPairedBottomQuickAppsButton(Canvas c, float w, float h) {
+        float btnGap = dp(10);
+        float btnW = Math.min(dp(150), (w - dp(34)) * 0.48f);
+        float btnH = dp(46);
+        float totalW = btnW * 2f + btnGap;
+        float startX = (w - totalW) * 0.5f;
+        float btnX = startX + btnW + btnGap;
+        float btnY = h - dp(12) - btnH;
+        quickAppsBtnRect.set(btnX, btnY, btnX + btnW, btnY + btnH);
+        drawQuickAppsButton(c, btnX, btnY, btnW, btnH);
+    }
+
+    private void drawQuickAppsButton(Canvas c, float x, float y, float bw, float bh) {
+        RectF r = new RectF(x, y, x + bw, y + bh);
+        float radius = Math.min(dp(18), bh * 0.45f);
+        boolean night = isNightTheme();
+        int gold = goldColor();
+        int accent = prayerAccentColor();
+
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new LinearGradient(
+                x, y, x + bw, y + bh,
+                night ? new int[]{0xE80A2622, 0xEE06151C}
+                      : new int[]{0xF5FFFFFF, 0xF0DCECF2},
+                null, Shader.TileMode.CLAMP));
+        c.drawRoundRect(r, radius, radius, p);
+        p.setShader(null);
+
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(dp(1.4f));
+        stroke.setShader(new LinearGradient(
+                x, y, x + bw, y,
+                new int[]{gold, accent}, null, Shader.TileMode.CLAMP));
+        c.drawRoundRect(r, radius, radius, stroke);
+        stroke.setShader(null);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        ts(Math.min(dp(14.5f), bh * 0.37f));
+        p.setFakeBoldText(true);
+        p.setColor(night ? gold : 0xFF0A3A44);
+        String label = englishMode ? "🚀 Quick Apps" : "🚀 التطبيقات";
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float textY = r.centerY() - (fm.ascent + fm.descent) * 0.5f;
+        drawFittedText(c, label, r.centerX(), textY, bw * 0.88f);
+        p.setFakeBoldText(false);
     }
 
     private void drawInfoCard(Canvas c, float x, float y, float cw, float ch, String label, String value, String icon, int accent) {
@@ -1804,90 +1928,870 @@ public class QiblaView extends View {
         c.drawRoundRect(r, radius, radius, stroke);
     }
 
+    public int getDialMode() {
+        return dialMode;
+    }
+
+    public void setDialMode(int newMode) {
+        saveDialMode(newMode);
+        invalidate();
+    }
+
+    private void saveDialMode(int newMode) {
+        dialMode = ((newMode % DIAL_FACE_COUNT) + DIAL_FACE_COUNT) % DIAL_FACE_COUNT;
+        try {
+            getContext().getSharedPreferences("h9_qibla_ui", Context.MODE_PRIVATE)
+                    .edit()
+                    .putInt("compass_dial_mode", dialMode)
+                    .apply();
+        } catch (Exception ignored) { }
+    }
+
     private void drawCompass(Canvas c, float cx, float cy, float r) {
+        lastCompassCx = cx;
+        lastCompassCy = cy;
+        lastCompassR = r;
+        dialHitRect.set(cx - r * 1.22f, cy - r * 1.22f, cx + r * 1.22f, cy + r * 1.32f);
+
+        // Smooth ease-back when snapping after a swipe
+        if (!isDraggingDial && Math.abs(dialSwipeVisualOffset) > 0.5f) {
+            dialSwipeVisualOffset *= 0.72f;
+            if (Math.abs(dialSwipeVisualOffset) <= 0.8f) {
+                dialSwipeVisualOffset = 0f;
+            } else {
+                postInvalidateOnAnimation();
+            }
+        }
+
         boolean aligned = isQiblaAligned();
 
-        p.setStyle(Paint.Style.FILL);
-        if (aligned) {
-            p.setColor(0x2E00F5A0);
-            c.drawCircle(cx, cy, r * 1.20f, p);
-            p.setColor(0x3D00F5A0);
-            c.drawCircle(cx, cy, r * 1.12f, p);
+        // Clip circular slide zone while swiping
+        float shiftX = dialSwipeVisualOffset;
+        if (Math.abs(shiftX) > 0.5f) {
+            c.save();
+            Path clipCircle = new Path();
+            clipCircle.addCircle(cx, cy, r * 1.22f, Path.Direction.CW);
+            c.clipPath(clipCircle);
+            c.translate(shiftX, 0f);
+        }
+
+        if (dialMode == DIAL_MODE_CLOCK_SPEED) {
+            drawDigitalClockSpeedDial(c, cx, cy, r, aligned);
+            postInvalidateDelayed(500L);
+        } else if (dialMode == DIAL_MODE_SPORT_COMPASS) {
+            drawSportCompassDial(c, cx, cy, r, aligned);
+        } else if (dialMode == DIAL_MODE_ANALOG_CLOCK) {
+            drawAnalogClockDial(c, cx, cy, r, aligned);
+            postInvalidateDelayed(50L);
         } else {
-            p.setColor(isNightTheme() ? 0x1600E8D0 : 0x16006474);
-            c.drawCircle(cx, cy, r * 1.16f, p);
+            drawQiblaCompassFace(c, cx, cy, r, aligned);
         }
 
+        if (Math.abs(shiftX) > 0.5f) {
+            c.restore();
+        }
+
+        drawDialPagerDots(c, cx, cy, r);
+        drawVehicleRelativeBadge(c, cx, cy, r, aligned);
+    }
+
+    private void drawDigitalClockSpeedDial(Canvas c, float cx, float cy, float r, boolean aligned) {
+        boolean night = isNightTheme();
+        int gold = goldColor();
+        int accent = aligned ? 0xFF00F5C8 : (night ? 0xFF38BDF8 : 0xFF0284C7);
+
+        // 1. Soft Ambient Aura (RadialGradient glow)
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(
+                cx, cy, r * 1.24f,
+                new int[]{aligned ? 0x4400F5A0 : (night ? 0x3638BDF8 : 0x280284C7), 0x00000000},
+                new float[]{0.55f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.24f, p);
+        p.setShader(null);
+
+        // 2. Luxury Brushed Champagne-Gold & Sapphire Chamfered Outer Bezel
         stroke.setStyle(Paint.Style.STROKE);
-        stroke.setStrokeWidth(r * .035f);
-        stroke.setColor(aligned ? 0xFFFFD768 : (isNightTheme() ? 0xFF8A6726 : 0xFFB88E3E));
-        c.drawCircle(cx, cy, r * 1.14f, stroke);
+        stroke.setStrokeWidth(r * 0.045f);
+        stroke.setShader(new LinearGradient(
+                cx - r, cy - r, cx + r, cy + r,
+                aligned
+                        ? new int[]{0xFF00F5C8, 0xFFFFD768, 0xFF00BFA5}
+                        : (night ? new int[]{0xFFFFE599, 0xFF38BDF8, 0xFF6B4E16, 0xFF0EA5E9}
+                                 : new int[]{0xFFD4AF37, 0xFF0284C7, 0xFF7A5618}),
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.115f, stroke);
+        stroke.setShader(null);
 
-        stroke.setStrokeWidth(r * .012f);
-        stroke.setColor(aligned ? 0xFF00F5C8 : (isNightTheme() ? 0x88FFDF85 : 0x884D7783));
-        c.drawCircle(cx, cy, r * 1.08f, stroke);
+        // 3. Recessed Deep Obsidian / Pearl Dial Backing
+        p.setShader(new RadialGradient(
+                cx, cy - r * 0.15f, r * 1.09f,
+                night ? new int[]{0xFF102636, 0xFF07131D, 0xFF03080E}
+                      : new int[]{0xFFFCFEFF, 0xFFE6F1F6, 0xFFD2E4EC},
+                new float[]{0.0f, 0.72f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.09f, p);
+        p.setShader(null);
 
-        stroke.setStrokeWidth(r * .008f);
-        stroke.setColor(isNightTheme() ? 0x44FFD768 : 0x445D7E86);
-        c.drawCircle(cx, cy, r * 1.12f, stroke);
+        // Subtle inner satin glass highlight ring
+        stroke.setStrokeWidth(r * 0.008f);
+        stroke.setColor(night ? 0x26FFFFFF : 0x55FFFFFF);
+        c.drawCircle(cx, cy, r * 1.06f, stroke);
 
-        stroke.setStrokeWidth(r * .012f);
-        stroke.setColor(aligned ? 0xFF00F5C8 : goldColor());
-        if (aligned) {
-            p.setShadowLayer(24f, 0, 0, 0xAA00F5C8);
+        // Inner fine champagne gold bezel track
+        stroke.setStrokeWidth(r * 0.011f);
+        stroke.setColor(aligned ? 0xFF00F5C8 : ((0xAA << 24) | (gold & 0x00FFFFFF)));
+        c.drawCircle(cx, cy, r * 1.02f, stroke);
+
+        // 4. Precision Chronometer Tick Track & Crimson Sport Redline
+        float tickR = r * 0.945f;
+        for (int i = 0; i < 60; i++) {
+            double deg = 135.0 + (i / 59.0) * 270.0;
+            double rad = Math.toRadians(deg);
+            boolean cardinal = (i % 15 == 0);
+            boolean major = (i % 5 == 0);
+            boolean redline = (i >= 48);
+            float len = cardinal ? r * 0.10f : (major ? r * 0.075f : r * 0.040f);
+            stroke.setStrokeWidth(cardinal ? r * 0.020f : (major ? r * 0.014f : r * 0.007f));
+            if (redline) {
+                stroke.setColor(major ? 0xFFFF5252 : 0xAAEF4444);
+            } else if (cardinal) {
+                stroke.setColor(gold);
+            } else {
+                stroke.setColor(major ? (night ? 0xFFE2E8F0 : 0xFF1E293B) : (night ? 0x5594A3B8 : 0x6664748B));
+            }
+            c.drawLine(
+                    cx + (float) Math.cos(rad) * (tickR - len),
+                    cy + (float) Math.sin(rad) * (tickR - len),
+                    cx + (float) Math.cos(rad) * tickR,
+                    cy + (float) Math.sin(rad) * tickR,
+                    stroke);
         }
-        c.drawCircle(cx, cy, r, stroke);
+
+        // 5. Glowing Gradient Progress Sweep Arc + Luminous Tip Orb
+        Calendar cal = Calendar.getInstance();
+        int sec = cal.get(Calendar.SECOND);
+        float sweepRatio = (speedKmh > 1.5f)
+                ? Math.min(1f, speedKmh / 160f)
+                : (sec / 60f);
+        float sweepDeg = Math.max(2f, 270f * sweepRatio);
+        RectF arcOval = new RectF(cx - r * 0.965f, cy - r * 0.965f, cx + r * 0.965f, cy + r * 0.965f);
+
+        // Faint full base arc track
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeWidth(r * 0.024f);
+        stroke.setColor(night ? 0x2294A3B8 : 0x22475569);
+        c.drawArc(arcOval, 135f, 270f, false, stroke);
+
+        // Luminous active arc
+        stroke.setShader(new SweepGradient(cx, cy,
+                speedKmh > 110f ? new int[]{0xFF38BDF8, 0xFFFFB74D, 0xFFEF4444, 0xFF38BDF8}
+                                : new int[]{0xFF38BDF8, 0xFF00F5C8, 0xFFFFD768, 0xFF38BDF8},
+                null));
+        stroke.setStrokeWidth(r * 0.030f);
+        c.drawArc(arcOval, 135f, sweepDeg, false, stroke);
+        stroke.setShader(null);
+        stroke.setStrokeCap(Paint.Cap.BUTT);
+
+        // Glowing leading tip orb on the arc
+        double tipRad = Math.toRadians(135f + sweepDeg);
+        float tipX = cx + (float) Math.cos(tipRad) * (r * 0.965f);
+        float tipY = cy + (float) Math.sin(tipRad) * (r * 0.965f);
+        p.setColor(speedKmh > 110f ? 0xFFFF5252 : accent);
+        p.setShadowLayer(10f, 0, 0, speedKmh > 110f ? 0xAAFF5252 : 0xBB00F5C8);
+        c.drawCircle(tipX, tipY, r * 0.028f, p);
         p.clearShadowLayer();
 
-        stroke.setStrokeWidth(r * .005f);
-        stroke.setColor(isNightTheme() ? 0x4430BFAF : 0x33006474);
-        c.drawCircle(cx, cy, r * .83f, stroke);
+        // Subtle inner chronograph ring for crisp depth
+        stroke.setStrokeWidth(r * 0.005f);
+        stroke.setColor(night ? 0x26FFD768 : 0x260284C7);
+        c.drawCircle(cx, cy, r * 0.72f, stroke);
 
+        // 6. Luxurious Qibla Rim Chevron Beacon orbiting the gold track
+        if (hasLocation) {
+            float qAngle = hasHeading ? normalize(qiblaBearing - heading) : qiblaBearing;
+            double qr = Math.toRadians(qAngle - 90f);
+            float qx = cx + (float) Math.cos(qr) * (r * 1.02f);
+            float qy = cy + (float) Math.sin(qr) * (r * 1.02f);
+            p.setColor(aligned ? 0xFF00F5C8 : 0xFFFFD768);
+            p.setShadowLayer(14f, 0, 0, aligned ? 0xCC00F5C8 : 0xAAFFD768);
+            c.drawCircle(qx, qy, r * 0.056f, p);
+            p.clearShadowLayer();
+            p.setColor(night ? 0xFF07131D : 0xFFFFFFFF);
+            c.drawCircle(qx, qy, r * 0.022f, p);
+        }
+
+        // 7. Crisp Luxury Digital 12-Hour Time + Champagne Pill Badge
+        int h24 = cal.get(Calendar.HOUR_OF_DAY);
+        int h12 = h24 % 12;
+        if (h12 == 0) h12 = 12;
+        int min = cal.get(Calendar.MINUTE);
+        String amPm = englishMode ? (h24 >= 12 ? "PM" : "AM") : (h24 >= 12 ? "م" : "ص");
+        String timeMain = String.format(Locale.US, "%d:%02d", h12, min);
+        String secStr = String.format(Locale.US, ":%02d  •  %s", sec, amPm);
+
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(true);
+        p.setColor(night ? 0xFFFFFFFF : 0xFF0B1F2A);
+        p.setShadowLayer(12f, 0, 2f, night ? 0x6638BDF8 : 0x220284C7);
+        ts(r * 0.37f);
+        c.drawText(timeMain, cx, cy - r * 0.07f, p);
+        p.clearShadowLayer();
+
+        // Seconds + AM/PM Pill
+        RectF secPill = new RectF(cx - r * 0.34f, cy + r * 0.03f, cx + r * 0.34f, cy + r * 0.21f);
+        p.setColor(night ? 0x66122B3B : 0xAAEBF4F8);
+        c.drawRoundRect(secPill, secPill.height() * 0.5f, secPill.height() * 0.5f, p);
+        stroke.setStrokeWidth(r * 0.006f);
+        stroke.setColor((0x66 << 24) | (gold & 0x00FFFFFF));
+        c.drawRoundRect(secPill, secPill.height() * 0.5f, secPill.height() * 0.5f, stroke);
+
+        ts(r * 0.105f);
+        p.setColor(gold);
+        Paint.FontMetrics sFm = p.getFontMetrics();
+        c.drawText(secStr, cx, secPill.centerY() - (sFm.ascent + sFm.descent) * 0.5f, p);
+
+        // 8. Recessed Telemetry Instrument Pill (Speed KM/H or Next Prayer)
+        String subLine;
+        int subColor;
+        if (speedKmh > 1.5f) {
+            subLine = String.format(Locale.US, englishMode ? "🚗 %.0f KM/H" : "🚗 %.0f كم/س", speedKmh);
+            subColor = night ? 0xFF00F5C8 : 0xFF00695C;
+        } else if (hasPrayerTimes) {
+            int nextIdx = getNextPrayerIndex();
+            String[] pNames = activePrayerNames();
+            String pLabel = (nextIdx >= 0 && nextIdx < pNames.length) ? pNames[nextIdx] : "";
+            String pTime = (nextIdx >= 0 && nextIdx < prayerTimes.length) ? format12Hour(prayerTimes[nextIdx]) : "";
+            subLine = "🕌 " + pLabel + "  •  " + pTime;
+            subColor = night ? 0xFFFDE68A : 0xFF8A5A00;
+        } else {
+            subLine = englishMode ? "0 KM/H" : "0 كم/س";
+            subColor = secondaryTextColor();
+        }
+        RectF telPill = new RectF(cx - r * 0.58f, cy + r * 0.29f, cx + r * 0.58f, cy + r * 0.50f);
+        p.setColor(night ? 0xAA0A1D29 : 0xCCFFFFFF);
+        c.drawRoundRect(telPill, telPill.height() * 0.48f, telPill.height() * 0.48f, p);
+        stroke.setStrokeWidth(r * 0.007f);
+        stroke.setColor(speedKmh > 1.5f ? (night ? 0x8800F5C8 : 0x88007A6C) : (night ? 0x77FFD768 : 0x66B88E3E));
+        c.drawRoundRect(telPill, telPill.height() * 0.48f, telPill.height() * 0.48f, stroke);
+
+        ts(r * 0.105f);
+        p.setColor(subColor);
+        Paint.FontMetrics tFm = p.getFontMetrics();
+        drawFittedText(c, subLine, cx, telPill.centerY() - (tFm.ascent + tFm.descent) * 0.5f, telPill.width() * 0.88f);
+        p.setFakeBoldText(false);
+    }
+
+    private void drawSportCompassDial(Canvas c, float cx, float cy, float r, boolean aligned) {
+        boolean night = isNightTheme();
+        int gold = goldColor();
+
+        // 1. Soft Radial Aura
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(
+                cx, cy, r * 1.24f,
+                new int[]{aligned ? 0x4400F5A0 : (night ? 0x340EA5E9 : 0x240284C7), 0x00000000},
+                new float[]{0.55f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.24f, p);
+        p.setShader(null);
+
+        // 2. Brushed Metallic & Gold Outer Bezel matching Face 0 & Face 1
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(r * 0.045f);
+        stroke.setShader(new LinearGradient(
+                cx - r, cy - r, cx + r, cy + r,
+                aligned
+                        ? new int[]{0xFF00F5C8, 0xFFFFD768, 0xFF00BFA5}
+                        : (night ? new int[]{0xFF7DD3FC, 0xFFFFE599, 0xFF1E3A5F, 0xFF38BDF8}
+                                 : new int[]{0xFF0284C7, 0xFFD4AF37, 0xFF0C4A6E}),
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.115f, stroke);
+        stroke.setShader(null);
+
+        // 3. Recessed Radial Instrument Dial Surface
+        p.setShader(new RadialGradient(
+                cx, cy - r * 0.15f, r * 1.09f,
+                night ? new int[]{0xFF0F2433, 0xFF07121B, 0xFF03080D}
+                      : new int[]{0xFFFCFEFF, 0xFFE6F1F6, 0xFFD2E4EC},
+                new float[]{0.0f, 0.72f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.09f, p);
+        p.setShader(null);
+
+        // Gold chamfer inner track
+        stroke.setStrokeWidth(r * 0.010f);
+        stroke.setColor(aligned ? 0xFF00F5C8 : ((0x99 << 24) | (gold & 0x00FFFFFF)));
+        c.drawCircle(cx, cy, r * 1.02f, stroke);
+
+        float rot = hasHeading ? -heading : 0f;
+        c.save();
+        c.rotate(rot, cx, cy);
+
+        // 4. Illuminated Rounded Directional Arcs (Sapphire North, Ruby South)
+        RectF ringOval = new RectF(cx - r * 0.91f, cy - r * 0.91f, cx + r * 0.91f, cy + r * 0.91f);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeWidth(r * 0.052f);
+        stroke.setColor(0xBB0EA5E9);
+        stroke.setShadowLayer(12f, 0, 0, 0x8838BDF8);
+        c.drawArc(ringOval, -132f, 84f, false, stroke); // North Sapphire Glow Arc
+        stroke.setColor(0xBBEF4444);
+        stroke.setShadowLayer(12f, 0, 0, 0x88EF4444);
+        c.drawArc(ringOval, 48f, 84f, false, stroke);   // South Ruby Glow Arc
+        stroke.clearShadowLayer();
+        stroke.setStrokeCap(Paint.Cap.BUTT);
+
+        // Fine interior champagne-gold compass rose ring & 4-axis crosshair watermark
+        stroke.setStrokeWidth(r * 0.006f);
+        stroke.setColor(night ? 0x33FFD768 : 0x33B88E3E);
+        c.drawCircle(cx, cy, r * 0.50f, stroke);
+        c.drawLine(cx, cy - r * 0.48f, cx, cy + r * 0.48f, stroke);
+        c.drawLine(cx - r * 0.48f, cy, cx + r * 0.48f, cy, stroke);
+
+        // Rotating 360° numeric scale & ticks (every 10° tick, every 20° numeric label)
+        for (int deg = 0; deg < 360; deg += 5) {
+            double a = Math.toRadians(deg - 90);
+            boolean major = (deg % 20 == 0);
+            boolean med = (deg % 10 == 0);
+            float len = major ? r * 0.080f : (med ? r * 0.048f : r * 0.025f);
+            stroke.setStrokeWidth(major ? r * 0.012f : r * 0.006f);
+            stroke.setColor(major ? (night ? 0xFFF8FAFC : 0xFF0F172A) : (night ? 0x7794A3B8 : 0x7764748B));
+            c.drawLine(
+                    cx + (float) Math.cos(a) * (r * 1.02f - len),
+                    cy + (float) Math.sin(a) * (r * 1.02f - len),
+                    cx + (float) Math.cos(a) * (r * 1.02f),
+                    cy + (float) Math.sin(a) * (r * 1.02f),
+                    stroke);
+            if (deg % 40 == 0) {
+                float tr = r * 0.80f;
+                p.setStyle(Paint.Style.FILL);
+                p.setTextAlign(Paint.Align.CENTER);
+                ts(r * 0.072f);
+                p.setColor(night ? 0xCCCBD5E1 : 0xCC334155);
+                Paint.FontMetrics fm = p.getFontMetrics();
+                c.drawText(String.valueOf(deg),
+                        cx + (float) Math.cos(a) * tr,
+                        cy + (float) Math.sin(a) * tr - (fm.ascent + fm.descent) * 0.5f, p);
+            }
+        }
+
+        drawCardinal(c, "N", cx, cy, r * 0.61f, 0, 0xFF38BDF8);
+        drawCardinal(c, "NE", cx, cy, r * 0.61f, 45, secondaryTextColor());
+        drawCardinal(c, "E", cx, cy, r * 0.61f, 90, gold);
+        drawCardinal(c, "SE", cx, cy, r * 0.61f, 135, secondaryTextColor());
+        drawCardinal(c, "S", cx, cy, r * 0.61f, 180, 0xFFEF4444);
+        drawCardinal(c, "SW", cx, cy, r * 0.61f, 225, secondaryTextColor());
+        drawCardinal(c, "W", cx, cy, r * 0.61f, 270, gold);
+        drawCardinal(c, "NW", cx, cy, r * 0.61f, 315, secondaryTextColor());
+
+        c.restore();
+
+        // 5. Golden Qibla Rim Beacon orbiting outer track
+        if (hasLocation) {
+            float arrow = hasHeading ? normalize(qiblaBearing - heading) : qiblaBearing;
+            double qr = Math.toRadians(arrow - 90f);
+            float qx = cx + (float) Math.cos(qr) * (r * 1.02f);
+            float qy = cy + (float) Math.sin(qr) * (r * 1.02f);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(aligned ? 0xFF00F5C8 : 0xFFFFD768);
+            p.setShadowLayer(14f, 0, 0, aligned ? 0xCC00F5C8 : 0xAAFFD768);
+            c.drawCircle(qx, qy, r * 0.058f, p);
+            p.clearShadowLayer();
+            p.setColor(night ? 0xFF07131D : 0xFFFFFFFF);
+            c.drawCircle(qx, qy, r * 0.022f, p);
+        }
+
+        // 6. Sculpted 3D-Beveled Center Metallic Droplet Bearing Hub
+        float hubR = r * 0.255f;
+        Path dropletLeft = new Path();
+        dropletLeft.moveTo(cx, cy - hubR * 1.82f);
+        dropletLeft.lineTo(cx - hubR * 0.90f, cy - hubR * 0.22f);
+        dropletLeft.lineTo(cx, cy - hubR * 0.22f);
+        dropletLeft.close();
+
+        Path dropletRight = new Path();
+        dropletRight.moveTo(cx, cy - hubR * 1.82f);
+        dropletRight.lineTo(cx + hubR * 0.90f, cy - hubR * 0.22f);
+        dropletRight.lineTo(cx, cy - hubR * 0.22f);
+        dropletRight.close();
+
+        p.setStyle(Paint.Style.FILL);
+        p.setShadowLayer(14f, 0, 4f, night ? 0x99000000 : 0x44000000);
+        p.setColor(night ? 0xFFF8FAFC : 0xFF334155);
+        c.drawPath(dropletLeft, p);
+        p.setColor(night ? 0xFF94A3B8 : 0xFF1E293B);
+        c.drawPath(dropletRight, p);
+
+        // Metallic Hub Outer Ring
+        p.setShader(new LinearGradient(cx - hubR, cy - hubR, cx + hubR, cy + hubR,
+                night ? new int[]{0xFFFFE599, 0xFF64748B, 0xFF1E293B}
+                      : new int[]{0xFFD4AF37, 0xFF475569, 0xFF1E293B},
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, hubR, p);
+        p.setShader(null);
+        p.clearShadowLayer();
+
+        // Recessed Inner Glass Hub
+        p.setShader(new RadialGradient(cx, cy - hubR * 0.18f, hubR * 0.84f,
+                night ? new int[]{0xFF132A3A, 0xFF07131C}
+                      : new int[]{0xFFFFFFFF, 0xFFE2EFF5},
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, hubR * 0.82f, p);
+        p.setShader(null);
+
+        stroke.setStrokeWidth(r * 0.008f);
+        stroke.setColor((0x88 << 24) | (gold & 0x00FFFFFF));
+        c.drawCircle(cx, cy, hubR * 0.82f, stroke);
+
+        String[] cardinals = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+        String cardLabel = hasHeading ? cardinals[Math.round(normalize(heading) / 45f) % 8] : "—";
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(true);
+        p.setColor(night ? 0xFFFFFFFF : 0xFF0F172A);
+        ts(hubR * 0.86f);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        c.drawText(cardLabel, cx, cy - (fm.ascent + fm.descent) * 0.45f, p);
+
+        if (hasHeading) {
+            RectF degPill = new RectF(cx - r * 0.22f, cy + hubR * 1.15f, cx + r * 0.22f, cy + hubR * 1.72f);
+            p.setColor(night ? 0xCC0A1D29 : 0xE6FFFFFF);
+            c.drawRoundRect(degPill, degPill.height() * 0.5f, degPill.height() * 0.5f, p);
+            stroke.setStrokeWidth(r * 0.006f);
+            stroke.setColor(aligned ? 0x9900F5C8 : 0x8838BDF8);
+            c.drawRoundRect(degPill, degPill.height() * 0.5f, degPill.height() * 0.5f, stroke);
+
+            ts(r * 0.088f);
+            p.setColor(aligned ? 0xFF00F5C8 : (night ? 0xFF38BDF8 : 0xFF0284C7));
+            Paint.FontMetrics dfm = p.getFontMetrics();
+            c.drawText(String.format(Locale.US, "%.0f°", normalize(heading)),
+                    cx, degPill.centerY() - (dfm.ascent + dfm.descent) * 0.5f, p);
+        }
+        p.setFakeBoldText(false);
+    }
+
+    private void drawAnalogClockDial(Canvas c, float cx, float cy, float r, boolean aligned) {
+        boolean night = isNightTheme();
+        int gold = goldColor();
+
+        // 1. Soft Luminous Radial Aura
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(
+                cx, cy, r * 1.25f,
+                new int[]{aligned ? 0x4E00F5A0 : (night ? 0x34FFD768 : 0x2400757D), 0x00000000},
+                new float[]{0.54f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.25f, p);
+        p.setShader(null);
+
+        // 2. Luxury Brushed Champagne-Gold & Platinum Chronometer Bezel
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(r * 0.048f);
+        stroke.setShader(new LinearGradient(
+                cx - r, cy - r, cx + r, cy + r,
+                aligned
+                        ? new int[]{0xFF00F5C8, 0xFFFFE599, 0xFF00BFA5, 0xFFFFD768}
+                        : (night ? new int[]{0xFFFFE7A1, 0xFFD4AF37, 0xFF6B4E16, 0xFFE8BC52}
+                                 : new int[]{0xFFE6C25A, 0xFF8C641C, 0xFFCFA33B, 0xFF5A4010}),
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.122f, stroke);
+        stroke.setShader(null);
+
+        // Outer platinum hairline rim
+        stroke.setStrokeWidth(r * 0.008f);
+        stroke.setColor(aligned ? 0xAA00F5C8 : (night ? 0x55FFF3C4 : 0x55FFFFFF));
+        c.drawCircle(cx, cy, r * 1.148f, stroke);
+
+        // 3. Recessed Sunburst Watch Dial Face
+        p.setShader(new RadialGradient(
+                cx, cy - r * 0.14f, r * 1.095f,
+                dialBackdropGradientColors(),
+                new float[]{0.0f, 0.72f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.095f, p);
+        p.setShader(null);
+
+        // Satin glass rim + inner gold bezel track
+        stroke.setStrokeWidth(r * 0.009f);
+        stroke.setColor(night ? 0x26FFFFFF : 0x66FFFFFF);
+        c.drawCircle(cx, cy, r * 1.065f, stroke);
+
+        stroke.setStrokeWidth(r * 0.011f);
+        stroke.setColor(aligned ? 0xFF00F5C8 : ((0xBB << 24) | (gold & 0x00FFFFFF)));
+        if (aligned) {
+            stroke.setShadowLayer(16f, 0, 0, 0xAA00F5C8);
+        }
+        c.drawCircle(cx, cy, r * 1.015f, stroke);
+        stroke.clearShadowLayer();
+
+        // Fine interior horological guilloche rings
+        stroke.setStrokeWidth(r * 0.005f);
+        stroke.setColor(night ? 0x24FFD768 : 0x22006B78);
+        c.drawCircle(cx, cy, r * 0.855f, stroke);
+        c.drawCircle(cx, cy, r * 0.565f, stroke);
+
+        // 4. 60-Tick Precision Minute Track & Sculpted Hour Indices
+        float outerTickR = r * 0.992f;
+        for (int i = 0; i < 60; i++) {
+            double rad = Math.toRadians(i * 6.0 - 90.0);
+            boolean quarter = (i % 15 == 0);
+            boolean hourMark = (i % 5 == 0);
+            float tickLen = quarter ? r * 0.105f : (hourMark ? r * 0.082f : r * 0.036f);
+            stroke.setStrokeWidth(quarter ? r * 0.024f : (hourMark ? r * 0.016f : r * 0.006f));
+            if (quarter) {
+                stroke.setColor(aligned ? 0xFF00F5C8 : gold);
+            } else if (hourMark) {
+                stroke.setColor(night ? 0xFFFFF4D2 : 0xFF1E293B);
+            } else {
+                stroke.setColor(night ? 0x5594A3B8 : 0x6664748B);
+            }
+            c.drawLine(
+                    cx + (float) Math.cos(rad) * (outerTickR - tickLen),
+                    cy + (float) Math.sin(rad) * (outerTickR - tickLen),
+                    cx + (float) Math.cos(rad) * outerTickR,
+                    cy + (float) Math.sin(rad) * outerTickR,
+                    stroke);
+        }
+
+        // Hour Numerals (12, 3, 6, 9) + Golden Diamond Pips at intermediate hours
+        float numR = r * 0.745f;
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setFakeBoldText(true);
+        for (int h = 1; h <= 12; h++) {
+            double rad = Math.toRadians(h * 30.0 - 90.0);
+            float hx = cx + (float) Math.cos(rad) * numR;
+            float hy = cy + (float) Math.sin(rad) * numR;
+            if (h % 3 == 0) {
+                ts(r * 0.145f);
+                p.setColor(h == 12 ? (aligned ? 0xFF00F5C8 : gold) : (night ? 0xFFF8FAFC : 0xFF0F172A));
+                Paint.FontMetrics fm = p.getFontMetrics();
+                c.drawText(String.valueOf(h), hx, hy - (fm.ascent + fm.descent) * 0.5f, p);
+            } else {
+                p.setColor(night ? 0x88FFD768 : 0x888C641C);
+                c.drawCircle(hx, hy, r * 0.016f, p);
+            }
+        }
+        p.setFakeBoldText(false);
+
+        // 5. Clean Swiss Watch Time State (No clutter pills inside the analog face)
+        Calendar cal = Calendar.getInstance();
+        int h12 = cal.get(Calendar.HOUR);
+        int min = cal.get(Calendar.MINUTE);
+        int sec = cal.get(Calendar.SECOND);
+        int ms = cal.get(Calendar.MILLISECOND);
+
+        // 6. Orbiting Qibla Beacon Jewel on Inner Gold Ring
+        if (hasLocation) {
+            float qAngle = hasHeading ? normalize(qiblaBearing - heading) : qiblaBearing;
+            double qr = Math.toRadians(qAngle - 90f);
+            float qx = cx + (float) Math.cos(qr) * (r * 1.015f);
+            float qy = cy + (float) Math.sin(qr) * (r * 1.015f);
+            p.setColor(aligned ? 0xFF00F5C8 : 0xFFFFD768);
+            p.setShadowLayer(14f, 0, 0, aligned ? 0xCC00F5C8 : 0xAAFFD768);
+            c.drawCircle(qx, qy, r * 0.048f, p);
+            p.clearShadowLayer();
+            p.setColor(night ? 0xFF061712 : 0xFFFFFFFF);
+            c.drawCircle(qx, qy, r * 0.019f, p);
+        }
+
+        // 7. Continuous Smooth Analog Watch Hands (3D Two-Tone Dauphine + Sweep Second)
+        float secFrac = sec + ms / 1000f;
+        float minFrac = min + secFrac / 60f;
+        float hourFrac = h12 + minFrac / 60f;
+
+        float hourDeg = hourFrac * 30f;
+        float minDeg = minFrac * 6f;
+        float secDeg = secFrac * 6f;
+
+        // Hour Hand (Broad Champagne-Gold Dauphine Sword)
+        drawDauphineHand(c, cx, cy, hourDeg, r * 0.52f, r * 0.13f, r * 0.045f,
+                night ? 0xFFFFE599 : 0xFFD4AF37,
+                night ? 0xFFA67C22 : 0xFF7A5618,
+                night ? 0xFFFFFFFF : 0xFFFFF8E1);
+
+        // Minute Hand (Longer Sleek Ivory-Gold Dauphine Sword)
+        drawDauphineHand(c, cx, cy, minDeg, r * 0.77f, r * 0.15f, r * 0.032f,
+                night ? 0xFFFFFFFF : 0xFF1E293B,
+                night ? 0xFFCBD5E1 : 0xFF0F172A,
+                gold);
+
+        // Sweep Second Hand (Ruby Crimson / Emerald Turquoise when Qibla aligned)
+        c.save();
+        c.rotate(secDeg, cx, cy);
+        int secColor = aligned ? 0xFF00F5C8 : 0xFFFF5252;
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeWidth(r * 0.012f);
+        stroke.setColor(secColor);
+        stroke.setShadowLayer(8f, 0, 0, aligned ? 0x9900F5C8 : 0x88FF5252);
+        c.drawLine(cx, cy + r * 0.21f, cx, cy - r * 0.87f, stroke);
+        stroke.clearShadowLayer();
+        stroke.setStrokeCap(Paint.Cap.BUTT);
+
+        // Counterweight loop on second hand tail
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(secColor);
+        c.drawCircle(cx, cy + r * 0.17f, r * 0.026f, p);
+        p.setColor(night ? 0xFF07131D : 0xFFFFFFFF);
+        c.drawCircle(cx, cy + r * 0.17f, r * 0.011f, p);
+        c.restore();
+
+        // 8. Sculpted Center Horological Crown Cap
+        p.setStyle(Paint.Style.FILL);
+        p.setShadowLayer(8f, 0, 2f, 0x88000000);
+        p.setColor(gold);
+        c.drawCircle(cx, cy, r * 0.054f, p);
+        p.clearShadowLayer();
+        p.setColor(night ? 0xFF091A24 : 0xFF0F172A);
+        c.drawCircle(cx, cy, r * 0.026f, p);
+        p.setColor(night ? 0xFFFFF3C4 : 0xFFFFFFFF);
+        c.drawCircle(cx, cy, r * 0.011f, p);
+    }
+
+    private void drawDauphineHand(Canvas c, float cx, float cy, float deg, float tipLen, float tailLen,
+                                  float halfWidth, int brightColor, int shadeColor, int lumenColor) {
+        c.save();
+        c.rotate(deg, cx, cy);
+
+        Path leftFacet = new Path();
+        leftFacet.moveTo(cx, cy - tipLen);
+        leftFacet.lineTo(cx - halfWidth, cy);
+        leftFacet.lineTo(cx, cy + tailLen);
+        leftFacet.close();
+
+        Path rightFacet = new Path();
+        rightFacet.moveTo(cx, cy - tipLen);
+        rightFacet.lineTo(cx + halfWidth, cy);
+        rightFacet.lineTo(cx, cy + tailLen);
+        rightFacet.close();
+
+        p.setStyle(Paint.Style.FILL);
+        p.setShadowLayer(10f, 0, 3f, 0x88000000);
+        p.setColor(brightColor);
+        c.drawPath(leftFacet, p);
+        p.clearShadowLayer();
+
+        p.setColor(shadeColor);
+        c.drawPath(rightFacet, p);
+
+        // Luminous Super-LumiNova center inlay strip
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeWidth(halfWidth * 0.38f);
+        stroke.setColor(lumenColor);
+        c.drawLine(cx, cy - tipLen * 0.24f, cx, cy - tipLen * 0.78f, stroke);
+        stroke.setStrokeCap(Paint.Cap.BUTT);
+
+        c.restore();
+    }
+
+    private void drawDialPagerDots(Canvas c, float cx, float cy, float r) {
+        float dotsY = cy + r * 1.24f;
+        float spacing = dp(13f);
+        float startX = cx - ((DIAL_FACE_COUNT - 1) * 0.5f) * spacing;
+        RectF capsule = new RectF(cx - dp(60f), dotsY - dp(10.5f), cx + dp(60f), dotsY + dp(10.5f));
+        dialDotsHitRect.set(capsule.left - dp(10f), capsule.top - dp(8f), capsule.right + dp(10f), capsule.bottom + dp(8f));
+
+        // Frosted Luxury Glass & Champagne-Gold Pill Capsule
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(isNightTheme() ? 0xB8091B24 : 0xCCF4F9FB);
+        c.drawRoundRect(capsule, capsule.height() * 0.5f, capsule.height() * 0.5f, p);
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(dp(1.0f));
+        stroke.setColor(isNightTheme() ? 0x55FFD768 : 0x55B88E3E);
+        c.drawRoundRect(capsule, capsule.height() * 0.5f, capsule.height() * 0.5f, stroke);
+
+        // Subtle left/right chevrons to hint swipe interaction
+        p.setTextAlign(Paint.Align.CENTER);
+        ts(dp(10.5f));
+        p.setColor(goldColor());
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float chY = dotsY - (fm.ascent + fm.descent) * 0.5f;
+        c.drawText("‹", cx - dp(45f), chY, p);
+        c.drawText("›", cx + dp(45f), chY, p);
+
+        for (int i = 0; i < DIAL_FACE_COUNT; i++) {
+            float dx = startX + i * spacing;
+            boolean active = (i == dialMode);
+            if (active) {
+                p.setColor(goldColor());
+                p.setShadowLayer(8f, 0, 0, 0x88FFD768);
+                c.drawRoundRect(new RectF(dx - dp(7.0f), dotsY - dp(3.0f), dx + dp(7.0f), dotsY + dp(3.0f)),
+                        dp(3.0f), dp(3.0f), p);
+                p.clearShadowLayer();
+            } else {
+                p.setColor(isNightTheme() ? 0x55CBD5E1 : 0x55475569);
+                c.drawCircle(dx, dotsY, dp(2.8f), p);
+            }
+        }
+    }
+
+    private int[] dialBackdropGradientColors() {
+        switch (getEffectiveTheme()) {
+            case THEME_ROYAL_BURGUNDY:
+                return new int[]{0xFF2B0915, 0xFF15040A, 0xFF090104};
+            case THEME_PLATINUM_TITANIUM:
+                return new int[]{0xFF202936, 0xFF10151D, 0xFF07090D};
+            case THEME_OBSIDIAN:
+                return new int[]{0xFF10283D, 0xFF071624, 0xFF030A12};
+            case THEME_AMBER:
+                return new int[]{0xFF2B1607, 0xFF160B03, 0xFF0B0501};
+            case THEME_OLED_NIGHT:
+                return new int[]{0xFF131313, 0xFF070707, 0xFF020202};
+            case THEME_PEARL:
+                return new int[]{0xFFFCFEFF, 0xFFE6F1F6, 0xFFD0E2EB};
+            case THEME_EMERALD:
+            default:
+                return new int[]{0xFF0D2E25, 0xFF051813, 0xFF020B08};
+        }
+    }
+
+    private void drawQiblaCompassFace(Canvas c, float cx, float cy, float r, boolean aligned) {
+        boolean night = isNightTheme();
+        int gold = goldColor();
+
+        // 1. Soft Luminous Ambient Aura
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(
+                cx, cy, r * 1.25f,
+                new int[]{aligned ? 0x4E00F5A0 : (night ? 0x32FFD768 : 0x2200757D), 0x00000000},
+                new float[]{0.54f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.25f, p);
+        p.setShader(null);
+
+        // 2. Luxury Brushed Champagne-Gold & Emerald Outer Chamfered Bezel
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(r * 0.050f);
+        stroke.setShader(new LinearGradient(
+                cx - r, cy - r, cx + r, cy + r,
+                aligned
+                        ? new int[]{0xFF00F5C8, 0xFFFFE599, 0xFF00BFA5, 0xFFFFD768}
+                        : (night ? new int[]{0xFFFFE7A1, 0xFFD4AF37, 0xFF6B4E16, 0xFFE8BC52}
+                                 : new int[]{0xFFE6C25A, 0xFF8C641C, 0xFFCFA33B, 0xFF5A4010}),
+                null, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.125f, stroke);
+        stroke.setShader(null);
+
+        // Outer platinum specular rim
+        stroke.setStrokeWidth(r * 0.008f);
+        stroke.setColor(aligned ? 0xAA00F5C8 : (night ? 0x55FFF3C4 : 0x55FFFFFF));
+        c.drawCircle(cx, cy, r * 1.152f, stroke);
+
+        // 3. Recessed Deep Obsidian / Emerald-Velvet / Pearl Dial Backing
+        p.setShader(new RadialGradient(
+                cx, cy - r * 0.16f, r * 1.095f,
+                dialBackdropGradientColors(),
+                new float[]{0.0f, 0.72f, 1.0f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.095f, p);
+        p.setShader(null);
+
+        // Subtle satin glass dome reflection arc
+        stroke.setStrokeWidth(r * 0.010f);
+        stroke.setColor(night ? 0x28FFFFFF : 0x66FFFFFF);
+        c.drawCircle(cx, cy, r * 1.065f, stroke);
+
+        // Inner fine champagne-gold bezel track
+        stroke.setStrokeWidth(r * 0.012f);
+        stroke.setColor(aligned ? 0xFF00F5C8 : ((0xBB << 24) | (gold & 0x00FFFFFF)));
+        if (aligned) {
+            stroke.setShadowLayer(18f, 0, 0, 0xAA00F5C8);
+        }
+        c.drawCircle(cx, cy, r * 1.015f, stroke);
+        stroke.clearShadowLayer();
+
+        // 4. Sacred Geometric Guilloché Inner Ring & Rosette Watermark
+        stroke.setStrokeWidth(r * 0.005f);
+        stroke.setColor(aligned ? 0x3300F5C8 : (night ? 0x22FFD768 : 0x22006B78));
+        c.drawCircle(cx, cy, r * 0.825f, stroke);
+        c.drawCircle(cx, cy, r * 0.54f, stroke);
+
+        float rosetteOuter = r * 0.54f;
+        float rosetteInner = rosetteOuter * 0.7071f;
+        Path rosette = new Path();
+        for (int i = 0; i < 16; i++) {
+            double ang = Math.toRadians(i * 22.5);
+            float rr = (i % 2 == 0) ? rosetteOuter : rosetteInner;
+            float rx = cx + (float) (Math.cos(ang) * rr);
+            float ry = cy + (float) (Math.sin(ang) * rr);
+            if (i == 0) rosette.moveTo(rx, ry);
+            else rosette.lineTo(rx, ry);
+        }
+        rosette.close();
+        stroke.setColor(night ? 0x16FFD768 : 0x14006B78);
+        c.drawPath(rosette, stroke);
+
+        // 5. Rotating Precision Degree Scale & Cardinal Diamond Pips
         float rot = hasHeading ? -heading : 0f;
         c.save();
         c.rotate(rot, cx, cy);
 
         for (int deg = 0; deg < 360; deg += 5) {
             double a = Math.toRadians(deg - 90);
+            boolean cardinal = deg % 90 == 0;
             boolean major = deg % 30 == 0;
             boolean medium = deg % 15 == 0;
-            float len = major ? r * .085f : (medium ? r * .055f : r * .028f);
-            stroke.setStrokeWidth(major ? r * .012f : (medium ? r * .007f : r * .0035f));
-            stroke.setColor(major ? (aligned ? 0xFFFFD768 : 0xEEFFF5D6) : (medium ? 0x88FFD768 : 0x4080B0B8));
-            c.drawLine(cx + (float) Math.cos(a) * (r - len), cy + (float) Math.sin(a) * (r - len),
-                    cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r, stroke);
+            float len = cardinal ? r * 0.095f : (major ? r * 0.078f : (medium ? r * 0.050f : r * 0.026f));
+            stroke.setStrokeWidth(cardinal ? r * 0.018f : (major ? r * 0.011f : (medium ? r * 0.007f : r * 0.0035f)));
+            if (cardinal) {
+                stroke.setColor(aligned ? 0xFF00F5C8 : gold);
+            } else if (major) {
+                stroke.setColor(night ? 0xEEFFF5D6 : 0xEE1E293B);
+            } else {
+                stroke.setColor(medium ? (night ? 0x88FFD768 : 0x888C641C) : (night ? 0x3E80B0B8 : 0x4564748B));
+            }
+            c.drawLine(cx + (float) Math.cos(a) * (r * 0.99f - len), cy + (float) Math.sin(a) * (r * 0.99f - len),
+                    cx + (float) Math.cos(a) * (r * 0.99f), cy + (float) Math.sin(a) * (r * 0.99f), stroke);
+
+            // Chamfered gold diamond pip at each cardinal 0/90/180/270
+            if (cardinal) {
+                float px = cx + (float) Math.cos(a) * (r * 1.052f);
+                float py = cy + (float) Math.sin(a) * (r * 1.052f);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(deg == 0 ? (aligned ? 0xFF00F5C8 : 0xFF38BDF8) : gold);
+                c.drawCircle(px, py, r * 0.020f, p);
+            }
         }
 
-        drawCardinal(c, "N", cx, cy, r * .72f, 0, aligned ? 0xFFFFD768 : primaryTextColor());
-        drawCardinal(c, "E", cx, cy, r * .72f, 90, primaryTextColor());
-        drawCardinal(c, "S", cx, cy, r * .72f, 180, primaryTextColor());
-        drawCardinal(c, "W", cx, cy, r * .72f, 270, primaryTextColor());
+        drawCardinal(c, "N", cx, cy, r * .72f, 0, aligned ? 0xFF00F5C8 : (night ? 0xFF38BDF8 : 0xFF0284C7));
+        drawCardinal(c, "E", cx, cy, r * .72f, 90, gold);
+        drawCardinal(c, "S", cx, cy, r * .72f, 180, night ? 0xFFF87171 : 0xFFDC2626);
+        drawCardinal(c, "W", cx, cy, r * .72f, 270, gold);
         c.restore();
 
-        // Sleek golden vehicle direction pip at 12 o'clock
+        // 6. Sculpted Golden Vehicle Heading Crest at 12 o'clock
         Path vehiclePip = new Path();
-        vehiclePip.moveTo(cx, cy - r * 1.02f);
-        vehiclePip.lineTo(cx - r * 0.035f, cy - r * 1.12f);
-        vehiclePip.lineTo(cx + r * 0.035f, cy - r * 1.12f);
+        vehiclePip.moveTo(cx, cy - r * 1.015f);
+        vehiclePip.lineTo(cx - r * 0.042f, cy - r * 1.135f);
+        vehiclePip.lineTo(cx, cy - r * 1.105f);
+        vehiclePip.lineTo(cx + r * 0.042f, cy - r * 1.135f);
         vehiclePip.close();
         p.setStyle(Paint.Style.FILL);
-        p.setColor(aligned ? 0xFF00F5C8 : goldColor());
+        p.setColor(aligned ? 0xFF00F5C8 : gold);
+        p.setShadowLayer(10f, 0, 0, aligned ? 0xAA00F5C8 : 0x77FFD768);
         c.drawPath(vehiclePip, p);
+        p.clearShadowLayer();
 
         if (hasLocation) {
             float arrow = hasHeading ? normalize(qiblaBearing - heading) : qiblaBearing;
             float angle = arrow > 180 ? arrow - 360 : arrow;
+
+            // Orbiting Qibla beacon jewel on the inner gold track
+            double qr = Math.toRadians(arrow - 90f);
+            float qx = cx + (float) Math.cos(qr) * (r * 1.015f);
+            float qy = cy + (float) Math.sin(qr) * (r * 1.015f);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(aligned ? 0xFF00F5C8 : 0xFFFFD768);
+            p.setShadowLayer(14f, 0, 0, aligned ? 0xCC00F5C8 : 0xAAFFD768);
+            c.drawCircle(qx, qy, r * 0.042f, p);
+            p.clearShadowLayer();
+            p.setColor(night ? 0xFF061712 : 0xFFFFFFFF);
+            c.drawCircle(qx, qy, r * 0.017f, p);
+
             c.save();
             c.rotate(angle, cx, cy);
 
-            int arrowColor = aligned ? 0xFF00F5C8 : goldColor();
-            int shadowColor = aligned ? 0xDD00F5C8 : 0x88FFD768;
+            int arrowColor = aligned ? 0xFF00F5C8 : gold;
+            int arrowDark = aligned ? 0xFF00A88F : (night ? 0xFF9C7220 : 0xFF7A5618);
+            int shadowColor = aligned ? 0xDD00F5C8 : 0x99FFD768;
 
             if (needleStyle == 1) {
-                // Style 1: Classic Precision Navigational Arrow (سهم الاتجاه الملاحي الدقيق)
+                // Style 1: Classic Precision Navigational Arrow (Two-Tone 3D Beveled)
                 Path leftWing = new Path();
-                leftWing.moveTo(cx, cy - r * 0.76f);
-                leftWing.lineTo(cx - r * 0.11f, cy - r * 0.38f);
+                leftWing.moveTo(cx, cy - r * 0.78f);
+                leftWing.lineTo(cx - r * 0.115f, cy - r * 0.37f);
                 leftWing.lineTo(cx, cy - r * 0.46f);
                 leftWing.close();
                 p.setStyle(Paint.Style.FILL);
@@ -1896,35 +2800,33 @@ public class QiblaView extends View {
                 c.drawPath(leftWing, p);
 
                 Path rightWing = new Path();
-                rightWing.moveTo(cx, cy - r * 0.76f);
-                rightWing.lineTo(cx + r * 0.11f, cy - r * 0.38f);
+                rightWing.moveTo(cx, cy - r * 0.78f);
+                rightWing.lineTo(cx + r * 0.115f, cy - r * 0.37f);
                 rightWing.lineTo(cx, cy - r * 0.46f);
                 rightWing.close();
-                p.setColor(aligned ? 0xFF00BFA5 : (isNightTheme() ? 0xFF8A6726 : 0xFFC9983E));
+                p.setColor(arrowDark);
                 c.drawPath(rightWing, p);
                 p.clearShadowLayer();
 
-                // Counterweight tail
                 stroke.setStyle(Paint.Style.STROKE);
-                stroke.setStrokeWidth(r * 0.032f);
-                stroke.setColor(aligned ? 0xFF00F5C8 : goldColor());
-                c.drawLine(cx, cy - r * 0.46f, cx, cy + r * 0.18f, stroke);
+                stroke.setStrokeWidth(r * 0.030f);
+                stroke.setColor(arrowColor);
+                c.drawLine(cx, cy - r * 0.46f, cx, cy + r * 0.22f, stroke);
 
-                // Small counterweight diamond
                 Path tail = new Path();
-                tail.moveTo(cx, cy + r * 0.28f);
-                tail.lineTo(cx - r * 0.06f, cy + r * 0.18f);
-                tail.lineTo(cx + r * 0.06f, cy + r * 0.18f);
+                tail.moveTo(cx, cy + r * 0.30f);
+                tail.lineTo(cx - r * 0.06f, cy + r * 0.20f);
+                tail.lineTo(cx + r * 0.06f, cy + r * 0.20f);
                 tail.close();
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(aligned ? 0xFF00F5C8 : goldColor());
+                p.setColor(arrowColor);
                 c.drawPath(tail, p);
 
             } else if (needleStyle == 2) {
-                // Style 2: Marine Compass Rose Star Needle (وردة البوصلة البحرية الدائرية)
+                // Style 2: Marine Compass Rose Star Needle (Two-Tone Faceted)
                 Path mainStarLeft = new Path();
-                mainStarLeft.moveTo(cx, cy - r * 0.75f);
-                mainStarLeft.lineTo(cx - r * 0.13f, cy);
+                mainStarLeft.moveTo(cx, cy - r * 0.78f);
+                mainStarLeft.lineTo(cx - r * 0.135f, cy);
                 mainStarLeft.lineTo(cx, cy);
                 mainStarLeft.close();
                 p.setStyle(Paint.Style.FILL);
@@ -1933,66 +2835,76 @@ public class QiblaView extends View {
                 c.drawPath(mainStarLeft, p);
 
                 Path mainStarRight = new Path();
-                mainStarRight.moveTo(cx, cy - r * 0.75f);
-                mainStarRight.lineTo(cx + r * 0.13f, cy);
+                mainStarRight.moveTo(cx, cy - r * 0.78f);
+                mainStarRight.lineTo(cx + r * 0.135f, cy);
                 mainStarRight.lineTo(cx, cy);
                 mainStarRight.close();
-                p.setColor(aligned ? 0xFF00BFA5 : (isNightTheme() ? 0xFF9E7832 : 0xFFB88E3E));
+                p.setColor(arrowDark);
                 c.drawPath(mainStarRight, p);
                 p.clearShadowLayer();
 
-                // Marine southern counter-pointer
                 Path southLeft = new Path();
-                southLeft.moveTo(cx, cy + r * 0.35f);
+                southLeft.moveTo(cx, cy + r * 0.36f);
                 southLeft.lineTo(cx - r * 0.09f, cy);
                 southLeft.lineTo(cx, cy);
                 southLeft.close();
-                p.setColor(isNightTheme() ? 0xFF35525B : 0xFF7D9DA6);
+                p.setColor(night ? 0xFF476A75 : 0xFF7D9DA6);
                 c.drawPath(southLeft, p);
 
                 Path southRight = new Path();
-                southRight.moveTo(cx, cy + r * 0.35f);
+                southRight.moveTo(cx, cy + r * 0.36f);
                 southRight.lineTo(cx + r * 0.09f, cy);
                 southRight.lineTo(cx, cy);
                 southRight.close();
-                p.setColor(isNightTheme() ? 0xFF243B42 : 0xFF65848D);
+                p.setColor(night ? 0xFF284149 : 0xFF5D7A83);
                 c.drawPath(southRight, p);
 
             } else {
-                // Style 0 (Default Luxury): Golden Kaaba Minaret & Dome (منارة وقبة الكعبة الذهبية)
+                // Style 0 (Default Flagship Luxury): Sculpted Two-Tone Golden Minaret & Dome
                 stroke.setStyle(Paint.Style.STROKE);
-                stroke.setStrokeWidth(r * .038f);
-                stroke.setColor(arrowColor);
+                stroke.setStrokeWidth(r * .036f);
+                stroke.setShader(new LinearGradient(
+                        cx - r * 0.04f, cy - r * 0.48f, cx + r * 0.04f, cy,
+                        new int[]{arrowColor, arrowDark}, null, Shader.TileMode.CLAMP));
                 c.drawLine(cx, cy + r * .02f, cx, cy - r * .48f, stroke);
+                stroke.setShader(null);
 
-                // Minaret balcony
-                stroke.setStrokeWidth(r * 0.015f);
-                stroke.setColor(aligned ? 0xFF00F5C8 : 0xFFFFE082);
-                c.drawLine(cx - r * 0.08f, cy - r * 0.48f, cx + r * 0.08f, cy - r * 0.48f, stroke);
+                // Ornamented double minaret balcony
+                stroke.setStrokeWidth(r * 0.018f);
+                stroke.setColor(aligned ? 0xFF00F5C8 : 0xFFFFE599);
+                c.drawLine(cx - r * 0.095f, cy - r * 0.48f, cx + r * 0.095f, cy - r * 0.48f, stroke);
 
-                // Minaret dome & spire
-                Path minaret = new Path();
-                minaret.moveTo(cx, cy - r * .76f);
-                minaret.lineTo(cx - r * .115f, cy - r * .49f);
-                minaret.lineTo(cx + r * .115f, cy - r * .49f);
-                minaret.close();
+                // Two-tone 3D beveled minaret spire
+                Path domeLeft = new Path();
+                domeLeft.moveTo(cx, cy - r * .78f);
+                domeLeft.lineTo(cx - r * .125f, cy - r * .49f);
+                domeLeft.lineTo(cx, cy - r * .49f);
+                domeLeft.close();
+
+                Path domeRight = new Path();
+                domeRight.moveTo(cx, cy - r * .78f);
+                domeRight.lineTo(cx + r * .125f, cy - r * .49f);
+                domeRight.lineTo(cx, cy - r * .49f);
+                domeRight.close();
+
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(arrowColor);
+                p.setColor(aligned ? 0xFF00F5C8 : 0xFFFFE7A1);
                 p.setShadowLayer(22f, 0, 0, shadowColor);
-                c.drawPath(minaret, p);
+                c.drawPath(domeLeft, p);
+                p.setColor(arrowDark);
+                c.drawPath(domeRight, p);
 
-                // Golden dome crescent tip
-                p.setColor(0xFFFFE082);
-                c.drawCircle(cx, cy - r * 0.77f, r * 0.035f, p);
+                // Golden crescent finial jewel tip
+                p.setColor(aligned ? 0xFFFFFFFF : 0xFFFFF3C4);
+                c.drawCircle(cx, cy - r * 0.79f, r * 0.036f, p);
                 p.clearShadowLayer();
             }
 
             c.restore();
         }
 
-        drawKaaba(c, cx, cy, r);
+        drawKaaba(c, cx, cy, r, aligned);
         drawCompassBottomBadge(c, cx, cy, r, aligned);
-        drawVehicleRelativeBadge(c, cx, cy, r, aligned);
     }
 
     private void drawVehicleRelativeBadge(Canvas c, float cx, float cy, float r, boolean aligned) {
@@ -2009,11 +2921,11 @@ public class QiblaView extends View {
 
         float badgeY;
         if (headingMode == 1 || !landscape) {
-            // Standard Classic Mode OR Portrait on mobile: directly on top of the compass dial
-            badgeY = Math.max(dp(44), cy - r * 1.25f);
+            // Standard Classic Mode OR Portrait on mobile: neatly stacked above the dial
+            badgeY = Math.max(dp(36), cy - r * 1.36f);
         } else {
-            // Elevated Mode (landscape car screens): raised to the top bar
-            badgeY = h * 0.038f;
+            // Elevated Mode (landscape car screens): raised cleanly in the top header zone
+            badgeY = h * 0.032f;
         }
 
         RectF badgeRect = new RectF(cx - badgeW * 0.5f, badgeY, cx + badgeW * 0.5f, badgeY + badgeH);
@@ -2033,11 +2945,33 @@ public class QiblaView extends View {
         Paint.FontMetrics fm = p.getFontMetrics();
         float textY = badgeRect.centerY() - (fm.ascent + fm.descent) / 2f;
         drawFittedText(c, text, cx, textY, badgeW * 0.92f);
+
+        // Render Distance to Makkah directly below the Vehicle Qibla Badge
+        if (distanceKm > 0) {
+            String makkahDist = String.format(Locale.US,
+                    englishMode ? "🕋 %.0f km to Makkah" : "🕋 %.0f كم إلى مكة", distanceKm);
+            float distW = Math.min(badgeW * 0.84f, Math.max(r * 0.96f, dp(136)));
+            float distH = Math.max(dp(18), badgeH * 0.72f);
+            float distY = badgeRect.bottom + dp(4);
+            RectF distRect = new RectF(cx - distW * 0.5f, distY, cx + distW * 0.5f, distY + distH);
+
+            p.setColor(aligned ? 0xCC002B22 : (isNightTheme() ? 0xCC081820 : 0xDCE8F1F4));
+            c.drawRoundRect(distRect, distH * 0.5f, distH * 0.5f, p);
+
+            stroke.setStrokeWidth(0.9f);
+            stroke.setColor(aligned ? 0x9900F5C8 : ((0x88 << 24) | (goldColor() & 0x00FFFFFF)));
+            c.drawRoundRect(distRect, distH * 0.5f, distH * 0.5f, stroke);
+
+            ts(distH * 0.60f);
+            p.setColor(aligned ? 0xFF00F5C8 : goldColor());
+            Paint.FontMetrics dfm = p.getFontMetrics();
+            drawFittedText(c, makkahDist, cx, distRect.centerY() - (dfm.ascent + dfm.descent) * 0.5f, distW * 0.88f);
+        }
         p.setFakeBoldText(false);
     }
 
     private void drawCompassBottomBadge(Canvas c, float cx, float cy, float r, boolean aligned) {
-        // Raised higher up inside the compass dial below Kaaba (no box/rectangle)
+        if (!aligned) return;
         float textY = cy + r * 0.285f;
         float maxTextW = r * 0.82f;
 
@@ -2045,29 +2979,36 @@ public class QiblaView extends View {
         ts(r * 0.070f);
         p.setFakeBoldText(true);
 
-        String makkahDist = (distanceKm > 0)
-                ? String.format(Locale.US, englishMode ? "%.0f km to Makkah" : "%.0f كم إلى مكة", distanceKm)
-                : (englishMode ? "Makkah: 21.42° N" : "مكة المكرمة");
-
-        String badgeText = aligned
-                ? (englishMode ? "🕋 Aligned with Qibla" : "🕋 باتجاه القبلة المشرفة")
-                : ("🕋 " + makkahDist);
-
-        if (aligned) {
-            int glowColor = isNightTheme() ? 0xFF00F5C8 : 0xFF00897B;
-            p.setColor(glowColor);
-            p.setShadowLayer(14f, 0, 0, isNightTheme() ? 0xDD00F5C8 : 0x88004D40);
-        } else {
-            p.setColor(goldColor());
-            p.setShadowLayer(8f, 0, 0, isNightTheme() ? 0xAA000000 : 0x44000000);
-        }
+        String badgeText = englishMode ? "🕋 Aligned with Qibla" : "🕋 باتجاه القبلة المشرفة";
+        int glowColor = isNightTheme() ? 0xFF00F5C8 : 0xFF00897B;
+        p.setColor(glowColor);
+        p.setShadowLayer(14f, 0, 0, isNightTheme() ? 0xDD00F5C8 : 0x88004D40);
 
         drawFittedText(c, badgeText, cx, textY, maxTextW);
         p.clearShadowLayer();
         p.setFakeBoldText(false);
     }
 
-    private void drawKaaba(Canvas c, float cx, float cy, float r) {
+    private void drawKaaba(Canvas c, float cx, float cy, float r, boolean aligned) {
+        boolean night = isNightTheme();
+
+        // Recessed Medallion Pedestal underneath the 3D Kaaba
+        float medR = r * 0.275f;
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(cx, cy - r * 0.02f, medR,
+                night ? new int[]{0xFF132D26, 0xFF071511}
+                      : new int[]{0xFFFFFFFF, 0xFFE2EEF3},
+                null, Shader.TileMode.CLAMP));
+        p.setShadowLayer(16f, 0, 4f, aligned ? 0x7700F5C8 : (night ? 0xAA000000 : 0x33000000));
+        c.drawCircle(cx, cy - r * 0.01f, medR, p);
+        p.setShader(null);
+        p.clearShadowLayer();
+
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(Math.max(1.5f, r * 0.013f));
+        stroke.setColor(aligned ? 0xCC00F5C8 : 0x99FFD768);
+        c.drawCircle(cx, cy - r * 0.01f, medR, stroke);
+
         float kw = r * .19f;
         float kh = r * .15f;
         float topY = cy - kh * 1.0f;
@@ -2081,7 +3022,7 @@ public class QiblaView extends View {
         topFace.lineTo(cx - kw, midY);
         topFace.close();
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF283640);
+        p.setColor(0xFF283744);
         c.drawPath(topFace, p);
 
         float centerMidY = midY + (midY - topY);
@@ -2092,7 +3033,7 @@ public class QiblaView extends View {
         leftFace.lineTo(cx, botY);
         leftFace.lineTo(cx - kw, botY - (centerMidY - midY));
         leftFace.close();
-        p.setColor(0xFF101820);
+        p.setColor(0xFF0E161D);
         c.drawPath(leftFace, p);
 
         Path rightFace = new Path();
@@ -2101,7 +3042,7 @@ public class QiblaView extends View {
         rightFace.lineTo(cx + kw, botY - (centerMidY - midY));
         rightFace.lineTo(cx, botY);
         rightFace.close();
-        p.setColor(0xFF18222A);
+        p.setColor(0xFF19242E);
         c.drawPath(rightFace, p);
 
         float sideH = botY - centerMidY;
@@ -2113,7 +3054,7 @@ public class QiblaView extends View {
         kiswah.lineTo(cx, centerMidY + sideH * 0.38f);
         kiswah.lineTo(cx - kw, midY + sideH * 0.38f);
         kiswah.close();
-        p.setColor(0xFFFFD56B);
+        p.setColor(0xFFFFE082);
         c.drawPath(kiswah, p);
 
         Path door = new Path();
@@ -2129,9 +3070,13 @@ public class QiblaView extends View {
         p.setColor(0xFFE8BC52);
         c.drawPath(door, p);
 
+        // Hajar al-Aswad silver bezel corner accent
+        p.setColor(0xFFE2E8F0);
+        c.drawCircle(cx, botY - sideH * 0.22f, r * 0.015f, p);
+
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(Math.max(1.5f, r * .018f));
-        stroke.setColor(0xFFFFDF85);
+        stroke.setColor(0xFFFFE599);
         c.drawPath(topFace, stroke);
         c.drawPath(leftFace, stroke);
         c.drawPath(rightFace, stroke);
@@ -2358,13 +3303,48 @@ public class QiblaView extends View {
         float x = hudMirrorMode ? (getWidth() - rawX) : rawX;
         float y = event.getY();
         float h = getHeight();
+        int action = event.getActionMasked();
 
-        if (hudMirrorMode && event.getAction() == MotionEvent.ACTION_UP && y <= dp(50)) {
+        if (hudMirrorMode && action == MotionEvent.ACTION_UP && y <= dp(50)) {
             setHudMirrorMode(false);
             return true;
         }
 
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+        if (isDraggingDial) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                float dx = rawX - dialTouchStartX;
+                float limit = Math.max(dp(40), lastCompassR * 0.55f);
+                dialSwipeVisualOffset = Math.max(-limit, Math.min(limit, dx * 0.48f));
+                invalidate();
+                return true;
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                float dx = rawX - dialTouchStartX;
+                float dy = Math.abs(y - dialTouchStartY);
+                isDraggingDial = false;
+                if (action == MotionEvent.ACTION_UP && Math.abs(dx) >= dp(28) && Math.abs(dx) > dy * 0.85f) {
+                    if (dx < 0) {
+                        saveDialMode(dialMode + 1);
+                        dialSwipeVisualOffset = Math.max(dp(40), lastCompassR * 0.60f);
+                    } else {
+                        saveDialMode(dialMode - 1);
+                        dialSwipeVisualOffset = -Math.max(dp(40), lastCompassR * 0.60f);
+                    }
+                } else if (action == MotionEvent.ACTION_UP && dialDotsHitRect.contains(x, y) && Math.abs(dx) < dp(14)) {
+                    // Tapping dots/chevrons switches to next/previous dial face
+                    if (x < lastCompassCx - dp(12)) {
+                        saveDialMode(dialMode - 1);
+                        dialSwipeVisualOffset = -Math.max(dp(36), lastCompassR * 0.45f);
+                    } else {
+                        saveDialMode(dialMode + 1);
+                        dialSwipeVisualOffset = Math.max(dp(36), lastCompassR * 0.45f);
+                    }
+                }
+                invalidate();
+                return true;
+            }
+        }
+
+        if (action == MotionEvent.ACTION_DOWN) {
             // 1. Tapping on active Adhan banner dismisses it and silences audio
             if (System.currentTimeMillis() < adhanBannerUntil && adhanBannerText != null && y <= h * 0.15f) {
                 dismissAdhanBanner();
@@ -2372,8 +3352,10 @@ public class QiblaView extends View {
                 return true;
             }
 
-            // 2. Tapping on Top bar logo/settings zone, Weather card, or Prayer Times card
-            if (topBarSettingsRect.contains(x, y) || weatherCardRect.contains(x, y) || weatherPrayerRowRect.contains(x, y) || prayerCardRect.contains(x, y)) {
+            // 2. Tapping on Top bar logo/settings zone, Weather card, Quick Apps button, or Prayer Times card
+            if (topBarSettingsRect.contains(x, y) || weatherCardRect.contains(x, y)
+                    || quickAppsBtnRect.contains(x, y)
+                    || weatherPrayerRowRect.contains(x, y) || prayerCardRect.contains(x, y)) {
                 return true;
             }
 
@@ -2390,9 +3372,21 @@ public class QiblaView extends View {
                     return true;
                 }
             }
-        } else if (event.getAction() == MotionEvent.ACTION_UP) {
+
+            // 4. Touching inside the Compass / Dial area begins horizontal swipe tracking
+            if (dialHitRect.contains(x, y) || dialDotsHitRect.contains(x, y)) {
+                isDraggingDial = true;
+                dialTouchStartX = rawX;
+                dialTouchStartY = y;
+                return true;
+            }
+        } else if (action == MotionEvent.ACTION_UP) {
             if (topBarSettingsRect.contains(x, y) && onSettingsClickListener != null) {
                 onSettingsClickListener.onSettingsClicked();
+                return true;
+            }
+            if (quickAppsBtnRect.contains(x, y) && onQuickAppsClickListener != null) {
+                onQuickAppsClickListener.onQuickAppsClicked();
                 return true;
             }
             if ((weatherCardRect.contains(x, y) || weatherPrayerRowRect.contains(x, y)) && onWeatherClickListener != null) {

@@ -238,6 +238,12 @@ public final class UpdateManager {
     private static void downloadAndInstall(Activity activity, int code, String apkUrl, String expectedSha256) {
         if (activity == null || activity.isFinishing()) return;
         try {
+            activity.getSharedPreferences(MainActivity.UI_PREFS, Activity.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(MainActivity.KEY_PENDING_POST_INSTALL_QR, true)
+                    .apply();
+        } catch (Throwable ignored) { }
+        try {
             Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl));
             browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(browserIntent);

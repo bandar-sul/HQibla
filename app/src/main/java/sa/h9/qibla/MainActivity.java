@@ -62,6 +62,7 @@ import java.util.Locale;
 public class MainActivity extends Activity implements LocationListener, SensorEventListener {
     private static final String TAG = "H9MainActivity";
     private static final int REQ_LOCATION = 1001;
+    public static final int REQ_PICK_CUSTOM_ADHAN = 1044;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 2.0f;
     private static final long HEADING_STALE_MS = 7000L;
@@ -86,6 +87,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     public static final String KEY_ADHAN_SOUND_ENABLED = "adhan_sound_enabled";
     public static final String KEY_FULLSCREEN_ENABLED = "fullscreen_enabled";
     public static final String KEY_LAST_SEEN_CHANGELOG_VER = "last_seen_changelog_ver";
+    public static final String KEY_LAST_QR_SHOWN_VER = "last_qr_shown_ver";
+    public static final String KEY_PENDING_POST_INSTALL_QR = "pending_post_install_qr";
+    public static final String KEY_AUTO_LAUNCH_APP_ON_BOOT = "auto_launch_app_on_boot";
+    public static final String KEY_PRIMARY_LAUNCHER_MODE = "primary_launcher_mode";
     public static final String KEY_DYNAMIC_ISLAND_ENABLED = "dynamic_island_enabled";
     public static final String EXTRA_OPEN_SETTINGS = "open_settings";
     public static final String EXTRA_OPEN_WEATHER = "open_weather";
@@ -328,7 +333,13 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         rootContainer.addView(scrim, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            float modalZ = dp(36);
+            scrim.setElevation(modalZ);
+            scrim.setTranslationZ(modalZ);
+        }
         scrim.bringToFront();
+        syncMainButtonsVisibility();
     }
 
     public boolean dismissOverlayByTag(String tag) {
@@ -340,10 +351,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             if (cb != null) {
                 try { cb.run(); } catch (Throwable ignored) { }
             }
+            syncMainButtonsVisibility();
             handler.postDelayed(this::applyImmersiveMode, 80L);
             return true;
         }
         overlayDismissMap.remove(tag);
+        syncMainButtonsVisibility();
         return false;
     }
 
@@ -374,6 +387,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         }
         return false;
+    }
+
+    public void syncMainButtonsVisibility() {
+        if (mainSettingsButton == null) return;
+        boolean overlayActive = hasActiveOverlay();
+        mainSettingsButton.setVisibility(overlayActive ? View.GONE : View.VISIBLE);
+        if (!overlayActive) {
+            mainSettingsButton.bringToFront();
+        }
     }
 
     public DynamicIslandView getDynamicIslandView() {
@@ -517,6 +539,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         qiblaView.setOnPrayerClickListener(() -> forceSyncOnlinePrayerTimes(true));
         qiblaView.setOnSettingsClickListener(this::showSettingsDialog);
+        qiblaView.setOnQuickAppsClickListener(() -> QuickAppsOverlay.show(this));
         root.addView(qiblaView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         restoreLastHeading();
         restoreLastLocation();
@@ -541,6 +564,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         aboutBg.setCornerRadius(dp(22));
         aboutBg.setStroke(dp(2), 0xFF2FE0C7);
         mainSettingsButton.setBackground(aboutBg);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            mainSettingsButton.setStateListAnimator(null);
+            mainSettingsButton.setElevation(0f);
+            mainSettingsButton.setTranslationZ(0f);
+        }
         mainSettingsButton.setOnClickListener(v -> showSettingsDialog());
         mainSettingsButton.setOnLongClickListener(v -> {
             HavalStoreQrDialog.show(this);
@@ -573,7 +601,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         updateNetworkStatus();
         registerNetworkCallback();
-        showDeveloperNoticeOnce();
         ensureLocationPermission();
         testGwmMapBinder();
         startGwmNaviHeadingIntegration();
@@ -590,14 +617,62 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         }, 2000L);
 
+        final SharedPreferences noticePrefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
+        final boolean isFreshInstall = !noticePrefs.getBoolean(KEY_NOTICE_SHOWN, false);
         int lastChangelogVer = uiPrefs.getInt(KEY_LAST_SEEN_CHANGELOG_VER, 0);
-        if (lastChangelogVer < BuildConfig.VERSION_CODE) {
+        int lastQrVer = uiPrefs.getInt(KEY_LAST_QR_SHOWN_VER, 0);
+        boolean pendingPostQr = uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false);
+
+        if (isFreshInstall) {
+            showUserGuideDialog(() -> {
+                noticePrefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
+                uiPrefs.edit()
+                        .putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE)
+                        .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                        .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                        .apply();
+                handler.postDelayed(() -> {
+                    if (!isFinishing()) {
+                        HavalStoreQrDialog.show(MainActivity.this,
+                                isEn()
+                                        ? "✅ Installed Successfully! Scan QR for Haval H9 Store & Updates"
+                                        : "✅ تم التثبيت بنجاح — امسح الباركود لمتجر هافال H9 والتحديثات");
+                    }
+                }, 220L);
+            }, true);
+        } else if (lastChangelogVer < BuildConfig.VERSION_CODE) {
             uiPrefs.edit().putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE).apply();
             handler.postDelayed(() -> {
                 if (!isFinishing()) {
-                    showChangelogDialog();
+                    showChangelogDialog(() -> {
+                        uiPrefs.edit()
+                                .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                                .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                                .apply();
+                        handler.postDelayed(() -> {
+                            if (!isFinishing()) {
+                                HavalStoreQrDialog.show(MainActivity.this,
+                                        isEn()
+                                                ? "🎉 Updated to v" + BuildConfig.VERSION_NAME + "! Scan QR for Haval H9 Store"
+                                                : "🎉 تم التحديث إلى الإصدار " + BuildConfig.VERSION_NAME + " — امسح الباركود لمتجر هافال H9");
+                            }
+                        }, 220L);
+                    });
                 }
-            }, 1800L);
+            }, 1500L);
+        } else if (lastQrVer < BuildConfig.VERSION_CODE || pendingPostQr) {
+            uiPrefs.edit()
+                    .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                    .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                    .apply();
+            handler.postDelayed(() -> {
+                if (!isFinishing()) {
+                    HavalStoreQrDialog.show(MainActivity.this,
+                            isEn()
+                                    ? "🎉 Updated / Installed Successfully! Scan QR for Haval H9 Store"
+                                    : "🎉 تم التثبيت والتحديث بنجاح — امسح الباركود لمتجر هافال H9");
+                }
+            }, 1200L);
         }
 
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
@@ -622,37 +697,59 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     void applyImmersiveMode() {
         try {
             boolean fullScreen = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_FULLSCREEN_ENABLED, true);
+            Window window = getWindow();
+            if (window == null) return;
+
             if (fullScreen) {
-                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    WindowManager.LayoutParams lp = window.getAttributes();
+                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    window.setAttributes(lp);
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    WindowInsetsController controller = getWindow().getInsetsController();
+                    window.setDecorFitsSystemWindows(false);
+                    WindowInsetsController controller = window.getInsetsController();
                     if (controller != null) {
-                        controller.hide(WindowInsets.Type.statusBars());
+                        controller.hide(WindowInsets.Type.systemBars());
                         controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                     }
                 } else {
-                    View decor = getWindow().getDecorView();
+                    View decor = window.getDecorView();
                     if (decor != null) {
                         decor.setSystemUiVisibility(
-                                View.SYSTEM_UI_FLAG_FULLSCREEN
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                                 | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
                         );
                     }
                 }
             } else {
-                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    WindowManager.LayoutParams lp = window.getAttributes();
+                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                    window.setAttributes(lp);
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    WindowInsetsController controller = getWindow().getInsetsController();
+                    window.setDecorFitsSystemWindows(true);
+                    WindowInsetsController controller = window.getInsetsController();
                     if (controller != null) {
-                        controller.show(WindowInsets.Type.statusBars());
+                        controller.show(WindowInsets.Type.systemBars());
                     }
                 } else {
-                    View decor = getWindow().getDecorView();
+                    View decor = window.getDecorView();
                     if (decor != null) {
                         decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
                     }
                 }
+            }
+            if (rootContainer != null) {
+                rootContainer.requestApplyInsets();
+                rootContainer.requestLayout();
             }
         } catch (Throwable ignored) { }
     }
@@ -685,19 +782,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 sLp.bottomMargin = btnBottom;
             }
         } else {
-            // Split-Screen or Portrait: Elevated and enlarged Settings button so it never collides with car OS dock or edge dead-zone
+            // Split-Screen or Portrait: Pair Settings button symmetrically beside Quick Apps button at the bottom
+            int btnGap = dp(10);
+            int pairedW = Math.min(dp(150), Math.round((w - dp(34)) * 0.48f));
+            int totalW = pairedW * 2 + btnGap;
+            int startX = Math.max(dp(8), Math.round((w - totalW) * 0.5f));
             int btnBottom = dp(12);
-            sLp.width = dp(165);
+            sLp.width = pairedW;
             sLp.height = dp(46);
-            sLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            sLp.leftMargin = 0;
+            sLp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+            sLp.leftMargin = startX;
             sLp.rightMargin = 0;
             sLp.bottomMargin = btnBottom;
         }
         mainSettingsButton.setLayoutParams(sLp);
-        if (!hasActiveOverlay()) {
-            mainSettingsButton.bringToFront();
-        }
+        syncMainButtonsVisibility();
     }
 
     @Override
@@ -828,7 +927,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         themeBg.setStroke(dp(1), 0xFFE5B64A);
         theme.setBackground(themeBg);
         theme.setOnClickListener(v -> {
-            int next = (qiblaView.getThemeMode() + 1) % 5;
+            int next = (qiblaView.getThemeMode() + 1) % 8;
             qiblaView.setThemeMode(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME_MODE, next).apply();
             theme.setText((isEn() ? "Theme: " : "المظهر: ") + themeModeLabel(next));
@@ -945,7 +1044,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         adhanSoundBtn.setBackground(adhanBg);
         adhanSoundBtn.setOnClickListener(v -> {
             int curMode = getSharedPreferences(UI_PREFS, MODE_PRIVATE).getInt("adhan_sound_mode", SoundManager.SOUND_MODE_COMBINED);
-            int nextMode = (curMode + 1) % 4;
+            int nextMode = (curMode + 1) % 6;
+            if (nextMode == SoundManager.SOUND_MODE_CUSTOM && !SoundManager.hasCustomAudio(this)) {
+                nextMode = SoundManager.SOUND_MODE_COMBINED;
+            }
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit()
                     .putInt("adhan_sound_mode", nextMode)
                     .putBoolean(KEY_ADHAN_SOUND_ENABLED, nextMode != SoundManager.SOUND_MODE_MUTED)
@@ -1176,6 +1278,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     void showChangelogDialog() {
+        showChangelogDialog(null);
+    }
+
+    void showChangelogDialog(final Runnable onDismiss) {
         final String overlayTag = "h9_overlay_changelog";
         int screenHeight = getVisiblePaneHeight();
         int screenWidth = getVisiblePaneWidth();
@@ -1211,31 +1317,32 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         inner.setGravity(isEn() ? Gravity.LEFT : Gravity.RIGHT);
 
         String changelogText = isEn()
-                ? "◈ Version 9.9.9 (Grand Automotive Expanded Dock & Full Numbers):\n" +
-                  "• Expanded Dock Bar to 440dp with 50x50dp large touchable square buttons [1] [2] [3] [4] [5], close button, and speed indicator (0 km/h) with zero clipping.\n" +
-                  "• Added HorizontalScrollView wrapper and absolute Gravity.TOP | Gravity.LEFT coordinate positioning ensuring all numbers are complete and legible.\n" +
-                  "• Auto-start dynamic floating ball on car ignition (BOOT_COMPLETED & Quick Boot).\n\n" +
-                  "◈ Version 9.9.8 (Latest Automotive):\n" +
-                  "• Feature #3 Audio Polish: Added multiple prayer alert sounds (Male Voice, Makkah Takbeerat, Calm Islamic Chime, Mute) with Auto-Media Ducking (lowers car radio 70% during alert).\n" +
-                  "• Feature #4 Pure Black OLED Night Mode: Complete glare-free black theme designed for midnight highway driving without eye fatigue.\n" +
+                ? "◈ Version 10.0.0 — Official Automotive Release (Build 116):\n" +
+                  "• Dual-Stage Prayer Engine (Root Fix): Astronomical GPS calculation first (NOAA/Jean Meeus + Official Umm Al-Qura rounding & automatic Ramadan +120m Isha), followed by optional UAQ online confirmation with clear source badge.\n" +
+                  "• 4-Face Swipeable Luxury Dial: Luxury 3D Kaaba Qibla Compass (with Makkah distance positioned cleanly beneath the vehicle Qibla indicator), 12h Digital Clock + Speed Gauge, 360° Sport Compass, and Pure Luxury Analog Watch with beveled gold dauphine hands, continuous sweep second hand & orbiting Qibla beacon.\n" +
+                  "• 7 Royal Luxury Themes: Added Royal Burgundy & Rose Gold and Platinum Smoked Titanium alongside Emerald, Navy, Desert Amber, Pearl Day, and Pure Black OLED across all screens & Floating Ball.\n" +
+                  "• Direct Car Auto-Launch & Primary Home Mode + True Edge-to-Edge Fullscreen: Optional startup auto-open, Primary Car Launcher toggle, hidden status/navigation bars, and automatic Store QR Barcode after every install & update.\n" +
+                  "• Enlarged Quick App Launcher & Settings Overlay Fix: Expanded Quick Apps grid below Weather & Floating Ball dock, fixed Store QR & Developer modals elevation inside Settings, Windy ECMWF radar first with hardware acceleration, 2-Takbeer default alert + custom audio file uploader (MP3/M4A/WAV).\n\n" +
+                  "◈ Version 9.9.8 (Automotive Base):\n" +
+                  "• Added multiple prayer alert sounds (2 Takbeers, Calm Chime, Makkah Takbeerat, Custom Upload, Mute) with Auto-Media Ducking (lowers car radio 70% during alert).\n" +
+                  "• Pure Black OLED Night Mode: Complete glare-free black theme designed for midnight highway driving without eye fatigue.\n" +
                   "• Windshield HUD Mirroring Mode: Flip the display horizontally with one touch to project Qibla, heading, and GPS speed onto the car windshield at night.\n" +
-                  "• Individual 6-Prayer Adjustment: Dedicated (+) and (-) buttons + minute dropdowns in settings to customize Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha independently.\n" +
-                  "• Hybrid Offline Weather & GPS Climatology: Persistent caching and astronomical solar estimation when disconnected in desert/remote areas.\n\n" +
+                  "• Individual 6-Prayer Adjustment & Hybrid Offline Weather + GPS Climatology.\n\n" +
                   "◈ Version 9.9.0:\n" +
                   "• Full BYD DiLink 5.1 & Leopard 5 car system support: rotating screen, 3-screen multi-display, and 320 DPI density.\n" +
                   "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
                   "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
-                : "◈ الإصدار 9.9.9 (التحديث الملكي لشريط السيارة وظهور كافة الأرقام كاملة وكبيرة):\n" +
-                  "• تكبير أزرار شريط السيارة المربعة إلى 50×50dp مع أرقام وأيقونات واضحة وكبيرة وسهلة اللمس من مقعد السائق.\n" +
-                  "• توسيع عرض الشريط الكبسولي إلى 440dp مع نظام التمرير الأفقي الآمن لمنع أي قص أو اقتطاع وظهور كافة العناصر الستة [1] [2] [3] [4] [5] ودائرة السرعة.\n" +
-                  "• ضبط نظام الإحداثيات المطلق (Gravity.TOP | Gravity.LEFT) لضمان توسيط الشريط ومنع ترحيله خارج الشاشة.\n" +
-                  "• تشغيل الكرة الديناميكية تلقائياً فور تشغيل السيارة مع إقلاع النظام.\n\n" +
+                : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 116):\n" +
+                  "• الحل الجذري لمواقيت الصلاة (مرحلتان): حساب فلكي فوري عبر GPS (معادلات NOAA وتقريب أم القرى الرسمي و+120 دقيقة في رمضان تلقائياً) متبوعاً بتأكيد إضافي عبر الإنترنت (UAQ) دون تذبذب.\n" +
+                  "• القرص الفاخر بـ 4 أوجه بالسحب يمين/يسار: بوصلة القبلة والكعبة المشرفة الفاخرة (مع نقل مسافة مكة أسفل «القبلة على يسارك»)، الساعة الرقمية 12 ساعة + السرعة، البوصلة الرياضية 360°، والساعة التناظرية الفاخرة الصافية بعقارب ذهبية ثلاثية الأبعاد وعقرب ثواني انسيابي ومؤشر القبلة المداري.\n" +
+                  "• باقة الثيمات السبعة الملكية: إضافة ثيمي «🍷 عنابي ملكي وذهب وردي» و«⚜️ بلاتينيوم وتيتانيوم ملكي» متزامنين على كامل الشاشات والكرة العائمة.\n" +
+                  "• فتح تلقائي كأساسي + فل سكرين كامل + باركود المتجر: تشغيل تلقائي مع إقلاع السيارة وخيار التعيين كشاشة رئيسية أساسية، إخفاء تام لأشرطة النظام (Edge-to-Edge)، وإظهار باركود المتجر تلقائياً بعد أي تثبيت أو تحديث.\n" +
+                  "• تكبير صفحة التطبيقات وإصلاح الإعدادات ورادار ويندي: توسيع شبكة التطبيقات السريعة أسفل الطقس والكرة العائمة، إصلاح استجابة الباركود وحول المطور داخل الإعدادات، فتح رادار ويندي الأوروبي (ECMWF) أولاً باستجابة فائقة، تكبيرتين فقط بالأعلى مع ميزة رفع ملف صوتي مخصص للأذان.\n\n" +
                   "◈ الإصدار 9.9.8 (التحديث الجديد للسيارات):\n" +
-                  "• ميزة الصوتيات الذكية للسيارة: خيارات أصوات أذان متعددة (صوت رجل، تكبيرات الحرم المكي، نغمة إسلامية وقورة هادئة، كتم) + خفض صوت وسائط السيارة تلقائياً 70% أثناء الأذان (Audio Ducking).\n" +
-                  "• وضع القيادة الليلية الهادئة (Pure Black OLED Night): ثيم أسود نقي تماماً #000000 ومريح للعينين على الطرق المظلمة والسفر ليلاً بدون أي توهج.\n" +
-                  "• وضع الانعكاس على الزجاج الأمامي (HUD Mirroring): قلب الشاشة أفقياً بلمسة واحدة لعكس القبلة والسرعة والاتجاه على الزجاج الأمامي للسيارة ليلاً كشاشات الـ HUD الفارهة.\n" +
-                  "• معايرة وتعديل الصلوات الست يدوياً: أزرار (+) و (-) وقوائم منسدلة أمام كل صلاة (الفجر، الشروق، الظهر، العصر، المغرب، العشاء) لضبط الدقائق بشكل مستقل وفوري.\n" +
-                  "• محرك الطقس الهجين وأوفلاين GPS: حفظ تلقائي لحالة الطقس بالذاكرة مع محرك تقدير مناخي فلكي عبر إحداثيات GPS والشمس عند انقطاع الإنترنت بالبر والسفر.\n\n" +
+                  "• صوتيات الأذان المتقدمة للسيارة: تكبيرتين فقط بصوت الحرم المكي الطبيعي، نغمة هادئة، أذان مخصص مرفوع، وكتم + خفض صوت ميديا السيارة تلقائياً 70% أثناء الأذان (Audio Ducking).\n" +
+                  "• وضع القيادة الليلية الهادئة (Pure Black OLED Night): ثيم أسود نقي تماماً #000000 ومريح للعينين على الطرق المظلمة.\n" +
+                  "• وضع الانعكاس على الزجاج الأمامي (HUD Mirroring): قلب الشاشة أفقياً بلمسة واحدة لعكس القبلة والسرعة والاتجاه على الزجاج الأمامي ليلاً.\n" +
+                  "• معايرة الصلوات الست يدوياً بـ (+) و (-) + محرك الطقس الهجين وأوفلاين GPS.\n\n" +
                   "◈ الإصدار 9.9.0:\n" +
                   "• دعم كامل لسيارة ليوبارد 5 ونظام BYD DiLink 5.1: دعم دوران الشاشة والشاشات الثلاث وكثافة 320 DPI.\n" +
                   "• دعم شامل لجميع إصدارات أندرويد (تخفيض minSdk إلى 24): يعمل على أندرويد 7.0 إلى 15.\n" +
@@ -1322,13 +1429,37 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         closeLp.topMargin = dp(8);
         card.addView(close, closeLp);
 
-        showModalCardOverlay(overlayTag, card, targetWidth, targetHeight, true, null);
+        showModalCardOverlay(overlayTag, card, targetWidth, targetHeight, true, onDismiss);
     }
 
-    private void showDeveloperNoticeOnce() {
-        final SharedPreferences prefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
-        if (prefs.getBoolean(KEY_NOTICE_SHOWN, false)) return;
-        showUserGuideDialog(() -> prefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply(), true);
+    public static void setHomeLauncherEnabled(Context ctx, boolean enabled) {
+        if (ctx == null) return;
+        try {
+            ComponentName alias = new ComponentName(ctx, "sa.h9.qibla.HomeLauncherAlias");
+            int newState = enabled
+                    ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+            ctx.getPackageManager().setComponentEnabledSetting(
+                    alias,
+                    newState,
+                    PackageManager.DONT_KILL_APP
+            );
+            ctx.getSharedPreferences(UI_PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_PRIMARY_LAUNCHER_MODE, enabled)
+                    .apply();
+        } catch (Throwable ignored) { }
+    }
+
+    public static boolean isHomeLauncherEnabled(Context ctx) {
+        if (ctx == null) return false;
+        try {
+            ComponentName alias = new ComponentName(ctx, "sa.h9.qibla.HomeLauncherAlias");
+            int state = ctx.getPackageManager().getComponentEnabledSetting(alias);
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return true;
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) return false;
+        } catch (Throwable ignored) { }
+        return ctx.getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_PRIMARY_LAUNCHER_MODE, false);
     }
 
     void showUserGuideDialog() {
@@ -1538,12 +1669,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             return en ? "Alert: Muted 🔇" : "التنبيه: صامت 🔇";
         }
         if (mode == SoundManager.SOUND_MODE_VOICE_ONLY) {
-            return en ? "Alert: Male Voice Only 🗣️" : "التنبيه: صوت رجل فقط 🗣️";
+            return en ? "Alert: Chime + 2 Takbeers 🔔" : "التنبيه: نغمة هادئة + تكبيرتين 🔔";
         }
         if (mode == SoundManager.SOUND_MODE_TAKBEER_ONLY) {
-            return en ? "Alert: Takbeerat Only 🕌" : "التنبيه: تكبيرات فقط 🕌";
+            return en ? "Alert: Full Makkah Takbeerat 🕌" : "التنبيه: تكبيرات الحرم (4) 🕌";
         }
-        return en ? "Alert: Voice + Takbeerat 🔊" : "التنبيه: صوت رجل + تكبيرات 🔊";
+        if (mode == SoundManager.SOUND_MODE_CHIME) {
+            return en ? "Alert: Calm Chime Only 🎵" : "التنبيه: نغمة دخول الصلاة فقط 🎵";
+        }
+        if (mode == SoundManager.SOUND_MODE_CUSTOM && SoundManager.hasCustomAudio(this)) {
+            String customName = SoundManager.getCustomAudioDisplayName(this);
+            if (customName.length() > 18) customName = customName.substring(0, 16) + "…";
+            return en ? ("Alert: Custom (" + customName + ") 📂") : ("التنبيه: مخصص (" + customName + ") 📂");
+        }
+        return en ? "Alert: 2 Takbeers Only 🕋" : "التنبيه: تكبيرتين فقط 🕋";
     }
 
     private String themeModeLabel(int mode) {
@@ -1554,6 +1693,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 case QiblaView.THEME_AMBER: return "Desert Amber";
                 case QiblaView.THEME_PEARL: return "Pearl Day";
                 case QiblaView.THEME_OLED_NIGHT: return "Pure Black OLED Night";
+                case QiblaView.THEME_ROYAL_BURGUNDY: return "Royal Burgundy & Rose Gold";
+                case QiblaView.THEME_PLATINUM_TITANIUM: return "Platinum & Smoked Titanium";
                 default: return "Auto (Day/Night)";
             }
         }
@@ -1563,6 +1704,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             case QiblaView.THEME_AMBER: return "عنبر ذهبي";
             case QiblaView.THEME_PEARL: return "نهاري لؤلؤي";
             case QiblaView.THEME_OLED_NIGHT: return "وضع القيادة الليلية (OLED)";
+            case QiblaView.THEME_ROYAL_BURGUNDY: return "عنابي ملكي وذهب وردي";
+            case QiblaView.THEME_PLATINUM_TITANIUM: return "بلاتينيوم وتيتانيوم ملكي";
             default: return "تلقائي (حسب الوقت)";
         }
     }
@@ -1841,6 +1984,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 registerReceiver(adhanTriggerReceiver, af);
             }
         } catch (Throwable ignored) { }
+
+        try {
+            SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+            if (uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false) && !hasActiveOverlay()) {
+                uiPrefs.edit()
+                        .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                        .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                        .apply();
+                handler.postDelayed(() -> {
+                    if (!isFinishing() && !hasActiveOverlay()) {
+                        HavalStoreQrDialog.show(MainActivity.this,
+                                isEn()
+                                        ? "🎉 Updated / Installed Successfully! Scan QR for Haval H9 Store"
+                                        : "🎉 تم التثبيت والتحديث بنجاح — امسح الباركود لمتجر هافال H9");
+                    }
+                }, 450L);
+            }
+        } catch (Throwable ignored) { }
     }
 
     @Override
@@ -1863,6 +2024,63 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             startLocation();
         } else {
             qiblaView.setStatus("يلزم السماح بالموقع لحساب القبلة");
+        }
+    }
+
+    public void launchCustomAdhanAudioPicker() {
+        Intent docIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        docIntent.addCategory(Intent.CATEGORY_OPENABLE);
+        docIntent.setType("audio/*");
+        docIntent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "audio/mpeg", "audio/mp3", "audio/mp4", "audio/m4a",
+                "audio/aac", "audio/wav", "audio/x-wav", "audio/ogg",
+                "audio/flac", "application/ogg"
+        });
+        docIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        String chooserTitle = isEn() ? "Select Custom Adhan Audio" : "اختر ملف الأذان الصوتي";
+        try {
+            startActivityForResult(Intent.createChooser(docIntent, chooserTitle), REQ_PICK_CUSTOM_ADHAN);
+        } catch (Throwable t) {
+            try {
+                Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                fallback.setType("audio/*");
+                startActivityForResult(Intent.createChooser(fallback, chooserTitle), REQ_PICK_CUSTOM_ADHAN);
+            } catch (Throwable t2) {
+                FullScreenSettingsDialog.showCompactToast(this,
+                        isEn() ? "⚠️ No file picker app available on this device" : "⚠️ لا يوجد مدير ملفات متاح لاختيار الصوت على هذا الجهاز");
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_CUSTOM_ADHAN && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            final Uri audioUri = data.getData();
+            FullScreenSettingsDialog.showCompactToast(this,
+                    isEn() ? "⏳ Importing Adhan audio file..." : "⏳ جاري استيراد وحفظ الملف الصوتي للأذان...");
+            new Thread(() -> {
+                final boolean ok = SoundManager.importCustomAudioFromUri(this, audioUri);
+                final String fileName = SoundManager.getCustomAudioDisplayName(this);
+                final String dur = SoundManager.getCustomAudioDurationFormatted(this);
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    if (ok) {
+                        String msg = isEn()
+                                ? ("✅ Custom Adhan saved: " + fileName + (dur.isEmpty() ? "" : (" (" + dur + ")")))
+                                : ("✅ تم رفع وحفظ صوت الأذان: " + fileName + (dur.isEmpty() ? "" : (" (" + dur + ")")));
+                        FullScreenSettingsDialog.showCompactToast(this, msg);
+                        FloatingSpeedBubbleService.reloadPreferences(this);
+                        if (FullScreenSettingsDialog.isOpen(this)) {
+                            FullScreenSettingsDialog.show(this);
+                        }
+                    } else {
+                        FullScreenSettingsDialog.showCompactToast(this,
+                                isEn() ? "⚠️ Unsupported audio file or exceeds 30MB limit" : "⚠️ ملف غير مدعوم أو يتجاوز الحد المسموح (30 ميجابايت)");
+                    }
+                });
+            }, "H9ImportAdhanThread").start();
         }
     }
 

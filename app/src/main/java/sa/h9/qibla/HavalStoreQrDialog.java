@@ -40,8 +40,14 @@ public final class HavalStoreQrDialog {
     private HavalStoreQrDialog() {}
 
     public static void show(Context context) {
+        show(context, null);
+    }
+
+    public static void show(Context context, String customSubtitle) {
         if (context == null) return;
 
+        final boolean isEn = context.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(MainActivity.KEY_ENGLISH_MODE, false);
         final String overlayTag = "h9_overlay_qr";
         final boolean embedded = (context instanceof MainActivity) && ((MainActivity) context).getRootContainer() != null;
         final Dialog dialog = embedded ? null : new Dialog(context);
@@ -76,7 +82,7 @@ public final class HavalStoreQrDialog {
 
         // Header Title
         TextView title = new TextView(context);
-        title.setText("🚗 متجر هافال H9 للسيارات الذكية");
+        title.setText(isEn ? "🚗 Haval H9 Smart Car Store" : "🚗 متجر هافال H9 للسيارات الذكية");
         title.setTextSize(19f);
         title.setTextColor(0xFFFFD768);
         title.setTypeface(FontHelper.getArabicTypeface(context), Typeface.BOLD);
@@ -84,7 +90,10 @@ public final class HavalStoreQrDialog {
         root.addView(title);
 
         TextView subTitle = new TextView(context);
-        subTitle.setText("امسح الباركود بكاميرا الجوال للتحميل والتحديثات المباشرة");
+        String defaultSub = isEn
+                ? "Scan QR code with your phone camera for direct downloads & updates"
+                : "امسح الباركود بكاميرا الجوال للتحميل والتحديثات المباشرة";
+        subTitle.setText((customSubtitle != null && !customSubtitle.isEmpty()) ? customSubtitle : defaultSub);
         subTitle.setTextSize(13.5f);
         subTitle.setTextColor(0xFFD4E8E2);
         subTitle.setTypeface(FontHelper.getArabicTypeface(context), Typeface.NORMAL);
@@ -130,7 +139,7 @@ public final class HavalStoreQrDialog {
         btnRow.setGravity(Gravity.CENTER);
 
         Button btnCopy = new Button(context);
-        btnCopy.setText("📋 نسخ الرابط");
+        btnCopy.setText(isEn ? "📋 Copy Link" : "📋 نسخ الرابط");
         btnCopy.setTextSize(13.5f);
         btnCopy.setTextColor(Color.WHITE);
         btnCopy.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -144,7 +153,9 @@ public final class HavalStoreQrDialog {
                 ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                 if (cm != null) {
                     cm.setPrimaryClip(ClipData.newPlainText("Haval H9 Store", HAVAL_STORE_URL));
-                    Toast.makeText(context, "✅ تم نسخ رابط متجر هافال H9 (h9-story.com) للحافظة", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context,
+                            isEn ? "✅ Store URL copied (h9-story.com)" : "✅ تم نسخ رابط متجر هافال H9 (h9-story.com) للحافظة",
+                            Toast.LENGTH_SHORT).show();
                 }
             } catch (Throwable ignored) { }
         });
@@ -154,7 +165,7 @@ public final class HavalStoreQrDialog {
         btnRow.addView(btnCopy, btnCopyLp);
 
         Button btnOpen = new Button(context);
-        btnOpen.setText("🌐 فتح بالمتصفح");
+        btnOpen.setText(isEn ? "🌐 Open Store" : "🌐 فتح بالمتصفح");
         btnOpen.setTextSize(13.5f);
         btnOpen.setTextColor(Color.WHITE);
         btnOpen.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -169,7 +180,7 @@ public final class HavalStoreQrDialog {
                 browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(browserIntent);
             } catch (Throwable t) {
-                Toast.makeText(context, "⚠️ تعذر فتح المتصفح مباشرة", Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, isEn ? "⚠️ Unable to open browser" : "⚠️ تعذر فتح المتصفح مباشرة", Toast.LENGTH_SHORT).show();
             }
         });
         btnRow.addView(btnOpen, new LinearLayout.LayoutParams(0, 42 * dpVal, 1.0f));
@@ -178,7 +189,7 @@ public final class HavalStoreQrDialog {
 
         // Close Button
         Button btnClose = new Button(context);
-        btnClose.setText("✕ إغلاق");
+        btnClose.setText(isEn ? "✕ Close" : "✕ إغلاق");
         btnClose.setTextSize(13f);
         btnClose.setTextColor(0xFF94A3B8);
         GradientDrawable closeBg = new GradientDrawable();
