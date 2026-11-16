@@ -3,26 +3,28 @@ package sa.h9.qibla;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Intent;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.view.Window;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.widget.LinearLayout;
-import android.widget.Button;
-import android.widget.TextView;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.content.FileProvider;
 import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -30,6 +32,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class UpdateManager {
     private static final String PREFS = "h9_qibla_ota";
@@ -89,7 +92,7 @@ public final class UpdateManager {
                     int remoteCode = best.getInt("versionCode");
                     String remoteName = best.optString("versionName", String.valueOf(remoteCode));
                     String apkUrl = best.getString("apkUrl");
-                    String sha256 = normalizeHex(best.getString("sha256"));
+                    String sha256 = normalizeHex(best.optString("sha256", ""));
                     String notes = en ? best.optString("notes_en", best.optString("notes", ""))
                                       : best.optString("notes_ar", best.optString("notes", ""));
                     if (remoteCode <= BuildConfig.VERSION_CODE) {
@@ -120,49 +123,58 @@ public final class UpdateManager {
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
-        int pad = dp(activity, 28);
-        card.setPadding(pad, dp(activity, 24), pad, dp(activity, 24));
+        int pad = dp(activity, 24);
+        card.setPadding(pad, dp(activity, 20), pad, dp(activity, 20));
 
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF171D23);
-        bg.setCornerRadius(dp(activity, 28));
+        bg.setColor(0xF5171D23);
+        bg.setCornerRadius(dp(activity, 26));
         bg.setStroke(dp(activity, 2), 0xFFE5B64A);
         card.setBackground(bg);
 
         TextView title = new TextView(activity);
-        title.setText(en ? "New Update Available" : "يوجد تحديث جديد");
+        title.setText(en ? "New Official Update" : "تحديث رسمي جديد");
         title.setTextColor(0xFFFFC857);
-        title.setTextSize(27f);
+        title.setTextSize(24f);
         title.setGravity(Gravity.CENTER);
         title.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         card.addView(title, new LinearLayout.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 58)));
+                WindowManager.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView version = new TextView(activity);
-        version.setText((en ? "Version " : "الإصدار ") + name);
+        version.setText((en ? "Version " : "الإصدار ") + name + " (Build " + code + ")");
         version.setTextColor(0xFF2FE0C7);
-        version.setTextSize(20f);
+        version.setTextSize(17f);
         version.setGravity(Gravity.CENTER);
         version.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams versionLp = new LinearLayout.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 46));
-        versionLp.bottomMargin = dp(activity, 8);
+                WindowManager.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        versionLp.topMargin = dp(activity, 4);
+        versionLp.bottomMargin = dp(activity, 10);
         card.addView(version, versionLp);
 
+        ScrollView scroll = new ScrollView(activity);
         TextView body = new TextView(activity);
         String bodyText = (notes == null || notes.trim().isEmpty())
                 ? (en ? "A newer version of Qibla is available." : "يتوفر إصدار أحدث للتطبيق.")
                 : notes.trim();
-        body.setText(bodyText + (en ? "\n\nThe update package integrity will be verified before installation." : "\n\nسيتم التحقق من سلامة ملف التحديث قبل التثبيت."));
+        body.setText(bodyText + (en
+                ? "\n\nThe APK will download inside the app, verify SHA-256 integrity, and install directly."
+                : "\n\nسيتم تحميل ملف التحديث مباشرة داخل التطبيق والتحقق من بصمة الأمان SHA-256 قبل التثبيت."));
         body.setTextColor(0xFFF1F5F6);
-        body.setTextSize(18f);
-        body.setGravity(Gravity.CENTER);
-        body.setTextDirection(en ? android.view.View.TEXT_DIRECTION_LTR : android.view.View.TEXT_DIRECTION_RTL);
-        body.setLineSpacing(dp(activity, 2), 1.10f);
+        body.setTextSize(15f);
+        body.setGravity(en ? Gravity.LEFT : Gravity.RIGHT);
+        body.setTextDirection(en ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
+        body.setTypeface(FontHelper.getArabicTypeface(activity));
+        body.setLineSpacing(dp(activity, 2), 1.12f);
+        scroll.addView(body, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        int paneH = embedded ? ((MainActivity) activity).getVisiblePaneHeight() : activity.getResources().getDisplayMetrics().heightPixels;
+        int scrollMaxH = Math.min(dp(activity, 240), Math.max(dp(activity, 120), (int) (paneH * 0.42f)));
         LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-        bodyLp.bottomMargin = dp(activity, 20);
-        card.addView(body, bodyLp);
+                WindowManager.LayoutParams.MATCH_PARENT, scrollMaxH);
+        bodyLp.bottomMargin = dp(activity, 16);
+        card.addView(scroll, bodyLp);
 
         LinearLayout buttons = new LinearLayout(activity);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
@@ -170,12 +182,13 @@ public final class UpdateManager {
 
         Button later = new Button(activity);
         later.setText(en ? "Later" : "لاحقًا");
-        later.setTextSize(18f);
+        later.setTextSize(16f);
         later.setTextColor(0xFFFFC857);
+        later.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         later.setAllCaps(false);
         GradientDrawable laterBg = new GradientDrawable();
         laterBg.setColor(0xFF25323A);
-        laterBg.setCornerRadius(dp(activity, 20));
+        laterBg.setCornerRadius(dp(activity, 18));
         laterBg.setStroke(dp(activity, 1), 0xFFE5B64A);
         later.setBackground(laterBg);
         later.setOnClickListener(v -> {
@@ -187,14 +200,15 @@ public final class UpdateManager {
         });
 
         Button install = new Button(activity);
-        install.setText(en ? "Download & Install" : "تنزيل وتثبيت");
+        install.setText(en ? "Download & Install" : "تنزيل وتثبيت مباشر");
         install.setTextSize(16f);
         install.setTextColor(Color.WHITE);
+        install.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         install.setAllCaps(false);
         GradientDrawable installBg = new GradientDrawable();
         installBg.setColor(0xFF117A7C);
-        installBg.setCornerRadius(dp(activity, 20));
-        installBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
+        installBg.setCornerRadius(dp(activity, 18));
+        installBg.setStroke(dp(activity, 2), 0xFF2FE0C7);
         install.setBackground(installBg);
         install.setOnClickListener(v -> {
             if (embedded) {
@@ -205,14 +219,14 @@ public final class UpdateManager {
             downloadAndInstall(activity, code, apkUrl, sha256);
         });
 
-        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(0, dp(activity, 50), 1.0f);
+        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(0, dp(activity, 50), 0.9f);
         btnLp1.rightMargin = dp(activity, 10);
         buttons.addView(later, btnLp1);
-        buttons.addView(install, new LinearLayout.LayoutParams(0, dp(activity, 50), 1.3f));
+        buttons.addView(install, new LinearLayout.LayoutParams(0, dp(activity, 50), 1.4f));
         card.addView(buttons, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         int paneW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : activity.getResources().getDisplayMetrics().widthPixels;
-        int maxW = Math.min(Math.max(dp(activity, 260), paneW - dp(activity, 32)), dp(activity, 620));
+        int maxW = Math.min(Math.max(dp(activity, 260), paneW - dp(activity, 32)), dp(activity, 640));
         if (embedded) {
             ((MainActivity) activity).showModalCardOverlay(overlayTag, card, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
         } else if (dialog != null) {
@@ -237,18 +251,325 @@ public final class UpdateManager {
 
     private static void downloadAndInstall(Activity activity, int code, String apkUrl, String expectedSha256) {
         if (activity == null || activity.isFinishing()) return;
+        final boolean en = isEn(activity);
+        final String progressTag = "h9_overlay_update_progress";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(activity, 24), dp(activity, 22), dp(activity, 24), dp(activity, 20));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF6171D23);
+        bg.setCornerRadius(dp(activity, 24));
+        bg.setStroke(dp(activity, 2), 0xFFE5B64A);
+        card.setBackground(bg);
+
+        TextView title = new TextView(activity);
+        title.setText(en ? "⬇️ Downloading Official Update" : "⬇️ جاري تنزيل التحديث الرسمي");
+        title.setTextColor(0xFFFFC857);
+        title.setTextSize(19f);
+        title.setGravity(Gravity.CENTER);
+        title.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        card.addView(title);
+
+        TextView status = new TextView(activity);
+        status.setText(en ? "Connecting securely..." : "جاري الاتصال بالخادم...");
+        status.setTextColor(0xFF2FE0C7);
+        status.setTextSize(14.5f);
+        status.setGravity(Gravity.CENTER);
+        status.setTypeface(FontHelper.getArabicTypeface(activity));
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusLp.topMargin = dp(activity, 10);
+        statusLp.bottomMargin = dp(activity, 12);
+        card.addView(status, statusLp);
+
+        ProgressBar progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setIndeterminate(true);
+        progressBar.setMax(100);
+        LinearLayout.LayoutParams pbLp = new LinearLayout.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 12));
+        pbLp.bottomMargin = dp(activity, 16);
+        card.addView(progressBar, pbLp);
+
+        Button cancelBtn = new Button(activity);
+        cancelBtn.setText(en ? "Cancel" : "إلغاء التنزيل");
+        cancelBtn.setTextSize(14f);
+        cancelBtn.setTextColor(0xFFFFC857);
+        cancelBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        GradientDrawable cancelBg = new GradientDrawable();
+        cancelBg.setColor(0xFF25323A);
+        cancelBg.setCornerRadius(dp(activity, 14));
+        cancelBg.setStroke(dp(activity, 1), 0xFFE5B64A);
+        cancelBtn.setBackground(cancelBg);
+        card.addView(cancelBtn, new LinearLayout.LayoutParams(dp(activity, 160), dp(activity, 44)));
+
+        final Dialog fallbackDialog = embedded ? null : new Dialog(activity);
+        if (fallbackDialog != null) {
+            fallbackDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            fallbackDialog.setCancelable(false);
+            fallbackDialog.setContentView(card);
+            fallbackDialog.show();
+        } else {
+            int paneW = ((MainActivity) activity).getVisiblePaneWidth();
+            int maxW = Math.min(Math.max(dp(activity, 250), paneW - dp(activity, 32)), dp(activity, 520));
+            ((MainActivity) activity).showModalCardOverlay(progressTag, card, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, false, null);
+        }
+
+        Runnable closeProgress = () -> {
+            if (embedded) {
+                ((MainActivity) activity).dismissOverlayByTag(progressTag);
+            } else if (fallbackDialog != null && fallbackDialog.isShowing()) {
+                fallbackDialog.dismiss();
+            }
+        };
+
+        cancelBtn.setOnClickListener(v -> {
+            cancelled.set(true);
+            closeProgress.run();
+        });
+
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            File outFile = null;
+            try {
+                File dir = new File(activity.getExternalFilesDir(null), "updates");
+                if (!dir.exists()) dir.mkdirs();
+                outFile = new File(dir, "Qibla-v" + code + ".apk");
+                if (outFile.exists()) outFile.delete();
+
+                String currentUrl = apkUrl;
+                int redirects = 0;
+                while (redirects < 5) {
+                    URL u = new URL(currentUrl);
+                    conn = (HttpURLConnection) u.openConnection();
+                    conn.setConnectTimeout(12000);
+                    conn.setReadTimeout(20000);
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
+                    int codeResp = conn.getResponseCode();
+                    if (codeResp == HttpURLConnection.HTTP_MOVED_PERM
+                            || codeResp == HttpURLConnection.HTTP_MOVED_TEMP
+                            || codeResp == 307 || codeResp == 308) {
+                        String loc = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        if (loc == null || loc.isEmpty()) break;
+                        currentUrl = loc;
+                        redirects++;
+                        continue;
+                    }
+                    break;
+                }
+
+                if (conn == null || conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new IllegalStateException("HTTP " + (conn == null ? -1 : conn.getResponseCode()));
+                }
+
+                final int totalBytes = conn.getContentLength();
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                byte[] buf = new byte[16384];
+                long downloaded = 0L;
+                long lastUiUpdate = 0L;
+
+                try (InputStream in = new BufferedInputStream(conn.getInputStream());
+                     FileOutputStream fos = new FileOutputStream(outFile)) {
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        if (cancelled.get()) {
+                            outFile.delete();
+                            return;
+                        }
+                        fos.write(buf, 0, n);
+                        md.update(buf, 0, n);
+                        downloaded += n;
+                        long now = System.currentTimeMillis();
+                        if (now - lastUiUpdate >= 120L) {
+                            lastUiUpdate = now;
+                            final long dl = downloaded;
+                            activity.runOnUiThread(() -> {
+                                if (totalBytes > 0) {
+                                    int pct = (int) Math.min(100, (dl * 100L) / totalBytes);
+                                    progressBar.setIndeterminate(false);
+                                    progressBar.setProgress(pct);
+                                    status.setText(String.format(Locale.US,
+                                            en ? "Downloaded %d%% (%.1f / %.1f MB)" : "تم التحميل %d%% (%.1f / %.1f م.ب)",
+                                            pct, dl / 1048576f, totalBytes / 1048576f));
+                                } else {
+                                    status.setText(String.format(Locale.US,
+                                            en ? "Downloaded %.1f MB..." : "جاري التحميل (%.1f م.ب)...",
+                                            dl / 1048576f));
+                                }
+                            });
+                        }
+                    }
+                    fos.getFD().sync();
+                }
+
+                String actualSha = toHex(md.digest());
+                if (expectedSha256 != null && !expectedSha256.isEmpty() && !expectedSha256.equals(actualSha)) {
+                    outFile.delete();
+                    activity.runOnUiThread(() -> {
+                        closeProgress.run();
+                        Toast.makeText(activity,
+                                en ? "Downloaded update failed SHA-256 security check"
+                                   : "فشل التحقق من بصمة الأمان SHA-256 لملف التحديث",
+                                Toast.LENGTH_LONG).show();
+                        showDownloadFallbackDialog(activity, apkUrl);
+                    });
+                    return;
+                }
+
+                final File verifiedApk = outFile;
+                activity.runOnUiThread(() -> {
+                    closeProgress.run();
+                    launchApkInstaller(activity, verifiedApk, apkUrl);
+                });
+            } catch (Throwable t) {
+                if (outFile != null && outFile.exists()) outFile.delete();
+                if (!cancelled.get()) {
+                    activity.runOnUiThread(() -> {
+                        closeProgress.run();
+                        Toast.makeText(activity,
+                                en ? "Direct download unavailable — opening alternative options"
+                                   : "تعذر التنزيل المباشر — تم فتح خيارات التنزيل البديلة",
+                                Toast.LENGTH_SHORT).show();
+                        showDownloadFallbackDialog(activity, apkUrl);
+                    });
+                }
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }, "H9-OTA-Download").start();
+    }
+
+    private static void launchApkInstaller(Activity activity, File apkFile, String fallbackUrl) {
+        if (activity == null || activity.isFinishing() || apkFile == null || !apkFile.isFile()) return;
+        final boolean en = isEn(activity);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.getPackageManager().canRequestPackageInstalls()) {
+            showInstallPermissionPrompt(activity, apkFile, fallbackUrl);
+            return;
+        }
+
         try {
-            activity.getSharedPreferences(MainActivity.UI_PREFS, Activity.MODE_PRIVATE)
-                    .edit()
-                    .putBoolean(MainActivity.KEY_PENDING_POST_INSTALL_QR, true)
-                    .apply();
-        } catch (Throwable ignored) { }
-        try {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl));
-            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            activity.startActivity(browserIntent);
-        } catch (Throwable t) {
-            showDownloadFallbackDialog(activity, apkUrl);
+            Uri apkUri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".files", apkFile);
+            Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            installIntent.setData(apkUri);
+            installIntent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+            installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(installIntent);
+        } catch (Throwable firstErr) {
+            try {
+                Uri apkUri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".files", apkFile);
+                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+                viewIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(viewIntent);
+            } catch (Throwable secondErr) {
+                Toast.makeText(activity,
+                        en ? "Unable to open installer directly" : "تعذر فتح مُثبّت النظام تلقائياً",
+                        Toast.LENGTH_LONG).show();
+                showDownloadFallbackDialog(activity, fallbackUrl);
+            }
+        }
+    }
+
+    private static void showInstallPermissionPrompt(Activity activity, File apkFile, String fallbackUrl) {
+        final boolean en = isEn(activity);
+        final String tag = "h9_overlay_install_perm";
+        final boolean embedded = (activity instanceof MainActivity) && ((MainActivity) activity).getRootContainer() != null;
+
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(activity, 24), dp(activity, 20), dp(activity, 24), dp(activity, 20));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF6171D23);
+        bg.setCornerRadius(dp(activity, 24));
+        bg.setStroke(dp(activity, 2), 0xFFE5B64A);
+        card.setBackground(bg);
+
+        TextView title = new TextView(activity);
+        title.setText(en ? "Allow App Updates" : "السماح بتثبيت التحديثات");
+        title.setTextColor(0xFFFFC857);
+        title.setTextSize(20f);
+        title.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        card.addView(title);
+
+        TextView msg = new TextView(activity);
+        msg.setText(en
+                ? "The update APK has been downloaded and verified! Please enable \"Allow from this source\" for H9 Qibla, then tap Install."
+                : "تم تنزيل ملف التحديث والتحقق منه بنجاح! يرجى تفعيل «السماح من هذا المصدر» لتطبيق قبلة حتى يكتمل التثبيت مباشرة.");
+        msg.setTextColor(0xFFF1F5F6);
+        msg.setTextSize(15f);
+        msg.setTypeface(FontHelper.getArabicTypeface(activity));
+        msg.setGravity(Gravity.CENTER);
+        msg.setTextDirection(en ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
+        LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        msgLp.topMargin = dp(activity, 10);
+        msgLp.bottomMargin = dp(activity, 16);
+        card.addView(msg, msgLp);
+
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+
+        Button settingsBtn = new Button(activity);
+        settingsBtn.setText(en ? "Open Permission" : "فتح الإذن");
+        settingsBtn.setTextSize(14f);
+        settingsBtn.setTextColor(0xFFFFC857);
+        settingsBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        GradientDrawable sBg = new GradientDrawable();
+        sBg.setColor(0xFF25323A);
+        sBg.setCornerRadius(dp(activity, 16));
+        sBg.setStroke(dp(activity, 1), 0xFFE5B64A);
+        settingsBtn.setBackground(sBg);
+        settingsBtn.setOnClickListener(v -> {
+            try {
+                Intent permIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + activity.getPackageName()));
+                permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(permIntent);
+            } catch (Throwable ignored) { }
+        });
+
+        Button retryBtn = new Button(activity);
+        retryBtn.setText(en ? "Install Now" : "تثبيت الآن");
+        retryBtn.setTextSize(14f);
+        retryBtn.setTextColor(Color.WHITE);
+        retryBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        GradientDrawable rBg = new GradientDrawable();
+        rBg.setColor(0xFF117A7C);
+        rBg.setCornerRadius(dp(activity, 16));
+        rBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
+        retryBtn.setBackground(rBg);
+        retryBtn.setOnClickListener(v -> {
+            if (embedded) ((MainActivity) activity).dismissOverlayByTag(tag);
+            launchApkInstaller(activity, apkFile, fallbackUrl);
+        });
+
+        LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, dp(activity, 48), 1f);
+        lp1.rightMargin = dp(activity, 10);
+        row.addView(settingsBtn, lp1);
+        row.addView(retryBtn, new LinearLayout.LayoutParams(0, dp(activity, 48), 1f));
+        card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        if (embedded) {
+            int paneW = ((MainActivity) activity).getVisiblePaneWidth();
+            int maxW = Math.min(Math.max(dp(activity, 250), paneW - dp(activity, 32)), dp(activity, 560));
+            ((MainActivity) activity).showModalCardOverlay(tag, card, maxW, ViewGroup.LayoutParams.WRAP_CONTENT, true, null);
+        } else {
+            Dialog d = new Dialog(activity);
+            d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            d.setContentView(card);
+            d.show();
         }
     }
 
@@ -283,11 +604,14 @@ public final class UpdateManager {
         card.addView(t, new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, dp(activity, 46)));
 
         TextView msg = new TextView(activity);
-        msg.setText(en ? "You can download the APK directly in your browser or Downloader app:" : "يمكنك تنزيل ملف التحديث APK مباشرة عبر المتصفح أو تطبيق Downloader:");
+        msg.setText(en
+                ? "You can download the APK from H9 Store (h9-story.com) or copy the direct link below:"
+                : "يمكنك تنزيل ملف التحديث عبر متجر هافال (h9-story.com) أو نسخ الرابط المباشر أدناه:");
         msg.setTextColor(0xFFF1F5F6);
         msg.setTextSize(15f);
         msg.setGravity(Gravity.CENTER);
-        msg.setTextDirection(en ? android.view.View.TEXT_DIRECTION_LTR : android.view.View.TEXT_DIRECTION_RTL);
+        msg.setTypeface(FontHelper.getArabicTypeface(activity));
+        msg.setTextDirection(en ? View.TEXT_DIRECTION_LTR : View.TEXT_DIRECTION_RTL);
         LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
         msgLp.bottomMargin = dp(activity, 14);
         card.addView(msg, msgLp);
@@ -315,6 +639,7 @@ public final class UpdateManager {
         copyBtn.setText(en ? "📋 Copy URL" : "📋 نسخ الرابط");
         copyBtn.setTextSize(14f);
         copyBtn.setTextColor(0xFFFFC857);
+        copyBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
         copyBtn.setAllCaps(false);
         GradientDrawable copyBg = new GradientDrawable();
         copyBg.setColor(0xFF25323A);
@@ -330,35 +655,30 @@ public final class UpdateManager {
                 }
             } catch (Throwable ignored) { }
         });
-        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(dp(activity, 140), dp(activity, 44));
+        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(0, dp(activity, 46), 1.0f);
         copyLp.rightMargin = dp(activity, 10);
         row.addView(copyBtn, copyLp);
 
-        Button openBrowser = new Button(activity);
-        openBrowser.setText(en ? "🌐 Open Browser" : "🌐 فتح في المتصفح");
-        openBrowser.setTextSize(14f);
-        openBrowser.setTextColor(Color.WHITE);
-        openBrowser.setAllCaps(false);
-        GradientDrawable obBg = new GradientDrawable();
-        obBg.setColor(0xFF117A7C);
-        obBg.setCornerRadius(dp(activity, 16));
-        obBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
-        openBrowser.setBackground(obBg);
-        openBrowser.setOnClickListener(v -> {
+        Button storeQrBtn = new Button(activity);
+        storeQrBtn.setText(en ? "📱 Store QR" : "📱 باركود المتجر");
+        storeQrBtn.setTextSize(14f);
+        storeQrBtn.setTextColor(Color.WHITE);
+        storeQrBtn.setTypeface(FontHelper.getArabicTypeface(activity), android.graphics.Typeface.BOLD);
+        storeQrBtn.setAllCaps(false);
+        GradientDrawable qrBg = new GradientDrawable();
+        qrBg.setColor(0xFF117A7C);
+        qrBg.setCornerRadius(dp(activity, 16));
+        qrBg.setStroke(dp(activity, 1), 0xFF2FE0C7);
+        storeQrBtn.setBackground(qrBg);
+        storeQrBtn.setOnClickListener(v -> {
             if (embedded) {
                 ((MainActivity) activity).dismissOverlayByTag(overlayTag);
             } else if (d != null) {
                 d.dismiss();
             }
-            try {
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl));
-                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                activity.startActivity(browserIntent);
-            } catch (Throwable err) {
-                Toast.makeText(activity, en ? "Unable to open browser" : "تعذر فتح المتصفح", Toast.LENGTH_SHORT).show();
-            }
+            HavalStoreQrDialog.show(activity);
         });
-        row.addView(openBrowser, new LinearLayout.LayoutParams(0, dp(activity, 44), 1.1f));
+        row.addView(storeQrBtn, new LinearLayout.LayoutParams(0, dp(activity, 46), 1.0f));
         card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         int paneW = embedded ? ((MainActivity) activity).getVisiblePaneWidth() : activity.getResources().getDisplayMetrics().widthPixels;

@@ -119,6 +119,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private volatile Object microGFusedClient;
     private FrameLayout rootContainer;
     private final java.util.Map<String, Runnable> overlayDismissMap = new java.util.HashMap<>();
+    private volatile boolean startupPostDialogScheduled = false;
     private QiblaView qiblaView;
     private QiblaSensorHelper qiblaSensorHelper;
     private TextView middlewareDiagnosticText;
@@ -624,6 +625,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         boolean pendingPostQr = uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false);
 
         if (isFreshInstall) {
+            startupPostDialogScheduled = true;
             showUserGuideDialog(() -> {
                 noticePrefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
                 uiPrefs.edit()
@@ -632,6 +634,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                         .apply();
                 handler.postDelayed(() -> {
+                    startupPostDialogScheduled = false;
                     if (!isFinishing()) {
                         HavalStoreQrDialog.show(MainActivity.this,
                                 isEn()
@@ -641,6 +644,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }, 220L);
             }, true);
         } else if (lastChangelogVer < BuildConfig.VERSION_CODE) {
+            startupPostDialogScheduled = true;
             uiPrefs.edit().putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE).apply();
             handler.postDelayed(() -> {
                 if (!isFinishing()) {
@@ -650,6 +654,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                                 .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                                 .apply();
                         handler.postDelayed(() -> {
+                            startupPostDialogScheduled = false;
                             if (!isFinishing()) {
                                 HavalStoreQrDialog.show(MainActivity.this,
                                         isEn()
@@ -658,14 +663,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             }
                         }, 220L);
                     });
+                } else {
+                    startupPostDialogScheduled = false;
                 }
             }, 1500L);
         } else if (lastQrVer < BuildConfig.VERSION_CODE || pendingPostQr) {
+            startupPostDialogScheduled = true;
             uiPrefs.edit()
                     .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
                     .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                     .apply();
             handler.postDelayed(() -> {
+                startupPostDialogScheduled = false;
                 if (!isFinishing()) {
                     HavalStoreQrDialog.show(MainActivity.this,
                             isEn()
@@ -1318,11 +1327,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         String changelogText = isEn()
                 ? "◈ Version 10.0.0 — Official Automotive Release (Build 116):\n" +
-                  "• Dual-Stage Prayer Engine (Root Fix): Astronomical GPS calculation first (NOAA/Jean Meeus + Official Umm Al-Qura rounding & automatic Ramadan +120m Isha), followed by optional UAQ online confirmation with clear source badge.\n" +
-                  "• 4-Face Swipeable Luxury Dial: Luxury 3D Kaaba Qibla Compass (with Makkah distance positioned cleanly beneath the vehicle Qibla indicator), 12h Digital Clock + Speed Gauge, 360° Sport Compass, and Pure Luxury Analog Watch with beveled gold dauphine hands, continuous sweep second hand & orbiting Qibla beacon.\n" +
-                  "• 7 Royal Luxury Themes: Added Royal Burgundy & Rose Gold and Platinum Smoked Titanium alongside Emerald, Navy, Desert Amber, Pearl Day, and Pure Black OLED across all screens & Floating Ball.\n" +
-                  "• Direct Car Auto-Launch & Primary Home Mode + True Edge-to-Edge Fullscreen: Optional startup auto-open, Primary Car Launcher toggle, hidden status/navigation bars, and automatic Store QR Barcode after every install & update.\n" +
-                  "• Enlarged Quick App Launcher & Settings Overlay Fix: Expanded Quick Apps grid below Weather & Floating Ball dock, fixed Store QR & Developer modals elevation inside Settings, Windy ECMWF radar first with hardware acceleration, 2-Takbeer default alert + custom audio file uploader (MP3/M4A/WAV).\n\n" +
+                  "• Direct In-App OTA Downloader & Installer (Fixes Car URL Error): Downloads the APK directly inside Qibla with progress bar, verifies SHA-256, and launches the native Android installer without browser URL blocks.\n" +
+                  "• Dual-Stage Prayer Engine: Astronomical GPS calculation first (NOAA + Umm Al-Qura rounding & Ramadan +120m Isha), plus optional UAQ online confirmation.\n" +
+                  "• 4-Face Swipeable Luxury Dial: 3D Kaaba Qibla Compass (Makkah distance cleanly below the vehicle Qibla badge), 12h Digital Clock + Speed, 360° Sport Compass, and Pure Analog Watch.\n" +
+                  "• 7 Royal Luxury Themes: Added Royal Burgundy & Rose Gold and Platinum Smoked Titanium synced across all screens & Floating Ball.\n" +
+                  "• Direct Auto-Launch, Primary Home Mode, True Edge-to-Edge Fullscreen, Enlarged Quick Apps, Fixed Settings QR/Developer Modals & Auto Store QR Barcode after install/update.\n\n" +
                   "◈ Version 9.9.8 (Automotive Base):\n" +
                   "• Added multiple prayer alert sounds (2 Takbeers, Calm Chime, Makkah Takbeerat, Custom Upload, Mute) with Auto-Media Ducking (lowers car radio 70% during alert).\n" +
                   "• Pure Black OLED Night Mode: Complete glare-free black theme designed for midnight highway driving without eye fatigue.\n" +
@@ -1333,11 +1342,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                   "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
                   "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
                 : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 116):\n" +
-                  "• الحل الجذري لمواقيت الصلاة (مرحلتان): حساب فلكي فوري عبر GPS (معادلات NOAA وتقريب أم القرى الرسمي و+120 دقيقة في رمضان تلقائياً) متبوعاً بتأكيد إضافي عبر الإنترنت (UAQ) دون تذبذب.\n" +
-                  "• القرص الفاخر بـ 4 أوجه بالسحب يمين/يسار: بوصلة القبلة والكعبة المشرفة الفاخرة (مع نقل مسافة مكة أسفل «القبلة على يسارك»)، الساعة الرقمية 12 ساعة + السرعة، البوصلة الرياضية 360°، والساعة التناظرية الفاخرة الصافية بعقارب ذهبية ثلاثية الأبعاد وعقرب ثواني انسيابي ومؤشر القبلة المداري.\n" +
-                  "• باقة الثيمات السبعة الملكية: إضافة ثيمي «🍷 عنابي ملكي وذهب وردي» و«⚜️ بلاتينيوم وتيتانيوم ملكي» متزامنين على كامل الشاشات والكرة العائمة.\n" +
-                  "• فتح تلقائي كأساسي + فل سكرين كامل + باركود المتجر: تشغيل تلقائي مع إقلاع السيارة وخيار التعيين كشاشة رئيسية أساسية، إخفاء تام لأشرطة النظام (Edge-to-Edge)، وإظهار باركود المتجر تلقائياً بعد أي تثبيت أو تحديث.\n" +
-                  "• تكبير صفحة التطبيقات وإصلاح الإعدادات ورادار ويندي: توسيع شبكة التطبيقات السريعة أسفل الطقس والكرة العائمة، إصلاح استجابة الباركود وحول المطور داخل الإعدادات، فتح رادار ويندي الأوروبي (ECMWF) أولاً باستجابة فائقة، تكبيرتين فقط بالأعلى مع ميزة رفع ملف صوتي مخصص للأذان.\n\n" +
+                  "• التحديث الهوائي المباشر داخل التطبيق (إصلاح خطأ رابط URL): تنزيل الحزمة مباشرة مع شريط تقدم، فحص بصمة الأمان SHA-256، وفتح مُثبّت النظام مباشرة دون متصفح السيارة.\n" +
+                  "• الحل الجذري لمواقيت الصلاة (مرحلتان): حساب فلكي فوري عبر GPS (معادلات NOAA وتقريب أم القرى الرسمي و+120 دقيقة في رمضان) متبوعاً بتأكيد إضافي عبر الإنترنت (UAQ).\n" +
+                  "• القرص الفاخر بـ 4 أوجه بالسحب: بوصلة القبلة الفاخرة (ونقل مسافة مكة أسفل «القبلة على يسارك»)، الساعة الرقمية + السرعة، البوصلة 360°، والساعة التناظرية الفاخرة الصافية.\n" +
+                  "• 7 ثيمات ملكية: إضافة ثيمي «🍷 عنابي ملكي وذهب وردي» و«⚜️ بلاتينيوم وتيتانيوم ملكي» على كامل الشاشات والكرة العائمة.\n" +
+                  "• فتح تلقائي كأساسي + فل سكرين كامل + تكبير صفحة التطبيقات السريعة + إصلاح استجابة الباركود وحول المطور داخل الإعدادات + خروج باركود المتجر تلقائياً بعد أي تثبيت أو تحديث.\n\n" +
                   "◈ الإصدار 9.9.8 (التحديث الجديد للسيارات):\n" +
                   "• صوتيات الأذان المتقدمة للسيارة: تكبيرتين فقط بصوت الحرم المكي الطبيعي، نغمة هادئة، أذان مخصص مرفوع، وكتم + خفض صوت ميديا السيارة تلقائياً 70% أثناء الأذان (Audio Ducking).\n" +
                   "• وضع القيادة الليلية الهادئة (Pure Black OLED Night): ثيم أسود نقي تماماً #000000 ومريح للعينين على الطرق المظلمة.\n" +
@@ -1987,7 +1996,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
         try {
             SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
-            if (uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false) && !hasActiveOverlay()) {
+            if (!startupPostDialogScheduled && uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false) && !hasActiveOverlay()) {
                 uiPrefs.edit()
                         .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                         .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
