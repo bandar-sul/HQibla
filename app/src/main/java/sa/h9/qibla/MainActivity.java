@@ -88,6 +88,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     public static final String KEY_FULLSCREEN_ENABLED = "fullscreen_enabled";
     public static final String KEY_LAST_SEEN_CHANGELOG_VER = "last_seen_changelog_ver";
     public static final String KEY_LAST_QR_SHOWN_VER = "last_qr_shown_ver";
+    public static final String KEY_LAST_QR_PACKAGE_TIME = "last_qr_package_time";
     public static final String KEY_PENDING_POST_INSTALL_QR = "pending_post_install_qr";
     public static final String KEY_AUTO_LAUNCH_APP_ON_BOOT = "auto_launch_app_on_boot";
     public static final String KEY_PRIMARY_LAUNCHER_MODE = "primary_launcher_mode";
@@ -621,18 +622,23 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         final SharedPreferences noticePrefs = getSharedPreferences(NOTICE_PREFS, MODE_PRIVATE);
         final boolean isFreshInstall = !noticePrefs.getBoolean(KEY_NOTICE_SHOWN, false);
         int lastChangelogVer = uiPrefs.getInt(KEY_LAST_SEEN_CHANGELOG_VER, 0);
-        int lastQrVer = uiPrefs.getInt(KEY_LAST_QR_SHOWN_VER, 0);
+        long currentPkgUpdateTime = getInstalledPackageUpdateTime();
+        long lastQrPkgTime = uiPrefs.getLong(KEY_LAST_QR_PACKAGE_TIME, 0L);
         boolean pendingPostQr = uiPrefs.getBoolean(KEY_PENDING_POST_INSTALL_QR, false);
+        boolean isPackageUpdated = pendingPostQr
+                || (currentPkgUpdateTime > 0L && lastQrPkgTime > 0L && currentPkgUpdateTime != lastQrPkgTime)
+                || (lastChangelogVer > 0 && lastChangelogVer < BuildConfig.VERSION_CODE);
 
         if (isFreshInstall) {
             startupPostDialogScheduled = true;
+            noticePrefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
+            uiPrefs.edit()
+                    .putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE)
+                    .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                    .putLong(KEY_LAST_QR_PACKAGE_TIME, currentPkgUpdateTime)
+                    .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
+                    .apply();
             showUserGuideDialog(() -> {
-                noticePrefs.edit().putBoolean(KEY_NOTICE_SHOWN, true).apply();
-                uiPrefs.edit()
-                        .putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE)
-                        .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
-                        .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
-                        .apply();
                 handler.postDelayed(() -> {
                     startupPostDialogScheduled = false;
                     if (!isFinishing()) {
@@ -647,6 +653,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             uiPrefs.edit()
                     .putInt(KEY_LAST_SEEN_CHANGELOG_VER, BuildConfig.VERSION_CODE)
                     .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                    .putLong(KEY_LAST_QR_PACKAGE_TIME, currentPkgUpdateTime)
                     .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                     .apply();
             handler.postDelayed(() -> {
@@ -663,10 +670,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     startupPostDialogScheduled = false;
                 }
             }, 1500L);
-        } else if (lastQrVer < BuildConfig.VERSION_CODE || pendingPostQr) {
+        } else if (isPackageUpdated) {
             startupPostDialogScheduled = true;
             uiPrefs.edit()
                     .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                    .putLong(KEY_LAST_QR_PACKAGE_TIME, currentPkgUpdateTime)
                     .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                     .apply();
             handler.postDelayed(() -> {
@@ -677,6 +685,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             : "تم التثبيت بنجاح! امسح الباركود بكاميرا الجوال لمتجر هافال H9");
                 }
             }, 1200L);
+        } else if (lastQrPkgTime == 0L && currentPkgUpdateTime > 0L) {
+            uiPrefs.edit().putLong(KEY_LAST_QR_PACKAGE_TIME, currentPkgUpdateTime).apply();
         }
 
         handler.postDelayed(() -> UpdateManager.checkForUpdates(this, false), 3500L);
@@ -1995,6 +2005,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 uiPrefs.edit()
                         .putBoolean(KEY_PENDING_POST_INSTALL_QR, false)
                         .putInt(KEY_LAST_QR_SHOWN_VER, BuildConfig.VERSION_CODE)
+                        .putLong(KEY_LAST_QR_PACKAGE_TIME, getInstalledPackageUpdateTime())
                         .apply();
                 handler.postDelayed(() -> {
                     if (!isFinishing() && !hasActiveOverlay()) {
@@ -2005,6 +2016,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }, 900L);
             }
         } catch (Throwable ignored) { }
+    }
+
+    private long getInstalledPackageUpdateTime() {
+        try {
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return pi != null ? pi.lastUpdateTime : 0L;
+        } catch (Throwable ignored) {
+            return 0L;
+        }
     }
 
     @Override

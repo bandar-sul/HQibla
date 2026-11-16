@@ -58,8 +58,8 @@ public final class UpdateManager {
         new Thread(() -> {
             String[] urls = new String[] {
                 BuildConfig.UPDATE_MANIFEST_URL,
-                "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json",
-                "https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json"
+                "https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json",
+                "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json"
             };
             JSONObject best = null;
             int maxRemoteCode = -1;
@@ -369,7 +369,7 @@ public final class UpdateManager {
                                 String loc = attemptConn.getHeaderField("Location");
                                 attemptConn.disconnect();
                                 if (loc == null || loc.isEmpty()) break;
-                                currentUrl = loc;
+                                currentUrl = new URL(u, loc).toString();
                                 redirects++;
                                 continue;
                             }
@@ -467,12 +467,12 @@ public final class UpdateManager {
         if (slash >= 0 && slash < apkUrl.length() - 1) {
             fileName = apkUrl.substring(slash + 1);
         }
-        String otaMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/" + fileName;
         String mainMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla/main/" + fileName;
+        String otaMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/" + fileName;
         java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
         if (!apkUrl.trim().isEmpty()) ordered.add(apkUrl.trim());
-        ordered.add(otaMirror);
         ordered.add(mainMirror);
+        ordered.add(otaMirror);
         return ordered.toArray(new String[0]);
     }
 
@@ -490,7 +490,6 @@ public final class UpdateManager {
             Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
             installIntent.setData(apkUri);
             installIntent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
-            installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
             installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             activity.startActivity(installIntent);
         } catch (Throwable firstErr) {

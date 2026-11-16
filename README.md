@@ -111,4 +111,4 @@
 | **`latest.json`** | ملف بيانات التحديث الهوائي التلقائي (OTA Update Manifest) |
 
 * **بصمة التحقق الأمنية (SHA-256):**
-  `90afae1251a24a127fba97d7deb9293a1ebda2d783dee35de2fd2aad9a4f3956`
+  `66e392d16967bdab32d295f9a630209aab21157ab649552b728e1448dd2d3fe9`
