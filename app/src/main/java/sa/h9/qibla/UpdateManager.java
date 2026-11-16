@@ -58,7 +58,8 @@ public final class UpdateManager {
         new Thread(() -> {
             String[] urls = new String[] {
                 BuildConfig.UPDATE_MANIFEST_URL,
-                "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json"
+                "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/latest.json",
+                "https://raw.githubusercontent.com/bandar-sul/HQibla/main/latest.json"
             };
             JSONObject best = null;
             int maxRemoteCode = -1;
@@ -336,7 +337,9 @@ public final class UpdateManager {
             HttpURLConnection conn = null;
             File outFile = null;
             try {
-                File dir = new File(activity.getExternalFilesDir(null), "updates");
+                File baseDir = activity.getExternalFilesDir(null);
+                if (baseDir == null) baseDir = activity.getFilesDir();
+                File dir = new File(baseDir, "updates");
                 if (!dir.exists()) dir.mkdirs();
                 outFile = new File(dir, "Qibla-v" + code + ".apk");
                 if (outFile.exists()) outFile.delete();
@@ -355,8 +358,8 @@ public final class UpdateManager {
                         while (redirects < 5) {
                             URL u = new URL(currentUrl);
                             attemptConn = (HttpURLConnection) u.openConnection();
-                            attemptConn.setConnectTimeout(12000);
-                            attemptConn.setReadTimeout(20000);
+                            attemptConn.setConnectTimeout(15000);
+                            attemptConn.setReadTimeout(45000);
                             attemptConn.setInstanceFollowRedirects(true);
                             attemptConn.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
                             int codeResp = attemptConn.getResponseCode();
@@ -465,10 +468,12 @@ public final class UpdateManager {
             fileName = apkUrl.substring(slash + 1);
         }
         String otaMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla-OTA/main/" + fileName;
-        if (otaMirror.equals(apkUrl)) {
-            return new String[]{apkUrl};
-        }
-        return new String[]{apkUrl, otaMirror};
+        String mainMirror = "https://raw.githubusercontent.com/bandar-sul/HQibla/main/" + fileName;
+        java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+        if (!apkUrl.trim().isEmpty()) ordered.add(apkUrl.trim());
+        ordered.add(otaMirror);
+        ordered.add(mainMirror);
+        return ordered.toArray(new String[0]);
     }
 
     private static void launchApkInstaller(Activity activity, int code, File apkFile, String apkUrl, String expectedSha256) {
