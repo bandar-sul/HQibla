@@ -1331,7 +1331,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         inner.setGravity(isEn() ? Gravity.LEFT : Gravity.RIGHT);
 
         String changelogText = isEn()
-                ? "◈ Version 10.0.0 — Official Automotive Release (Build 116):\n" +
+                ? "◈ Version 10.0.0 — Official Automotive Release (Build 117):\n" +
                   "• Online-Only In-App Update (No External Apps/Browsers): Downloads and verifies SHA-256 directly inside Qibla with a live progress bar, and installs directly without opening any browser or third-party app.\n" +
                   "• Quick Apps Button Added: Dedicated enlarged Quick Apps launcher button below Weather & inside the Floating Ball dock for instant access while driving.\n" +
                   "• Direct Car Auto-Launch: Option to auto-open Qibla automatically on vehicle ignition or set it as your Primary Car Home Launcher + True Edge-to-Edge Fullscreen.\n" +
@@ -1346,7 +1346,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                   "• Full BYD DiLink 5.1 & Leopard 5 car system support: rotating screen, 3-screen multi-display, and 320 DPI density.\n" +
                   "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
                   "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
-                : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 116):\n" +
+                : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 117):\n" +
                   "• إصلاح التحديث ليكون من داخل التطبيق أونلاين فقط (دون فتح أي برامج أخرى): تنزيل الحزمة والتحقق من بصمة SHA-256 وتثبيتها مباشرة من داخل التطبيق دون فتح متصفح السيارة أو أي برنامج خارجي.\n" +
                   "• تم إضافة زر للتطبيقات السريعة: زر مخصص أسفل الطقس وفي الكرة العائمة مع نافذة مكبرة وواضحة للوصول للتطبيقات أثناء القيادة.\n" +
                   "• إمكانية تشغيل البرنامج تلقائياً: خيار الفتح التلقائي فور تشغيل السيارة أو التعيين كشاشة رئيسية أساسية + وضع فل سكرين لكامل الشاشة.\n" +
@@ -1897,6 +1897,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         if (now - lastAutoNetworkSyncAt > 20000L) {
                             lastAutoNetworkSyncAt = now;
                             triggerAutoNetworkSync();
+                            if (!UpdateManager.hasCheckedThisSession()) {
+                                UpdateManager.checkForUpdates(MainActivity.this, false);
+                            }
                         }
                     });
                 }

@@ -37,8 +37,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class UpdateManager {
     private static final String PREFS = "h9_qibla_ota";
     private static final String KEY_LAST_AUTO_CHECK = "last_auto_check";
-    private static final long AUTO_CHECK_INTERVAL = 24L * 60L * 60L * 1000L;
+    private static final long AUTO_CHECK_INTERVAL = 30L * 60L * 1000L;
+    private static volatile boolean sessionCheckSucceeded = false;
     private UpdateManager() { }
+
+    public static boolean hasCheckedThisSession() {
+        return sessionCheckSucceeded;
+    }
 
     private static boolean isEn(Activity activity) {
         if (activity == null) return false;
@@ -51,8 +56,8 @@ public final class UpdateManager {
         final boolean en = isEn(activity);
         if (!manual) {
             long last = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).getLong(KEY_LAST_AUTO_CHECK, 0L);
-            if (System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL) return;
-            activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE).edit().putLong(KEY_LAST_AUTO_CHECK, System.currentTimeMillis()).apply();
+            if (sessionCheckSucceeded && System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL) return;
+            if (!sessionCheckSucceeded && last > 0L && System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL) return;
         }
         if (manual) Toast.makeText(activity, en ? "Checking for updates…" : "جاري فحص التحديثات…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
@@ -69,7 +74,9 @@ public final class UpdateManager {
                 try {
                     URL u = new URL(manifestUrl);
                     c = (HttpURLConnection) u.openConnection();
-                    c.setConnectTimeout(6000); c.setReadTimeout(6000); c.setInstanceFollowRedirects(true);
+                    c.setConnectTimeout(7000); c.setReadTimeout(7000); c.setInstanceFollowRedirects(true);
+                    c.setUseCaches(false);
+                    c.setRequestProperty("Cache-Control", "no-cache");
                     c.setRequestProperty("Accept", "application/json");
                     c.setRequestProperty("User-Agent", "H9-Qibla/" + BuildConfig.VERSION_NAME);
                     if (c.getResponseCode() != 200) continue;
@@ -89,6 +96,13 @@ public final class UpdateManager {
                 }
             }
             if (best != null) {
+                sessionCheckSucceeded = true;
+                try {
+                    activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                            .edit()
+                            .putLong(KEY_LAST_AUTO_CHECK, System.currentTimeMillis())
+                            .apply();
+                } catch (Throwable ignored) { }
                 try {
                     int remoteCode = best.getInt("versionCode");
                     String remoteName = best.optString("versionName", String.valueOf(remoteCode));
