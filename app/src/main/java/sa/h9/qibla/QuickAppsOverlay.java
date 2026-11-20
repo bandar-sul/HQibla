@@ -44,6 +44,7 @@ public final class QuickAppsOverlay {
 
     public static final String TAG_QUICK_APPS_OVERLAY = "h9_overlay_quick_apps";
     private static final String PREF_PINNED_APPS = "quick_apps_pinned";
+    private static final String PREF_PINNED_ORDER = "quick_apps_pinned_order";
 
     private static final int FILTER_ALL = 0;
     private static final int FILTER_PINNED = 1;
@@ -59,6 +60,7 @@ public final class QuickAppsOverlay {
         String label;
         Drawable icon;
         boolean pinned;
+        int pinnedOrderIndex = Integer.MAX_VALUE;
         boolean driveRecommended;
         int priorityRank;
     }
@@ -286,8 +288,8 @@ public final class QuickAppsOverlay {
         // 4. Footer Tip
         TextView tvHint = new TextView(ctx);
         tvHint.setText(en
-                ? "💡 Tip: Long-press any app or tap ☆ to pin it to Favorites"
-                : "💡 تلميح: اضغط مطولاً على أي تطبيق أو على النجمة ☆ لتثبيته في المفضلة");
+                ? "💡 Tip: Tap ☆ or long-press to pin Favorites (Top 3 appear in Floating Dock • use ▲▼ to reorder)"
+                : "💡 تلميح: اضغط ☆ أو مطولاً لتثبيت المفضلة (أول 3 تطبيقات تظهر بالكرة العائمة • استخدم ▲▼ للترتيب)");
         tvHint.setTextSize(11f);
         tvHint.setTypeface(tf);
         tvHint.setTextColor(pal.textSecondary);
@@ -364,6 +366,7 @@ public final class QuickAppsOverlay {
                     if (idx < filtered.size()) {
                         View tile = buildAppTile(ctx, filtered.get(idx), pal, tf, accentGold, en,
                                 dismissAction, () -> {
+                                    refreshPinnedOrderIndices(ctx, allApps);
                                     sortApps(allApps);
                                     renderRef[0].run();
                                 });
@@ -456,10 +459,70 @@ public final class QuickAppsOverlay {
         body.addView(labelView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        if (entry.pinned) {
+            LinearLayout orderBar = new LinearLayout(ctx);
+            orderBar.setOrientation(LinearLayout.HORIZONTAL);
+            orderBar.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+            orderBar.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams obLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            obLp.topMargin = dp(ctx, 6);
+
+            TextView upBtn = new TextView(ctx);
+            upBtn.setText("▲");
+            upBtn.setTextSize(11.5f);
+            upBtn.setTextColor(accentGold);
+            upBtn.setTypeface(tf, Typeface.BOLD);
+            upBtn.setGravity(Gravity.CENTER);
+            upBtn.setMinWidth(dp(ctx, 32));
+            upBtn.setMinHeight(dp(ctx, 28));
+            GradientDrawable moveBtnBg = new GradientDrawable();
+            moveBtnBg.setColor(pal.isLight ? 0xFFE2EEF4 : 0x55000000);
+            moveBtnBg.setCornerRadius(dp(ctx, 8));
+            moveBtnBg.setStroke(dp(ctx, 0.8f), pal.cardStroke);
+            upBtn.setBackground(moveBtnBg);
+            upBtn.setOnClickListener(v -> {
+                movePinnedPackage(ctx, entry.packageName, -1);
+                if (onPinChanged != null) onPinChanged.run();
+            });
+
+            TextView rankTv = new TextView(ctx);
+            int rankNum = entry.pinnedOrderIndex < Integer.MAX_VALUE ? (entry.pinnedOrderIndex + 1) : 1;
+            rankTv.setText("#" + rankNum);
+            rankTv.setTextSize(10.5f);
+            rankTv.setTextColor(pal.accentColor);
+            rankTv.setTypeface(tf, Typeface.BOLD);
+            rankTv.setGravity(Gravity.CENTER);
+            rankTv.setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0);
+
+            TextView downBtn = new TextView(ctx);
+            downBtn.setText("▼");
+            downBtn.setTextSize(11.5f);
+            downBtn.setTextColor(accentGold);
+            downBtn.setTypeface(tf, Typeface.BOLD);
+            downBtn.setGravity(Gravity.CENTER);
+            downBtn.setMinWidth(dp(ctx, 32));
+            downBtn.setMinHeight(dp(ctx, 28));
+            GradientDrawable moveBtnBg2 = new GradientDrawable();
+            moveBtnBg2.setColor(pal.isLight ? 0xFFE2EEF4 : 0x55000000);
+            moveBtnBg2.setCornerRadius(dp(ctx, 8));
+            moveBtnBg2.setStroke(dp(ctx, 0.8f), pal.cardStroke);
+            downBtn.setBackground(moveBtnBg2);
+            downBtn.setOnClickListener(v -> {
+                movePinnedPackage(ctx, entry.packageName, +1);
+                if (onPinChanged != null) onPinChanged.run();
+            });
+
+            orderBar.addView(upBtn);
+            orderBar.addView(rankTv);
+            orderBar.addView(downBtn);
+            body.addView(orderBar, obLp);
+        }
+
         wrapper.addView(body, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
 
-        // Corner Favorite Star Toggle (48dp touch target)
+        // Corner Favorite Star Toggle (36dp touch target)
         TextView starBtn = new TextView(ctx);
         starBtn.setText(entry.pinned ? "★" : "☆");
         starBtn.setTextSize(15f);
@@ -475,7 +538,7 @@ public final class QuickAppsOverlay {
             boolean nowPinned = togglePinnedPackage(ctx, entry.packageName);
             entry.pinned = nowPinned;
             FullScreenSettingsDialog.showCompactToast(ctx, nowPinned
-                    ? (en ? ("⭐ Pinned " + entry.label) : ("⭐ تم تثبيت " + entry.label + " في المفضلة"))
+                    ? (en ? ("⭐ Pinned " + entry.label + " to Dock & Favorites") : ("⭐ تم تثبيت " + entry.label + " في المفضلة والكرة"))
                     : (en ? ("Removed " + entry.label + " from Favorites") : ("تمت إزالة " + entry.label + " من المفضلة")));
             if (onPinChanged != null) onPinChanged.run();
         };
@@ -540,15 +603,28 @@ public final class QuickAppsOverlay {
                 result.add(entry);
             }
 
+            refreshPinnedOrderIndices(ctx, result);
             sortApps(result);
         } catch (Throwable ignored) { }
         return result;
+    }
+
+    private static void refreshPinnedOrderIndices(Context ctx, List<AppEntry> list) {
+        List<String> ordered = getOrderedPinnedPackages(ctx);
+        for (AppEntry e : list) {
+            int idx = ordered.indexOf(e.packageName);
+            e.pinned = (idx >= 0);
+            e.pinnedOrderIndex = (idx >= 0) ? idx : Integer.MAX_VALUE;
+        }
     }
 
     private static void sortApps(List<AppEntry> list) {
         final Collator collator = Collator.getInstance();
         Collections.sort(list, (a, b) -> {
             if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+            if (a.pinned && b.pinned && a.pinnedOrderIndex != b.pinnedOrderIndex) {
+                return Integer.compare(a.pinnedOrderIndex, b.pinnedOrderIndex);
+            }
             if (a.priorityRank != b.priorityRank) return Integer.compare(b.priorityRank, a.priorityRank);
             return collator.compare(a.label, b.label);
         });
@@ -580,6 +656,62 @@ public final class QuickAppsOverlay {
         return 0;
     }
 
+    public static List<String> getOrderedPinnedPackages(Context ctx) {
+        List<String> ordered = new ArrayList<>();
+        if (ctx == null) return ordered;
+        try {
+            SharedPreferences sp = ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE);
+            String csv = sp.getString(PREF_PINNED_ORDER, "");
+            Set<String> set = getPinnedPackages(ctx);
+            if (csv != null && !csv.trim().isEmpty()) {
+                for (String raw : csv.split(",")) {
+                    String pkg = raw.trim();
+                    if (!pkg.isEmpty() && (set.isEmpty() || set.contains(pkg)) && !ordered.contains(pkg)) {
+                        ordered.add(pkg);
+                    }
+                }
+            }
+            // Migrate any unordered legacy pinned items seamlessly
+            if (!set.isEmpty()) {
+                List<String> remaining = new ArrayList<>();
+                for (String s : set) {
+                    if (!ordered.contains(s)) remaining.add(s);
+                }
+                Collections.sort(remaining);
+                ordered.addAll(remaining);
+            }
+        } catch (Throwable ignored) { }
+        return ordered;
+    }
+
+    private static void saveOrderedPinnedPackages(Context ctx, List<String> ordered) {
+        if (ctx == null) return;
+        Set<String> set = new HashSet<>(ordered);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(ordered.get(i));
+        }
+        ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(PREF_PINNED_APPS, set)
+                .putString(PREF_PINNED_ORDER, sb.toString())
+                .apply();
+        try {
+            FloatingSpeedBubbleService.reloadPreferences(ctx);
+        } catch (Throwable ignored) { }
+    }
+
+    private static void movePinnedPackage(Context ctx, String pkg, int delta) {
+        List<String> ordered = getOrderedPinnedPackages(ctx);
+        int idx = ordered.indexOf(pkg);
+        if (idx < 0) return;
+        int target = idx + delta;
+        if (target < 0 || target >= ordered.size()) return;
+        Collections.swap(ordered, idx, target);
+        saveOrderedPinnedPackages(ctx, ordered);
+    }
+
     private static Set<String> getPinnedPackages(Context ctx) {
         try {
             SharedPreferences sp = ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE);
@@ -591,19 +723,16 @@ public final class QuickAppsOverlay {
     }
 
     private static boolean togglePinnedPackage(Context ctx, String pkg) {
-        Set<String> current = getPinnedPackages(ctx);
+        List<String> ordered = getOrderedPinnedPackages(ctx);
         boolean added;
-        if (current.contains(pkg)) {
-            current.remove(pkg);
+        if (ordered.contains(pkg)) {
+            ordered.remove(pkg);
             added = false;
         } else {
-            current.add(pkg);
+            ordered.add(pkg);
             added = true;
         }
-        ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putStringSet(PREF_PINNED_APPS, current)
-                .apply();
+        saveOrderedPinnedPackages(ctx, ordered);
         return added;
     }
 

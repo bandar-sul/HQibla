@@ -11,15 +11,20 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
 import android.net.Uri;
-import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -64,21 +69,26 @@ public final class FullScreenWeatherDialog {
 
     public static ThemePalette getThemePalette(Context ctx) {
         int themeMode = QiblaView.THEME_AUTO;
+        boolean autoNightOled = true;
+        int sunriseMin = 6 * 60;
+        int maghribMin = 18 * 60;
         try {
-            themeMode = ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
-                    .getInt(MainActivity.KEY_THEME_MODE, QiblaView.THEME_AUTO);
+            SharedPreferences sp = ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE);
+            themeMode = sp.getInt(MainActivity.KEY_THEME_MODE, QiblaView.THEME_AUTO);
+            autoNightOled = sp.getBoolean(MainActivity.KEY_AUTO_NIGHT_OLED, true);
+            sunriseMin = sp.getInt("auto_sunrise_min", 6 * 60);
+            maghribMin = sp.getInt("auto_maghrib_min", 18 * 60);
         } catch (Exception ignored) { }
 
-        boolean isDaytime = true;
         Calendar now = Calendar.getInstance();
-        int hour = now.get(Calendar.HOUR_OF_DAY);
-        if (hour < 6 || hour >= 18) {
-            isDaytime = false;
-        }
+        int curMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        boolean isDaytime = (curMin >= sunriseMin && curMin < maghribMin);
 
         int effectiveTheme = themeMode;
         if (themeMode == QiblaView.THEME_AUTO) {
-            effectiveTheme = isDaytime ? QiblaView.THEME_PEARL : QiblaView.THEME_EMERALD;
+            effectiveTheme = isDaytime
+                    ? QiblaView.THEME_PEARL
+                    : (autoNightOled ? QiblaView.THEME_OLED_NIGHT : QiblaView.THEME_EMERALD);
         }
 
         ThemePalette pal = new ThemePalette();
@@ -380,6 +390,10 @@ public final class FullScreenWeatherDialog {
                 rwv.onResume();
                 rwv.resumeTimers();
                 rwv.requestLayout();
+            }
+            Object initTag = radarContainer.getTag(R.id.radar_init_trigger);
+            if (initTag instanceof Runnable) {
+                ((Runnable) initTag).run();
             }
         });
 
@@ -716,13 +730,12 @@ public final class FullScreenWeatherDialog {
         radarLabel.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
         bar.addView(radarLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        final int[] windyZoom = {8};
+        final int[] windyZoom = {7};
         final double[] activeCoords = {lat, lon};
-        final String[] activeMode = {"windy"}; // Default: Windy European ECMWF opens FIRST
-
-        final String ventuskyUrl = String.format(Locale.US,
-                "https://www.ventusky.com/?p=%.4f;%%20%.4f;8&l=rain-3h",
-                lat, lon);
+        final String[] activeMode = {"windy"}; // "windy", "rainviewer", or "ventusky"
+        final boolean[] radarStarted = {false};
+        final Handler radarHandler = new Handler(Looper.getMainLooper());
+        final Runnable[] watchdogRef = new Runnable[1];
 
         // Slim horizontal loading progress bar for responsive visual feedback
         final ProgressBar progressBar = new ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal);
@@ -733,12 +746,29 @@ public final class FullScreenWeatherDialog {
             progressBar.getProgressDrawable().setColorFilter(pal.accentColor, android.graphics.PorterDuff.Mode.SRC_IN);
         } catch (Throwable ignored) { }
 
+        // Status banner for graceful timeout / fallback notifications
+        final TextView radarStatusBanner = new TextView(ctx);
+        radarStatusBanner.setVisibility(View.GONE);
+        radarStatusBanner.setTextSize(12.5f);
+        radarStatusBanner.setTextColor(pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFFFD768);
+        radarStatusBanner.setTypeface(FontHelper.getArabicTypeface(ctx), Typeface.BOLD);
+        radarStatusBanner.setGravity(Gravity.CENTER);
+        radarStatusBanner.setPadding(dp(ctx, 12), dp(ctx, 6), dp(ctx, 12), dp(ctx, 6));
+        radarStatusBanner.setBackgroundColor(pal.isLight ? 0xFFE3EFF5 : 0xEE0B1C24);
+
         // GPU-accelerated WebView setup for fast radar panning, zooming & smooth tiles
         final WebView webView = new WebView(ctx);
         parent.setTag(webView);
         webView.setBackgroundColor(pal.rootBg);
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            cm.setAcceptCookie(true);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                cm.setAcceptThirdPartyCookies(webView, true);
+            }
+        } catch (Throwable ignored) { }
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
@@ -762,7 +792,59 @@ public final class FullScreenWeatherDialog {
         try {
             ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         } catch (Exception ignored) { }
-        ws.setUserAgentString("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+        ws.setUserAgentString("Mozilla/5.0 (Linux; Android 11; Automotive) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
+
+        final Button btnWindy = createRadarSmallBtn(ctx, isEn ? "🇪🇺 Windy ECMWF" : "🇪🇺 رادار ويندي الأوروبي", true, pal);
+        final Button btnRainViewer = createRadarSmallBtn(ctx, isEn ? "🌧️ Fast Rain Radar" : "🌧️ رادار الأمطار السريع", false, pal);
+        final Button btnVentusky = createRadarSmallBtn(ctx, isEn ? "🌪️ Ventusky" : "🌪️ فينتوسكي", false, pal);
+        final Button btnGpsCenter = createRadarSmallBtn(ctx, isEn ? "🎯 Center GPS" : "🎯 موقعي GPS", false, pal);
+        final Button btnReload = createRadarSmallBtn(ctx, isEn ? "🔄 Reload" : "🔄 تحديث", false, pal);
+        final Button btnZoomIn = createRadarSmallBtn(ctx, "➕", false, pal);
+        final Button btnZoomOut = createRadarSmallBtn(ctx, "➖", false, pal);
+
+        final Runnable cancelWatchdog = () -> {
+            if (watchdogRef[0] != null) {
+                radarHandler.removeCallbacks(watchdogRef[0]);
+                watchdogRef[0] = null;
+            }
+        };
+
+        final Runnable loadFastRainViewer = () -> {
+            cancelWatchdog.run();
+            activeMode[0] = "rainviewer";
+            updateRadarSmallBtn(ctx, btnWindy, false, pal);
+            updateRadarSmallBtn(ctx, btnRainViewer, true, pal);
+            updateRadarSmallBtn(ctx, btnVentusky, false, pal);
+            progressBar.setProgress(35);
+            progressBar.setVisibility(View.VISIBLE);
+            String html = buildLeafletRainViewerHtml(activeCoords[0], activeCoords[1], isEn, pal, city);
+            webView.loadDataWithBaseURL("https://www.rainviewer.com/", html, "text/html", "UTF-8", null);
+        };
+
+        final Runnable startWindyWithWatchdog = () -> {
+            cancelWatchdog.run();
+            activeMode[0] = "windy";
+            radarStatusBanner.setVisibility(View.GONE);
+            updateRadarSmallBtn(ctx, btnWindy, true, pal);
+            updateRadarSmallBtn(ctx, btnRainViewer, false, pal);
+            updateRadarSmallBtn(ctx, btnVentusky, false, pal);
+            progressBar.setProgress(20);
+            progressBar.setVisibility(View.VISIBLE);
+            webView.stopLoading();
+            webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
+
+            watchdogRef[0] = () -> {
+                if (!"windy".equals(activeMode[0])) return;
+                if (webView.getProgress() < 75) {
+                    radarStatusBanner.setText(isEn
+                            ? "⚡ Windy timed out on car network — switched automatically to Fast GPS Rain Radar"
+                            : "⚡ بطء أو تعذر اتصال ويندي — تم التحويل تلقائياً إلى رادار الأمطار السريع (GPS)");
+                    radarStatusBanner.setVisibility(View.VISIBLE);
+                    loadFastRainViewer.run();
+                }
+            };
+            radarHandler.postDelayed(watchdogRef[0], 10000L);
+        };
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -772,45 +854,89 @@ public final class FullScreenWeatherDialog {
 
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
-                if (newProgress >= 95) {
+                if (newProgress >= 90) {
+                    cancelWatchdog.run();
                     progressBar.setVisibility(View.GONE);
                 } else {
                     if (progressBar.getVisibility() != View.VISIBLE) {
                         progressBar.setVisibility(View.VISIBLE);
                     }
-                    progressBar.setProgress(Math.max(10, newProgress));
+                    progressBar.setProgress(Math.max(12, newProgress));
                 }
             }
         });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                cancelWatchdog.run();
                 progressBar.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                handleRadarLoadFailure(failingUrl);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    if (request != null && request.isForMainFrame()) {
+                        handleRadarLoadFailure(request.getUrl() != null ? request.getUrl().toString() : "");
+                    }
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    if (request != null && request.isForMainFrame() && errorResponse != null && errorResponse.getStatusCode() >= 500) {
+                        handleRadarLoadFailure(request.getUrl() != null ? request.getUrl().toString() : "");
+                    }
+                }
+            }
+
+            private void handleRadarLoadFailure(String failingUrl) {
+                cancelWatchdog.run();
+                if ("windy".equals(activeMode[0]) || "ventusky".equals(activeMode[0])) {
+                    radarStatusBanner.setText(isEn
+                            ? "⚡ External radar unavailable on this connection — using Fast GPS Rain Radar"
+                            : "⚡ تعذر فتح الرادار الخارجي على الشبكة — يعمل الآن رادار الأمطار السريع (GPS)");
+                    radarStatusBanner.setVisibility(View.VISIBLE);
+                    loadFastRainViewer.run();
+                } else {
+                    progressBar.setVisibility(View.GONE);
+                }
             }
         });
 
-        // Open Windy European ECMWF Radar FIRST by default
-        webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
-
-        Button btnWindy = createRadarSmallBtn(ctx, isEn ? "🇪🇺 Windy ECMWF" : "🇪🇺 رادار ويندي الأوروبي", true, pal);
-        Button btnVentusky = createRadarSmallBtn(ctx, isEn ? "🌪️ Ventusky Radar" : "🌪️ رادار فينتوسكي الحي", false, pal);
-        Button btnGpsCenter = createRadarSmallBtn(ctx, isEn ? "🎯 Center GPS" : "🎯 تقريب موقعي GPS", false, pal);
-        Button btnZoomIn = createRadarSmallBtn(ctx, isEn ? "➕ Zoom In" : "➕ تكبير", false, pal);
-        Button btnZoomOut = createRadarSmallBtn(ctx, isEn ? "➖ Zoom Out" : "➖ تصغير", false, pal);
+        // Lazy-load radar only when the user actually opens the Radar tab (prevents hidden WebView timeouts)
+        parent.setTag(R.id.radar_init_trigger, (Runnable) () -> {
+            if (!radarStarted[0]) {
+                radarStarted[0] = true;
+                startWindyWithWatchdog.run();
+            }
+        });
 
         btnWindy.setOnClickListener(v -> {
-            activeMode[0] = "windy";
-            updateRadarSmallBtn(ctx, btnWindy, true, pal);
-            updateRadarSmallBtn(ctx, btnVentusky, false, pal);
-            progressBar.setProgress(20);
-            progressBar.setVisibility(View.VISIBLE);
-            webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
+            radarStarted[0] = true;
+            startWindyWithWatchdog.run();
             Toast.makeText(ctx, isEn ? "Loading Windy European Radar..." : "جاري تشغيل رادار ويندي الأوروبي...", Toast.LENGTH_SHORT).show();
         });
 
+        btnRainViewer.setOnClickListener(v -> {
+            radarStarted[0] = true;
+            radarStatusBanner.setVisibility(View.GONE);
+            loadFastRainViewer.run();
+            Toast.makeText(ctx, isEn ? "Loading Fast GPS Rain Radar..." : "جاري تشغيل رادار الأمطار السريع...", Toast.LENGTH_SHORT).show();
+        });
+
         btnVentusky.setOnClickListener(v -> {
+            radarStarted[0] = true;
+            cancelWatchdog.run();
             activeMode[0] = "ventusky";
+            radarStatusBanner.setVisibility(View.GONE);
             updateRadarSmallBtn(ctx, btnWindy, false, pal);
+            updateRadarSmallBtn(ctx, btnRainViewer, false, pal);
             updateRadarSmallBtn(ctx, btnVentusky, true, pal);
             progressBar.setProgress(20);
             progressBar.setVisibility(View.VISIBLE);
@@ -840,23 +966,41 @@ public final class FullScreenWeatherDialog {
                 activeCoords[1] = freshLoc.getLongitude();
             }
 
-            progressBar.setProgress(25);
-            progressBar.setVisibility(View.VISIBLE);
             if ("windy".equals(activeMode[0])) {
-                webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
+                startWindyWithWatchdog.run();
+            } else if ("rainviewer".equals(activeMode[0])) {
+                try {
+                    webView.evaluateJavascript(String.format(Locale.US, "centerOnGPS(%.5f, %.5f, 20);", activeCoords[0], activeCoords[1]), null);
+                } catch (Throwable t) {
+                    loadFastRainViewer.run();
+                }
             } else {
+                progressBar.setProgress(25);
+                progressBar.setVisibility(View.VISIBLE);
                 String vUrl = String.format(Locale.US, "https://www.ventusky.com/?p=%.4f;%.4f;8&l=rain-3h", activeCoords[0], activeCoords[1]);
                 webView.loadUrl(vUrl);
             }
             Toast.makeText(ctx, isEn ? "🎯 Centering radar on vehicle GPS..." : "🎯 جاري تقريب وتحديد موقع المركبة بالـ GPS...", Toast.LENGTH_SHORT).show();
         });
 
+        btnReload.setOnClickListener(v -> {
+            if ("windy".equals(activeMode[0])) {
+                startWindyWithWatchdog.run();
+            } else if ("rainviewer".equals(activeMode[0])) {
+                loadFastRainViewer.run();
+            } else {
+                webView.reload();
+            }
+        });
+
         btnZoomIn.setOnClickListener(v -> {
             if ("windy".equals(activeMode[0])) {
                 if (windyZoom[0] < 14) {
                     windyZoom[0]++;
-                    webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
+                    startWindyWithWatchdog.run();
                 }
+            } else if ("rainviewer".equals(activeMode[0])) {
+                try { webView.evaluateJavascript("if(typeof map!=='undefined')map.zoomIn();", null); } catch (Throwable ignored) { }
             } else {
                 webView.zoomIn();
             }
@@ -866,8 +1010,10 @@ public final class FullScreenWeatherDialog {
             if ("windy".equals(activeMode[0])) {
                 if (windyZoom[0] > 4) {
                     windyZoom[0]--;
-                    webView.loadUrl(buildFastWindyUrl(activeCoords[0], activeCoords[1], windyZoom[0]));
+                    startWindyWithWatchdog.run();
                 }
+            } else if ("rainviewer".equals(activeMode[0])) {
+                try { webView.evaluateJavascript("if(typeof map!=='undefined')map.zoomOut();", null); } catch (Throwable ignored) { }
             } else {
                 webView.zoomOut();
             }
@@ -876,17 +1022,35 @@ public final class FullScreenWeatherDialog {
         HorizontalScrollView barScroll = new HorizontalScrollView(ctx);
         barScroll.setHorizontalScrollBarEnabled(false);
         bar.addView(btnWindy);
+        bar.addView(btnRainViewer);
         bar.addView(btnVentusky);
         bar.addView(btnGpsCenter);
+        bar.addView(btnReload);
         bar.addView(btnZoomIn);
         bar.addView(btnZoomOut);
         barScroll.addView(bar);
         container.addView(barScroll);
 
+        container.addView(radarStatusBanner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         container.addView(progressBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(ctx, 3)));
 
         LinearLayout.LayoutParams webLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
         container.addView(webView, webLp);
+
+        parent.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(View v) { }
+
+            @Override
+            public void onViewDetachedFromWindow(View v) {
+                cancelWatchdog.run();
+                radarHandler.removeCallbacksAndMessages(null);
+                try {
+                    webView.stopLoading();
+                    webView.onPause();
+                } catch (Throwable ignored) { }
+            }
+        });
 
         parent.addView(container, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
@@ -919,6 +1083,7 @@ public final class FullScreenWeatherDialog {
                 "      background: rgba(8, 22, 28, 0.94); border: 1.5px solid " + accentHex + ";\n" +
                 "      color: " + accentHex + "; padding: 8px 16px; border-radius: 14px;\n" +
                 "      font-size: 13px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5);\n" +
+                "    }\n" +
                 "    .controls-bar {\n" +
                 "      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;\n" +
                 "      background: rgba(10, 24, 32, 0.94); border: 1.5px solid " + goldHex + ";\n" +

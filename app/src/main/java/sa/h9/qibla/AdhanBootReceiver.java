@@ -43,6 +43,7 @@ public class AdhanBootReceiver extends BroadcastReceiver {
 
         if (isBootBroadcast || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             try {
+                MainActivity.verifyHomeLauncherHealth(context);
                 SharedPreferences uiPrefs = context.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE);
                 boolean bubbleEnabled = uiPrefs.getBoolean("floating_bubble_enabled", false);
                 boolean autoStartCar = uiPrefs.getBoolean("floating_bubble_autostart_car", true);

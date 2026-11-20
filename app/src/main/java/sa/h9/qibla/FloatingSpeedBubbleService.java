@@ -445,11 +445,6 @@ public class FloatingSpeedBubbleService extends Service implements LocationListe
     }
 
     private Location getEffectivePrayerLocation() {
-        int cityIdx = CityManager.getSelectedCityIndex(this);
-        if (cityIdx > 0) {
-            Location manual = CityManager.getManualLocation(this);
-            if (manual != null) return manual;
-        }
         return lastLocation;
     }
 

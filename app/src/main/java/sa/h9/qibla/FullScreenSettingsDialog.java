@@ -262,6 +262,25 @@ public final class FullScreenSettingsDialog {
             new Handler(Looper.getMainLooper()).post(() -> show(activity));
         }));
 
+        // 1b. Auto-Night OLED Toggle (when Automatic Theme is used)
+        String[] autoNightOptions = isEn ? new String[]{
+                "🌙 Pure Black OLED Night (Recommended — Glare-Free)",
+                "💎 Royal Emerald Night"
+        } : new String[]{
+                "🌙 أسود OLED نقي (مريح للعين ليلاً — الافتراضي)",
+                "💎 زمردي ملكي ليلاً"
+        };
+        boolean autoNightOled = uiPrefs.getBoolean(MainActivity.KEY_AUTO_NIGHT_OLED, true);
+        cardAppearanceContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Auto-Night Mode (at Maghrib):" : "الثيم الليلي التلقائي (بعد المغرب):", autoNightOptions, autoNightOled ? 0 : 1, pal, isEn, pos -> {
+            boolean useOled = (pos == 0);
+            uiPrefs.edit().putBoolean(MainActivity.KEY_AUTO_NIGHT_OLED, useOled).apply();
+            if (qView != null) {
+                qView.setAutoNightOled(useOled);
+            }
+            FloatingSpeedBubbleService.reloadPreferences(ctx);
+            new Handler(Looper.getMainLooper()).post(() -> show(activity));
+        }));
+
         // 2. Fullscreen Mode Spinner (True Edge-to-Edge Fullscreen)
         String[] fullscreenOptions = isEn ? new String[]{
                 "📺 True Fullscreen (Hide Status, Navigation & Cutouts)",
@@ -319,14 +338,14 @@ public final class FullScreenSettingsDialog {
 
         // 4. Arabic Font Family Spinner (اختيار نوع وشكل الخط)
         String[] fontTypeOptions = isEn ? new String[]{
-                "✨ Default System Font",
+                "🚘 Car System Font (Default)",
                 "✍️ Cairo Font (Clear & Modern)",
                 "🚘 Tajawal Font (Automotive Optimized)",
                 "📖 Almarai Font (Soft & Elegant)",
                 "📱 Readex Pro Font (Contemporary Tech)",
                 "🕌 Amiri Font (Classic Quranic Calligraphy)"
         } : new String[]{
-                "✨ الخط الافتراضي المتناسق",
+                "🚘 خط السيارة الافتراضي (خط النظام)",
                 "✍️ خط كايرو (Cairo - عريض وأنيق)",
                 "🚘 خط تجوال (Tajawal - ممتاز لشاشات السيارات)",
                 "📖 خط المراعي (Almarai - فخم ومريح للعين)",
@@ -341,6 +360,11 @@ public final class FullScreenSettingsDialog {
                 qView.setFontIndex(pos);
                 qView.postInvalidate();
             }
+            activity.refreshAppFont();
+            showCompactToast(ctx, isEn
+                    ? ("✍️ Font applied: " + QiblaView.getFontName(pos, true))
+                    : ("✍️ تم تطبيق الخط: " + QiblaView.getFontName(pos, false)));
+            new Handler(Looper.getMainLooper()).post(() -> show(activity));
         }));
 
         // 5. VR Weather Engine Mode (واقع افتراضي متكامل للطقس)
@@ -471,9 +495,49 @@ public final class FullScreenSettingsDialog {
         String[] speedOptions = isEn ? new String[]{"Kilometers / Hour (km/h)", "Miles / Hour (mph)"} : new String[]{"كيلومتر في الساعة (كم/س)", "ميل في الساعة (mph)"};
         boolean isMph = uiPrefs.getBoolean("speed_mph", false);
         cardDisplayContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Speedometer Unit:" : "وحدة قياس السرعة GPS:", speedOptions, isMph ? 1 : 0, pal, isEn, pos -> {
-            uiPrefs.edit().putBoolean("speed_mph", pos == 1).apply();
-            if (qView != null) qView.postInvalidate();
+            boolean mph = (pos == 1);
+            uiPrefs.edit().putBoolean("speed_mph", mph).apply();
+            if (qView != null) {
+                qView.setSpeedMph(mph);
+            }
             FloatingSpeedBubbleService.reloadPreferences(ctx);
+        }));
+
+        // 3b. GPS Speed Limit Alert Selector
+        final int[] speedLimitValues = new int[]{0, 80, 100, 120, 140, 160};
+        String[] speedLimitOptions = isEn ? new String[]{
+                "🚫 Disabled",
+                "🚨 80 km/h",
+                "🚨 100 km/h",
+                "🚨 120 km/h (Recommended)",
+                "🚨 140 km/h",
+                "🚨 160 km/h"
+        } : new String[]{
+                "🚫 معطل",
+                "🚨 80 كم/س",
+                "🚨 100 كم/س",
+                "🚨 120 كم/س (الافتراضي)",
+                "🚨 140 كم/س",
+                "🚨 160 كم/س"
+        };
+        int curSpeedLimit = uiPrefs.getInt(MainActivity.KEY_SPEED_LIMIT_KMH, 120);
+        int curLimitIdx = 3;
+        for (int i = 0; i < speedLimitValues.length; i++) {
+            if (speedLimitValues[i] == curSpeedLimit) {
+                curLimitIdx = i;
+                break;
+            }
+        }
+        cardDisplayContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "GPS Speed Limit Alert:" : "تنبيه تجاوز حد السرعة (GPS):", speedLimitOptions, curLimitIdx, pal, isEn, pos -> {
+            int limit = (pos >= 0 && pos < speedLimitValues.length) ? speedLimitValues[pos] : 120;
+            uiPrefs.edit().putInt(MainActivity.KEY_SPEED_LIMIT_KMH, limit).apply();
+            if (qView != null) {
+                qView.setSpeedLimitKmh(limit);
+            }
+            FloatingSpeedBubbleService.reloadPreferences(ctx);
+            showCompactToast(ctx, limit <= 0
+                    ? (isEn ? "🚫 Speed limit alert disabled" : "🚫 تم تعطيل تنبيه السرعة")
+                    : (isEn ? ("🚨 Speed alert set at " + limit + " km/h") : ("🚨 تم ضبط تنبيه السرعة على " + limit + " كم/س")));
         }));
 
         // 4. Dynamic Floating Ball (HUD)
@@ -569,6 +633,16 @@ public final class FullScreenSettingsDialog {
             uiPrefs.edit().putInt("floating_dock_timeout_sec", chosenSec).apply();
             FloatingSpeedBubbleService.reloadPreferences(ctx);
         }));
+
+        // 7. Customize & Order Pinned Quick Apps Button
+        Button managePinnedBtn = createActionBtn(ctx,
+                isEn ? "📌 Customize & Order Pinned Quick Apps" : "📌 تخصيص وترتيب التطبيقات المثبتة في الكرة العائمة",
+                pal.isLight ? 0xFF00758A : 0xFF144D55, pal.goldHighlight);
+        managePinnedBtn.setOnClickListener(v -> {
+            dismiss(activity);
+            QuickAppsOverlay.show(activity);
+        });
+        cardDisplayContent.addView(managePinnedBtn);
 
         LinearLayout.LayoutParams cardDisplayLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardDisplayLp.topMargin = dp(ctx, 16);
@@ -818,17 +892,7 @@ public final class FullScreenSettingsDialog {
         View cardPrayer = createSectionCard(ctx, isEn ? "⚖️ Prayer Times & Language" : "⚖️ مواقيت الصلاة واللغة", pal, isWideScreen, isEn);
         LinearLayout cardPrayerContent = (LinearLayout) ((ViewGroup) cardPrayer).getChildAt(1);
 
-        // 0. City Location & Coordinates (Auto Live GPS or Manual Saudi City)
-        String[] cityOptions = CityManager.getCityOptions(isEn);
-        int currentCityIdx = CityManager.getSelectedCityIndex(ctx);
-        cardPrayerContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "📍 City Location & Coordinates:" : "📍 ربط المواقيت بإحداثيات المدينة:", cityOptions, currentCityIdx, pal, isEn, pos -> {
-            CityManager.setSelectedCityIndex(ctx, pos);
-            activity.onCitySelectionChanged();
-            String chosen = cityOptions[pos];
-            Toast.makeText(ctx, isEn ? ("Location linked: " + chosen) : ("تم ربط المواقيت: " + chosen), Toast.LENGTH_SHORT).show();
-        }));
-
-        // 1. Prayer Calculation Source Spinner
+        // Prayer Calculation Source Spinner (Live GPS + Online Umm al-Qura sync)
         String[] sourceOptions = isEn ? new String[]{
                 "🇸🇦 Umm al-Qura Official (Saudi Mosque Standard)",
                 "🏛️ Geometrical Survey & KACST Authority",
@@ -944,28 +1008,13 @@ public final class FullScreenSettingsDialog {
                 "🚫 تطبيق عادي (مع واجهة السيارة الأصلية)",
                 "🏠 تعيين التطبيق كشاشة رئيسية أساسية (Launcher)"
         };
-        boolean primaryLauncherOn = MainActivity.isHomeLauncherEnabled(ctx);
+        boolean primaryLauncherOn = MainActivity.isHomeLauncherEnabled(ctx) && MainActivity.isDefaultHomeLauncher(ctx);
         cardSystemContent.addView(createDropdownRow(ctx, overlayContainer, isEn ? "Primary App Mode (Home Launcher):" : "جعل التطبيق أساسياً (الواجهة الرئيسية):", launcherOptions, primaryLauncherOn ? 1 : 0, pal, isEn, pos -> {
             boolean enabled = (pos == 1);
-            MainActivity.setHomeLauncherEnabled(ctx, enabled);
             if (enabled) {
-                uiPrefs.edit().putBoolean(MainActivity.KEY_AUTO_LAUNCH_APP_ON_BOOT, true).apply();
-                showCompactToast(ctx, isEn
-                        ? "🏠 Primary Launcher enabled — choose 'Qibla' as your Home app"
-                        : "🏠 تم تفعيل وضع الواجهة الرئيسية — اختر «قبلة» كشاشة أساسية");
-                try {
-                    Intent homeSettings = new Intent(Settings.ACTION_HOME_SETTINGS);
-                    homeSettings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    ctx.startActivity(homeSettings);
-                } catch (Throwable t1) {
-                    try {
-                        Intent homeChooser = new Intent(Intent.ACTION_MAIN);
-                        homeChooser.addCategory(Intent.CATEGORY_HOME);
-                        homeChooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        ctx.startActivity(homeChooser);
-                    } catch (Throwable ignored) { }
-                }
+                activity.requestPrimaryHomeLauncher();
             } else {
+                MainActivity.setHomeLauncherEnabled(ctx, false);
                 showCompactToast(ctx, isEn
                         ? "📱 Restored standard app mode"
                         : "📱 تم الرجوع لوضع التطبيق العادي");

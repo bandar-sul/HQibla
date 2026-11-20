@@ -4,6 +4,8 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -11,6 +13,7 @@ import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,10 +29,13 @@ import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -92,6 +98,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     private OnDragLifecycleListener dragLifecycleListener;
 
     private float speedKmh = 0f;
+    private int speedLimitKmh = 120;
     private float qiblaRelativeAngle = 0f;
     private boolean hasHeadingSignal = false;
     private boolean isMph = false;
@@ -99,6 +106,8 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     private int bubbleSizeDp = 86;
     private long dockTimeoutMs = 10000L; // 0 = manual close only
     private FullScreenWeatherDialog.ThemePalette themePalette;
+    private final List<View> pinnedDockTileViews = new ArrayList<>();
+    private int lastOverLimitDockState = -1;
 
     private String[] prayerNames;
     private String[] prayerTimes;
@@ -176,6 +185,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             SharedPreferences sp = getContext().getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE);
             isMph = sp.getBoolean("speed_mph", false);
             isEnglish = sp.getBoolean(MainActivity.KEY_ENGLISH_MODE, false);
+            speedLimitKmh = sp.getInt(MainActivity.KEY_SPEED_LIMIT_KMH, 120);
 
             int sizePref = sp.getInt("floating_ball_size", 1);
             if (sizePref == 0) bubbleSizeDp = 72;
@@ -187,6 +197,10 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         } catch (Throwable ignored) { }
     }
 
+    private boolean isOverSpeedLimit() {
+        return speedLimitKmh > 0 && speedKmh >= speedLimitKmh;
+    }
+
     public int getConfiguredBubbleSizePx() {
         return dp(bubbleSizeDp);
     }
@@ -194,6 +208,8 @@ public class FloatingSpeedBubbleView extends FrameLayout {
     public void reloadPreferencesAndTheme() {
         loadUserPreferences();
         themePalette = FullScreenWeatherDialog.getThemePalette(getContext());
+        refreshDockFonts();
+        refreshPinnedAppsInDock();
         applyThemeColors();
         refreshDockLabels();
         refreshPrayerCountdown();
@@ -373,6 +389,7 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             dockBarLayout.addView(btnLayout, btnLp);
         }
         refreshDockLabels();
+        refreshPinnedAppsInDock();
 
         // D. Speedometer Circle anchor on the right
         dockSpeedCircle = new LinearLayout(getContext());
@@ -414,6 +431,99 @@ public class FloatingSpeedBubbleView extends FrameLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         islandLp.gravity = Gravity.CENTER;
         addView(islandCardLayout, islandLp);
+    }
+
+    private void refreshDockFonts() {
+        Typeface arabicTf = FontHelper.getSelectedTypeface(getContext());
+        if (tvTooltipText != null) tvTooltipText.setTypeface(arabicTf, Typeface.BOLD);
+        if (btnClose != null) btnClose.setTypeface(arabicTf, Typeface.BOLD);
+        if (tvMuteLabel != null) tvMuteLabel.setTypeface(arabicTf, Typeface.BOLD);
+        for (int i = 0; i < 6; i++) {
+            if (btnLabels[i] != null) btnLabels[i].setTypeface(arabicTf, Typeface.BOLD);
+        }
+        if (tvDockSpeed != null) tvDockSpeed.setTypeface(arabicTf, Typeface.BOLD);
+        if (tvDockUnit != null) tvDockUnit.setTypeface(arabicTf, Typeface.BOLD);
+    }
+
+    private void refreshPinnedAppsInDock() {
+        if (dockBarLayout == null) return;
+        for (View v : pinnedDockTileViews) {
+            dockBarLayout.removeView(v);
+        }
+        pinnedDockTileViews.clear();
+
+        List<String> pinned = QuickAppsOverlay.getOrderedPinnedPackages(getContext());
+        if (pinned.isEmpty()) return;
+
+        Context ctx = getContext();
+        PackageManager pm = ctx.getPackageManager();
+        Typeface arabicTf = FontHelper.getSelectedTypeface(ctx);
+        FullScreenWeatherDialog.ThemePalette pal = (themePalette != null)
+                ? themePalette : FullScreenWeatherDialog.getThemePalette(ctx);
+        int tileFill = pal.isLight ? 0xFFF1F5F9 : ((pal.cardBg & 0x00FFFFFF) | 0xF0000000);
+        int borderGold = pal.goldHighlight != 0 ? pal.goldHighlight : pal.accentColor;
+
+        // Insert right after btnLayouts[3] (Quick Apps button)
+        int insertIndex = (btnLayouts[3] != null) ? (dockBarLayout.indexOfChild(btnLayouts[3]) + 1) : dockBarLayout.getChildCount();
+        if (insertIndex < 0) insertIndex = dockBarLayout.getChildCount();
+
+        int added = 0;
+        for (final String pkg : pinned) {
+            if (added >= 3) break;
+            try {
+                final Intent launch = pm.getLaunchIntentForPackage(pkg);
+                if (launch == null) continue;
+                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                CharSequence cs = pm.getApplicationLabel(ai);
+                final String appLabel = (cs != null && cs.length() > 0) ? cs.toString().trim() : pkg;
+                Drawable icon = pm.getApplicationIcon(ai);
+
+                LinearLayout pinTile = new LinearLayout(ctx);
+                pinTile.setOrientation(LinearLayout.VERTICAL);
+                pinTile.setGravity(Gravity.CENTER);
+                pinTile.setPadding(dp(3), dp(3), dp(3), dp(3));
+
+                GradientDrawable tileBg = new GradientDrawable();
+                tileBg.setColor(tileFill);
+                tileBg.setCornerRadius(dp(13));
+                tileBg.setStroke(dp(1.4f), borderGold);
+                pinTile.setBackground(tileBg);
+
+                ImageView iv = new ImageView(ctx);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                if (icon != null) iv.setImageDrawable(icon);
+                iv.setContentDescription(appLabel);
+                LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(dp(23), dp(23));
+                ivLp.bottomMargin = dp(2);
+                pinTile.addView(iv, ivLp);
+
+                TextView tv = new TextView(ctx);
+                tv.setText(appLabel);
+                tv.setTextSize(8.8f);
+                tv.setTypeface(arabicTf, Typeface.BOLD);
+                tv.setTextColor(pal.textPrimary);
+                tv.setGravity(Gravity.CENTER);
+                tv.setSingleLine(true);
+                tv.setEllipsize(TextUtils.TruncateAt.END);
+                pinTile.addView(tv, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                pinTile.setOnClickListener(v -> {
+                    try {
+                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                        ctx.startActivity(launch);
+                    } catch (Throwable ignored) { }
+                    collapseToBubble();
+                });
+
+                LinearLayout.LayoutParams pLp = new LinearLayout.LayoutParams(dp(55), dp(54));
+                pLp.leftMargin = dp(2.5f);
+                pLp.rightMargin = dp(2.5f);
+                dockBarLayout.addView(pinTile, insertIndex + added, pLp);
+                pinnedDockTileViews.add(pinTile);
+                added++;
+            } catch (Throwable ignored) { }
+        }
     }
 
     private void refreshDockLabels() {
@@ -466,23 +576,31 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             btnClose.setBackground(closeBg);
             btnClose.setTextColor(pal.textSecondary);
         }
-        if (dockSpeedCircle != null) {
-            GradientDrawable speedBg = new GradientDrawable();
-            speedBg.setColor(tileBg);
-            speedBg.setCornerRadius(dp(27));
-            speedBg.setStroke(dp(2.0f), pal.accentColor);
-            dockSpeedCircle.setBackground(speedBg);
-        }
-        if (tvDockSpeed != null) {
-            tvDockSpeed.setTextColor(pal.textPrimary);
-        }
-        if (tvDockUnit != null) {
-            tvDockUnit.setTextColor(pal.accentColor);
-        }
+        applySpeedLimitDockStyle(pal);
 
         highlightDockButtons(selectedButtonIdx, pal.goldHighlight != 0 ? pal.goldHighlight : pal.accentColor);
         if (bubbleCanvasView != null) {
             bubbleCanvasView.postInvalidate();
+        }
+    }
+
+    private void applySpeedLimitDockStyle(FullScreenWeatherDialog.ThemePalette pal) {
+        if (pal == null) pal = FullScreenWeatherDialog.getThemePalette(getContext());
+        boolean over = isOverSpeedLimit();
+        lastOverLimitDockState = over ? 1 : 0;
+        int tileBg = pal.isLight ? 0xFFF1F5F9 : ((pal.cardBg & 0x00FFFFFF) | 0xF0000000);
+        if (dockSpeedCircle != null) {
+            GradientDrawable speedBg = new GradientDrawable();
+            speedBg.setColor(over ? (pal.isLight ? 0xFFFEE2E2 : 0xEE3B0D0D) : tileBg);
+            speedBg.setCornerRadius(dp(27));
+            speedBg.setStroke(dp(over ? 2.4f : 2.0f), over ? 0xFFFF5252 : pal.accentColor);
+            dockSpeedCircle.setBackground(speedBg);
+        }
+        if (tvDockSpeed != null) {
+            tvDockSpeed.setTextColor(over ? 0xFFFF6B6B : pal.textPrimary);
+        }
+        if (tvDockUnit != null) {
+            tvDockUnit.setTextColor(over ? 0xFFFF8A80 : pal.accentColor);
         }
     }
 
@@ -622,6 +740,10 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         if (tvDockUnit != null) {
             tvDockUnit.setText(isMph ? "mph" : (isEnglish ? "km/h" : "كم/س"));
         }
+        int overState = isOverSpeedLimit() ? 1 : 0;
+        if (overState != lastOverLimitDockState) {
+            applySpeedLimitDockStyle(themePalette);
+        }
         if (bubbleCanvasView != null) {
             bubbleCanvasView.postInvalidate();
         }
@@ -687,6 +809,8 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         cancelAutoDim();
 
         themePalette = FullScreenWeatherDialog.getThemePalette(getContext());
+        refreshDockFonts();
+        refreshPinnedAppsInDock();
         applyThemeColors();
         refreshDockLabels();
         refreshPrayerCountdown();
@@ -702,7 +826,8 @@ public class FloatingSpeedBubbleView extends FrameLayout {
 
         layoutParams.gravity = Gravity.TOP | Gravity.LEFT;
 
-        int targetW = Math.min(screenW - dp(16), SoundManager.isPlaying() ? dp(572) : dp(518));
+        int pinnedExtraDp = pinnedDockTileViews.size() * 60;
+        int targetW = Math.min(screenW - dp(16), (SoundManager.isPlaying() ? dp(572) : dp(518)) + dp(pinnedExtraDp));
         int targetH = dp(118);
 
         int bubbleCenterX = layoutParams.x + layoutParams.width / 2;
@@ -1154,10 +1279,10 @@ public class FloatingSpeedBubbleView extends FrameLayout {
         private final Paint miniInfoPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path arrowPath = new Path();
 
+        private int lastFontIdx = -1;
+
         public BubbleCanvasView(Context context) {
             super(context);
-            Typeface arabicTf = FontHelper.getArabicTypeface(context);
-
             bgPaint.setStyle(Paint.Style.FILL);
 
             glowRingPaint.setStyle(Paint.Style.STROKE);
@@ -1170,13 +1295,24 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             arrowPaint.setStyle(Paint.Style.FILL);
 
             speedPaint.setTextAlign(Paint.Align.CENTER);
-            speedPaint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-
             unitPaint.setTextAlign(Paint.Align.CENTER);
-            unitPaint.setTypeface(arabicTf);
-
             miniInfoPaint.setTextAlign(Paint.Align.CENTER);
-            miniInfoPaint.setTypeface(Typeface.create(arabicTf, Typeface.BOLD));
+            syncPaintTypefaces(context);
+        }
+
+        private void syncPaintTypefaces(Context context) {
+            int fontIdx = QiblaView.FONT_DEFAULT;
+            try {
+                fontIdx = context.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
+                        .getInt(MainActivity.KEY_FONT_INDEX, QiblaView.FONT_DEFAULT);
+            } catch (Throwable ignored) { }
+            if (fontIdx != lastFontIdx) {
+                lastFontIdx = fontIdx;
+                Typeface arabicTf = FontHelper.getSelectedTypeface(context);
+                speedPaint.setTypeface(Typeface.create(arabicTf, Typeface.BOLD));
+                unitPaint.setTypeface(arabicTf);
+                miniInfoPaint.setTypeface(Typeface.create(arabicTf, Typeface.BOLD));
+            }
         }
 
         @Override
@@ -1185,6 +1321,8 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             int w = getWidth();
             int h = getHeight();
             if (w <= 0 || h <= 0) return;
+
+            syncPaintTypefaces(getContext());
 
             FullScreenWeatherDialog.ThemePalette pal = (themePalette != null)
                     ? themePalette : FullScreenWeatherDialog.getThemePalette(getContext());
@@ -1201,11 +1339,19 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             bgPaint.setShader(grad);
             canvas.drawCircle(cx, cy, radius, bgPaint);
 
-            // Check Qibla alignment (within +/- 12 degrees)
+            // Check Qibla alignment (within +/- 12 degrees) and GPS Speed Limit Alert
             float signedAngle = ((qiblaRelativeAngle + 540f) % 360f) - 180f;
             boolean qiblaAligned = hasHeadingSignal && Math.abs(signedAngle) <= 12f;
+            boolean overLimit = isOverSpeedLimit();
 
-            if (qiblaAligned) {
+            if (overLimit) {
+                glowRingPaint.setColor(0x66FF5252);
+                canvas.drawCircle(cx, cy, radius - dp(1.0f), glowRingPaint);
+                ringPaint.setColor(0xFFFF5252);
+                ringPaint.setStrokeWidth(dp(3.0f));
+                arrowPaint.setColor(qiblaAligned ? 0xFF00F5C8 : (pal.goldHighlight != 0 ? pal.goldHighlight : 0xFFF59E0B));
+            } else if (qiblaAligned) {
+                glowRingPaint.setColor(0x5500F5C8);
                 canvas.drawCircle(cx, cy, radius - dp(1.0f), glowRingPaint);
                 ringPaint.setColor(0xFF00F5C8);
                 ringPaint.setStrokeWidth(dp(2.8f));
@@ -1236,14 +1382,14 @@ public class FloatingSpeedBubbleView extends FrameLayout {
             int speedInt = (displaySpeed < 1.8f) ? 0 : Math.round(displaySpeed);
             String speedStr = String.valueOf(speedInt);
 
-            speedPaint.setColor(pal.textPrimary);
+            speedPaint.setColor(overLimit ? 0xFFFF6B6B : pal.textPrimary);
             speedPaint.setTextSize(radius * 0.56f);
             float speedY = cy + (speedPaint.getTextSize() * 0.06f);
             canvas.drawText(speedStr, cx, speedY, speedPaint);
 
             // Unit text (كم/س or mph)
             String unitStr = isMph ? "mph" : (isEnglish ? "km/h" : "كم/س");
-            unitPaint.setColor(pal.accentColor);
+            unitPaint.setColor(overLimit ? 0xFFFF8A80 : pal.accentColor);
             unitPaint.setTextSize(radius * 0.21f);
             float unitY = speedY + unitPaint.getTextSize() * 1.18f;
             canvas.drawText(unitStr, cx, unitY, unitPaint);

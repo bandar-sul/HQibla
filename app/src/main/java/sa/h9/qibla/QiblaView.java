@@ -37,7 +37,6 @@ public class QiblaView extends View {
             "اللَّهُمَّ أَنْتَ الصَّاحِبُ فِي السَّفَرِ، وَالْخَلِيفَةُ فِي الأَهْلِ",
             "لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ ، سُبْحَانَ اللَّهِ الْعَظِيمِ",
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ رَبِّ الْعَالَمِينَ",
             "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ"
     };
 
@@ -48,8 +47,55 @@ public class QiblaView extends View {
             "O Allah, You are our Companion on the journey and Caretaker of our family.",
             "There is no deity except Allah alone; to Him belongs all praise and power.",
             "Glory be to Allah and His is the praise, Glory be to Allah the Supreme.",
-            "We have reached the morning, and the dominion belongs to Allah, Lord of the worlds.",
             "O Allah, send blessings and peace upon our Prophet Muhammad."
+    };
+
+    private static final String[] MORNING_ATHKAR_AR = {
+            "🌅 أذكار الصباح: أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+            "🌅 اللَّهُمَّ بِكَ أَصْبَحْنَا وَبِكَ أَمْسَيْنَا وَبِكَ نَحْيَا وَبِكَ نَمُوتُ وَإِلَيْكَ النُّشُورُ",
+            "🌅 رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ ﷺ نَبِيًّا",
+            "🌅 اللَّهُمَّ عَافِنِي فِي بَدَنِي، اللَّهُمَّ عَافِنِي فِي سَمْعِي، اللَّهُمَّ عَافِنِي فِي بَصَرِي",
+            "🌅 حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ",
+            "🚗 سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ"
+    };
+
+    private static final String[] MORNING_ATHKAR_EN = {
+            "🌅 Morning Athkar: We have reached morning, and all dominion belongs to Allah.",
+            "🌅 O Allah, by You we enter morning & evening, by You we live and to You is the return.",
+            "🌅 I am pleased with Allah as Lord, Islam as religion, and Muhammad ﷺ as Prophet.",
+            "🌅 Sufficient for me is Allah; there is no deity except Him, in Him I put my trust.",
+            "🚗 Glory to Him Who subjected this transport to us, and to our Lord we shall return."
+    };
+
+    private static final String[] EVENING_ATHKAR_AR = {
+            "🌙 أذكار المساء: أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ",
+            "🌙 اللَّهُمَّ بِكَ أَمْسَيْنَا وَبِكَ أَصْبَحْنَا وَبِكَ نَحْيَا وَبِكَ نَمُوتُ وَإِلَيْكَ الْمَصِيرُ",
+            "🌙 بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ",
+            "🌙 أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ",
+            "🌙 اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، أَسْتَغْفِرُكَ وَأَتُوبُ إِلَيْكَ",
+            "🚗 اللَّهُمَّ هَوِّنْ عَلَيْنَا سَفَرَنَا هَذَا وَاطْوِ عَنَّا بُعْدَهُ"
+    };
+
+    private static final String[] EVENING_ATHKAR_EN = {
+            "🌙 Evening Athkar: We have reached evening, and all dominion belongs to Allah.",
+            "🌙 O Allah, by You we enter evening & morning, and to You is our final destination.",
+            "🌙 In the Name of Allah with Whose Name nothing in earth or heaven can harm.",
+            "🌙 I seek refuge in the perfect words of Allah from the evil of what He created.",
+            "🚗 O Allah, make easy this journey of ours and shorten its distance."
+    };
+
+    private static final String[] FRIDAY_ATHKAR_AR = {
+            "🕌 يوم الجمعة: أَكْثِرُوا مِنَ الصَّلَاةِ عَلَى النَّبِيِّ ﷺ — اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى مُحَمَّدٍ",
+            "📖 سنّة الجمعة: قراءة سورة الكهف نورٌ ما بين الجمعتين",
+            "🤲 يوم الجمعة: تحرَّ ساعة الاستجابة خاصةً آخر ساعة قبل صلاة المغرب",
+            "🕌 اللَّهُمَّ إِنَّا نَسْأَلُكَ فِي هَذَا الْيَوْمِ الْمُبَارَكِ الْبَرَكَةَ وَالْمَغْفِرَةَ وَالرِّزْقَ الطَّيِّبَ"
+    };
+
+    private static final String[] FRIDAY_ATHKAR_EN = {
+            "🕌 Blessed Friday: Send abundant Salawat upon Prophet Muhammad ﷺ.",
+            "📖 Friday Sunnah: Reading Surah Al-Kahf illuminates between the two Fridays.",
+            "🤲 Friday Acceptance Hour: Seek Dua especially in the last hour before Maghrib.",
+            "🕌 O Allah, bless us on this blessed Friday with forgiveness, peace & guidance."
     };
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
@@ -96,6 +142,10 @@ public class QiblaView extends View {
     public static final int THEME_NIGHT = THEME_EMERALD;
 
     private int themeMode = THEME_AUTO;
+    private boolean autoNightOled = true;
+    private int speedLimitKmh = 120;
+    private boolean speedMph = false;
+    private int athkarTapOffset = 0;
     private float fontScale = 0.90f;
     private boolean hudMirrorMode = false;
 
@@ -200,6 +250,7 @@ public class QiblaView extends View {
     private final RectF weatherPrayerRowRect = new RectF();
     private final RectF prayerCardRect = new RectF();
     private final RectF topBarSettingsRect = new RectF();
+    private final RectF athkarBarRect = new RectF();
 
     private static final int RAIN_COUNT = 65;
     private static final int MIST_COUNT = 45;
@@ -338,8 +389,40 @@ public class QiblaView extends View {
             case FONT_ALMARAI: return english ? "Almarai" : "المراعي";
             case FONT_READEX: return english ? "Readex Pro" : "ريدكس برو";
             case FONT_AMIRI: return english ? "Amiri" : "أميري";
-            default: return english ? "Default" : "الافتراضي";
+            default: return english ? "Car System (Default)" : "خط السيارة (الافتراضي)";
         }
+    }
+
+    public void setAutoNightOled(boolean enabled) {
+        this.autoNightOled = enabled;
+        invalidate();
+    }
+
+    public boolean isAutoNightOled() {
+        return autoNightOled;
+    }
+
+    public void setSpeedLimitKmh(int limitKmh) {
+        this.speedLimitKmh = Math.max(0, limitKmh);
+        invalidate();
+    }
+
+    public int getSpeedLimitKmh() {
+        return speedLimitKmh;
+    }
+
+    public void setSpeedMph(boolean mph) {
+        this.speedMph = mph;
+        invalidate();
+    }
+
+    private boolean isOverSpeedLimit() {
+        return speedLimitKmh > 0 && speedKmh >= speedLimitKmh;
+    }
+
+    private String formatSpeedDisplay() {
+        float val = speedMph ? (speedKmh * 0.621371f) : speedKmh;
+        return String.format(Locale.US, speedMph ? "%.0f mph" : "%.0f km/h", val);
     }
 
     public Typeface getCurrentTypeface() {
@@ -365,11 +448,14 @@ public class QiblaView extends View {
                     currentTypeface = ResourcesCompat.getFont(getContext(), R.font.amiri);
                     break;
                 default:
-                    currentTypeface = Typeface.create("sans", Typeface.NORMAL);
+                    currentTypeface = Typeface.DEFAULT;
                     break;
             }
         } catch (Exception e) {
-            currentTypeface = Typeface.create("sans", Typeface.NORMAL);
+            currentTypeface = Typeface.DEFAULT;
+        }
+        if (currentTypeface == null) {
+            currentTypeface = Typeface.DEFAULT;
         }
         if (currentTypeface != null) {
             p.setTypeface(currentTypeface);
@@ -580,7 +666,7 @@ public class QiblaView extends View {
 
     private int getEffectiveTheme() {
         if (themeMode == THEME_AUTO) {
-            return isDaytime() ? THEME_PEARL : THEME_EMERALD;
+            return isDaytime() ? THEME_PEARL : (autoNightOled ? THEME_OLED_NIGHT : THEME_EMERALD);
         }
         return themeMode;
     }
@@ -733,10 +819,47 @@ public class QiblaView extends View {
     }
 
     private String currentThikrText() {
-        long sec = System.currentTimeMillis() / 15000L;
-        int idx = (int) (sec % ATHKAR_AR.length);
-        if (idx < 0) idx = 0;
-        return englishMode ? ATHKAR_EN[idx] : ATHKAR_AR[idx];
+        Calendar now = Calendar.getInstance();
+        int dow = now.get(Calendar.DAY_OF_WEEK);
+        int curMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        int fajrMin = (hasPrayerTimes && parseMinutes(prayerTimes[0]) >= 0) ? parseMinutes(prayerTimes[0]) : 5 * 60;
+        int dhuhrMin = (hasPrayerTimes && parseMinutes(prayerTimes[2]) >= 0) ? parseMinutes(prayerTimes[2]) : 12 * 60;
+        int asrMin = (hasPrayerTimes && parseMinutes(prayerTimes[3]) >= 0) ? parseMinutes(prayerTimes[3]) : 15 * 60 + 30;
+        int maghribMin = (hasPrayerTimes && parseMinutes(prayerTimes[4]) >= 0) ? parseMinutes(prayerTimes[4]) : 18 * 60;
+
+        boolean isFriday = (dow == Calendar.FRIDAY);
+        boolean isMorning = (curMin >= fajrMin && curMin < dhuhrMin);
+        boolean isEvening = (curMin >= asrMin);
+        boolean isFridayAcceptanceHour = isFriday && (curMin >= asrMin && curMin < maghribMin);
+
+        if (isFridayAcceptanceHour && (((System.currentTimeMillis() / 15000L) + athkarTapOffset) % 2 == 0)) {
+            return englishMode
+                    ? "🤲 Friday Hour of Acceptance (before Maghrib): Make sincere Dua & Salawat ﷺ"
+                    : "🤲 ساعة الاستجابة يوم الجمعة (قبل المغرب): أكثر من الدعاء والصلاة على النبي ﷺ";
+        }
+
+        String[] primary;
+        if (isMorning) {
+            primary = englishMode ? MORNING_ATHKAR_EN : MORNING_ATHKAR_AR;
+        } else if (isEvening) {
+            primary = englishMode ? EVENING_ATHKAR_EN : EVENING_ATHKAR_AR;
+        } else {
+            primary = englishMode ? ATHKAR_EN : ATHKAR_AR;
+        }
+
+        String[] friday = englishMode ? FRIDAY_ATHKAR_EN : FRIDAY_ATHKAR_AR;
+        long step = (System.currentTimeMillis() / 15000L) + athkarTapOffset;
+        if (isFriday) {
+            int combinedLen = friday.length + primary.length;
+            int idx = (int) ((step % combinedLen + combinedLen) % combinedLen);
+            // Interleave Friday reminders and time-of-day Athkar cleanly
+            if (idx % 2 == 0 && (idx / 2) < friday.length) {
+                return friday[idx / 2];
+            }
+            return primary[idx % primary.length];
+        }
+        int idx = (int) ((step % primary.length + primary.length) % primary.length);
+        return primary[idx];
     }
 
     public void tick() { invalidate(); }
@@ -782,6 +905,9 @@ public class QiblaView extends View {
     protected void onDraw(Canvas c) {
         super.onDraw(c);
         float w = getWidth(), h = getHeight();
+        if (currentTypeface != null) {
+            p.setTypeface(currentTypeface);
+        }
         if (hudMirrorMode) {
             c.save();
             c.scale(-1f, 1f, w / 2f, h / 2f);
@@ -902,10 +1028,14 @@ public class QiblaView extends View {
 
         // Row 1 - Primary (Right in Arabic): Speed | Secondary (Left in Arabic): Heading Source
         boolean showSpeed = speedKmh > 1f;
+        boolean overLimit = showSpeed && isOverSpeedLimit();
         drawInfoCard(c, primaryColX, row1Y, cardW, cardH,
-                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
-                showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
-                showSpeed ? "🚗" : "◎", prayerAccentColor());
+                showSpeed
+                        ? (overLimit ? (englishMode ? "⚠️ Speed Limit" : "⚠️ تجاوز السرعة") : (englishMode ? "Speed" : "السرعة"))
+                        : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+                showSpeed ? ((overLimit ? "🚨 " : "") + formatSpeedDisplay()) : formatAccuracy(),
+                showSpeed ? (overLimit ? "🚨" : "🚗") : "◎",
+                overLimit ? 0xFFFF5252 : prayerAccentColor());
 
         drawInfoCard(c, secondaryColX, row1Y, cardW, cardH,
                 englishMode ? "Heading Source" : "مصدر الاتجاه",
@@ -923,32 +1053,43 @@ public class QiblaView extends View {
         float padX = pw * 0.06f;
         p.setTextAlign(rtl ? Paint.Align.RIGHT : Paint.Align.LEFT);
         p.setColor(goldColor());
-        ts(ph * 0.082f);
+        ts(ph * 0.078f);
         p.setFakeBoldText(true);
-        float headerY = py + ph * 0.115f;
+        float headerY = py + ph * 0.112f;
         String splitPrayerTitle = englishMode ? "🕌 Prayer Times  🔄" : "🕌 مواقيت الصلاة  🔄";
         drawFittedTextAligned(c, splitPrayerTitle,
                 rtl ? (px + pw - padX) : (px + padX), headerY, pw * 0.85f);
         p.setFakeBoldText(false);
 
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(1.1f);
+        stroke.setColor(0x40FFD768);
+        c.drawLine(px + padX * 0.6f, py + ph * 0.165f, px + pw - padX * 0.6f, py + ph * 0.165f, stroke);
+
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = py + ph * 0.225f;
-        float rowH = ph * 0.124f;
+        float rowsTop = py + ph * 0.195f;
+        float rowH = (ph * 0.770f) / 6f;
         float maxColW = (pw - padX * 2.2f) * 0.50f;
 
         for (int i = 0; i < 6; i++) {
-            float ry = rowStart + i * rowH;
+            float slotTop = rowsTop + i * rowH;
+            float boxTop = slotTop + rowH * 0.06f;
+            float boxBottom = slotTop + rowH * 0.94f;
+            float boxCy = (boxTop + boxBottom) * 0.5f;
+
             if (i == next) {
                 p.setColor(0x28FFA726);
-                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, p);
+                c.drawRoundRect(new RectF(px + pw * .03f, boxTop, px + pw * .97f, boxBottom), 10f, 10f, p);
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0xBBFFD768);
-                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
+                c.drawRoundRect(new RectF(px + pw * .03f, boxTop, px + pw * .97f, boxBottom), 10f, 10f, stroke);
             }
 
-            ts(ph * 0.072f);
+            ts(Math.min(rowH * 0.54f, ph * 0.070f));
+            Paint.FontMetrics rowFm = p.getFontMetrics();
+            float ry = boxCy - (rowFm.ascent + rowFm.descent) * 0.5f;
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             p.setFakeBoldText(i == next);
@@ -971,7 +1112,7 @@ public class QiblaView extends View {
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.0f);
                 stroke.setColor(0x18FFFFFF);
-                float lineY = ry + rowH * 0.26f;
+                float lineY = slotTop + rowH;
                 c.drawLine(px + padX * 0.8f, lineY, px + pw - padX * 0.8f, lineY, stroke);
             }
         }
@@ -1003,6 +1144,7 @@ public class QiblaView extends View {
         float barH = Math.min(h * 0.090f, dp(48));
         float barY = h - reservedBottom - barH - dp(4);
         RectF barRect = new RectF(barX, barY, barX + barW, barY + barH);
+        athkarBarRect.set(barRect);
         roundCard(c, barRect, 14f, 1.2f);
 
         p.setTextAlign(Paint.Align.CENTER);
@@ -1072,10 +1214,14 @@ public class QiblaView extends View {
 
         // Row 1 - Speed / Accuracy
         boolean showSpeed = speedKmh > 1.8f;
+        boolean overLimit = showSpeed && isOverSpeedLimit();
         drawInfoCard(c, primaryColX, cardY1, cardW, cardH,
-                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
-                showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
-                showSpeed ? "🚗" : "◎", prayerAccentColor());
+                showSpeed
+                        ? (overLimit ? (englishMode ? "⚠️ Speed Limit" : "⚠️ تجاوز السرعة") : (englishMode ? "Speed" : "السرعة"))
+                        : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+                showSpeed ? ((overLimit ? "🚨 " : "") + formatSpeedDisplay()) : formatAccuracy(),
+                showSpeed ? (overLimit ? "🚨" : "🚗") : "◎",
+                overLimit ? 0xFFFF5252 : prayerAccentColor());
 
         // Row 1 - Heading Source / Qibla
         drawInfoCard(c, secondaryColX, cardY1, cardW, cardH,
@@ -1103,32 +1249,43 @@ public class QiblaView extends View {
         // Header Title with inline sync button
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(goldColor());
-        ts(ph * 0.088f);
+        ts(ph * 0.082f);
         p.setFakeBoldText(true);
-        float headerY = py + ph * 0.125f;
+        float headerY = py + ph * 0.115f;
         String prayerHeader = englishMode
                 ? ("🕌 Prayer Times (" + localizedLocationName() + ")  🔄")
                 : ("🕌 مواقيت الصلاة (" + localizedLocationName() + ")  🔄");
         drawFittedText(c, prayerHeader, px + pw * 0.5f, headerY, pw * 0.90f);
         p.setFakeBoldText(false);
 
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(1.1f);
+        stroke.setColor(0x40FFD768);
+        float padX = pw * 0.06f;
+        c.drawLine(px + padX * 0.6f, py + ph * 0.168f, px + pw - padX * 0.6f, py + ph * 0.168f, stroke);
+
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = py + ph * 0.245f;
-        float rowH = (ph * 0.70f) / 6f;
-        float padX = pw * 0.06f;
+        float rowsTop = py + ph * 0.198f;
+        float rowH = (ph * 0.765f) / 6f;
 
         for (int i = 0; i < 6; i++) {
-            float ry = rowStart + i * rowH;
+            float slotTop = rowsTop + i * rowH;
+            float boxTop = slotTop + rowH * 0.06f;
+            float boxBottom = slotTop + rowH * 0.94f;
+            float boxCy = (boxTop + boxBottom) * 0.5f;
+
             if (i == next) {
                 p.setColor(0x28FFA726);
-                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, p);
+                c.drawRoundRect(new RectF(px + pw * .03f, boxTop, px + pw * .97f, boxBottom), 10f, 10f, p);
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0xBBFFD768);
-                c.drawRoundRect(new RectF(px + pw * .03f, ry - rowH * .70f, px + pw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
+                c.drawRoundRect(new RectF(px + pw * .03f, boxTop, px + pw * .97f, boxBottom), 10f, 10f, stroke);
             }
-            ts(Math.min(rowH * 0.48f, dp(15f) * fontScale));
+            ts(Math.min(rowH * 0.52f, dp(15f) * fontScale));
+            Paint.FontMetrics rowFm = p.getFontMetrics();
+            float ry = boxCy - (rowFm.ascent + rowFm.descent) * 0.5f;
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             p.setFakeBoldText(i == next);
@@ -1150,7 +1307,7 @@ public class QiblaView extends View {
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.0f);
                 stroke.setColor(0x18FFFFFF);
-                float lineY = ry + rowH * 0.26f;
+                float lineY = slotTop + rowH;
                 c.drawLine(px + padX * 0.8f, lineY, px + pw - padX * 0.8f, lineY, stroke);
             }
         }
@@ -1796,10 +1953,14 @@ public class QiblaView extends View {
                 "↗", hasHeading ? prayerAccentColor() : 0xFFE5B64A);
 
         boolean showSpeed = speedKmh > 1f;
+        boolean overLimit = showSpeed && isOverSpeedLimit();
         drawInfoCard(c, x, yTop + 2 * (cardH + gap), cardW, cardH,
-                showSpeed ? (englishMode ? "Speed" : "السرعة") : (englishMode ? "GPS Accuracy" : "دقة GPS"),
-                showSpeed ? String.format(Locale.US, "%.0f km/h", speedKmh) : formatAccuracy(),
-                showSpeed ? "🚗" : "◎", prayerAccentColor());
+                showSpeed
+                        ? (overLimit ? (englishMode ? "⚠️ Speed Limit" : "⚠️ تجاوز السرعة") : (englishMode ? "Speed" : "السرعة"))
+                        : (englishMode ? "GPS Accuracy" : "دقة GPS"),
+                showSpeed ? ((overLimit ? "🚨 " : "") + formatSpeedDisplay()) : formatAccuracy(),
+                showSpeed ? (overLimit ? "🚨" : "🚗") : "◎",
+                overLimit ? 0xFFFF5252 : prayerAccentColor());
 
         drawInfoCard(c, x, yTop + 3 * (cardH + gap), cardW, cardH,
                 englishMode ? "Heading Source" : "مصدر الاتجاه",
@@ -2082,9 +2243,10 @@ public class QiblaView extends View {
         c.drawArc(arcOval, 135f, 270f, false, stroke);
 
         // Luminous active arc
+        boolean overSpeed = isOverSpeedLimit();
         stroke.setShader(new SweepGradient(cx, cy,
-                speedKmh > 110f ? new int[]{0xFF38BDF8, 0xFFFFB74D, 0xFFEF4444, 0xFF38BDF8}
-                                : new int[]{0xFF38BDF8, 0xFF00F5C8, 0xFFFFD768, 0xFF38BDF8},
+                overSpeed ? new int[]{0xFF38BDF8, 0xFFFFB74D, 0xFFEF4444, 0xFF38BDF8}
+                          : new int[]{0xFF38BDF8, 0xFF00F5C8, 0xFFFFD768, 0xFF38BDF8},
                 null));
         stroke.setStrokeWidth(r * 0.030f);
         c.drawArc(arcOval, 135f, sweepDeg, false, stroke);
@@ -2095,8 +2257,8 @@ public class QiblaView extends View {
         double tipRad = Math.toRadians(135f + sweepDeg);
         float tipX = cx + (float) Math.cos(tipRad) * (r * 0.965f);
         float tipY = cy + (float) Math.sin(tipRad) * (r * 0.965f);
-        p.setColor(speedKmh > 110f ? 0xFFFF5252 : accent);
-        p.setShadowLayer(10f, 0, 0, speedKmh > 110f ? 0xAAFF5252 : 0xBB00F5C8);
+        p.setColor(overSpeed ? 0xFFFF5252 : accent);
+        p.setShadowLayer(10f, 0, 0, overSpeed ? 0xAAFF5252 : 0xBB00F5C8);
         c.drawCircle(tipX, tipY, r * 0.028f, p);
         p.clearShadowLayer();
 
@@ -2153,8 +2315,10 @@ public class QiblaView extends View {
         String subLine;
         int subColor;
         if (speedKmh > 1.5f) {
-            subLine = String.format(Locale.US, englishMode ? "🚗 %.0f KM/H" : "🚗 %.0f كم/س", speedKmh);
-            subColor = night ? 0xFF00F5C8 : 0xFF00695C;
+            float disp = speedMph ? (speedKmh * 0.621371f) : speedKmh;
+            String unitStr = speedMph ? "MPH" : (englishMode ? "KM/H" : "كم/س");
+            subLine = String.format(Locale.US, (overSpeed ? "🚨 " : "🚗 ") + "%.0f %s", disp, unitStr);
+            subColor = overSpeed ? 0xFFFF5252 : (night ? 0xFF00F5C8 : 0xFF00695C);
         } else if (hasPrayerTimes) {
             int nextIdx = getNextPrayerIndex();
             String[] pNames = activePrayerNames();
@@ -2163,14 +2327,14 @@ public class QiblaView extends View {
             subLine = "🕌 " + pLabel + "  •  " + pTime;
             subColor = night ? 0xFFFDE68A : 0xFF8A5A00;
         } else {
-            subLine = englishMode ? "0 KM/H" : "0 كم/س";
+            subLine = speedMph ? "0 MPH" : (englishMode ? "0 KM/H" : "0 كم/س");
             subColor = secondaryTextColor();
         }
         RectF telPill = new RectF(cx - r * 0.58f, cy + r * 0.29f, cx + r * 0.58f, cy + r * 0.50f);
-        p.setColor(night ? 0xAA0A1D29 : 0xCCFFFFFF);
+        p.setColor(overSpeed ? 0xCC3B0D0D : (night ? 0xAA0A1D29 : 0xCCFFFFFF));
         c.drawRoundRect(telPill, telPill.height() * 0.48f, telPill.height() * 0.48f, p);
-        stroke.setStrokeWidth(r * 0.007f);
-        stroke.setColor(speedKmh > 1.5f ? (night ? 0x8800F5C8 : 0x88007A6C) : (night ? 0x77FFD768 : 0x66B88E3E));
+        stroke.setStrokeWidth(r * (overSpeed ? 0.012f : 0.007f));
+        stroke.setColor(overSpeed ? 0xFFFF5252 : (speedKmh > 1.5f ? (night ? 0x8800F5C8 : 0x88007A6C) : (night ? 0x77FFD768 : 0x66B88E3E)));
         c.drawRoundRect(telPill, telPill.height() * 0.48f, telPill.height() * 0.48f, stroke);
 
         ts(r * 0.105f);
@@ -3119,30 +3283,41 @@ public class QiblaView extends View {
         // Header Title with inline sync button (حذف التاريخ من داخل البطاقة ووضع زر التحديث بجانب مواقيت الصلاة)
         p.setTextAlign(Paint.Align.CENTER);
         p.setColor(goldColor());
-        ts(ch1 * .085f);
+        ts(ch1 * .078f);
         p.setFakeBoldText(true);
-        float headerY = y1 + ch1 * 0.125f;
+        float headerY = y1 + ch1 * 0.112f;
         String prayerTitle = englishMode ? "🕌 Prayer Times  🔄" : "🕌 مواقيت الصلاة  🔄";
         drawFittedText(c, prayerTitle, x + cw * 0.5f, headerY, cw * 0.90f);
         p.setFakeBoldText(false);
 
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeWidth(1.1f);
+        stroke.setColor(0x40FFD768);
+        c.drawLine(x + padX * 0.6f, y1 + ch1 * 0.165f, x + cw - padX * 0.6f, y1 + ch1 * 0.165f, stroke);
+
         String[] names = activePrayerNames();
         int next = getNextPrayerIndex();
-        float rowStart = y1 + ch1 * 0.225f;
-        float rowH = ch1 * 0.122f;
+        float rowsTop = y1 + ch1 * 0.195f;
+        float rowH = (ch1 * 0.770f) / 6f;
 
         for (int i = 0; i < 6; i++) {
-            float ry = rowStart + i * rowH;
+            float slotTop = rowsTop + i * rowH;
+            float boxTop = slotTop + rowH * 0.06f;
+            float boxBottom = slotTop + rowH * 0.94f;
+            float boxCy = (boxTop + boxBottom) * 0.5f;
+
             if (i == next) {
                 p.setColor(0x28FFA726);
-                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .70f, x + cw * .97f, ry + rowH * .26f), 10f, 10f, p);
+                c.drawRoundRect(new RectF(x + cw * .03f, boxTop, x + cw * .97f, boxBottom), 10f, 10f, p);
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.2f);
                 stroke.setColor(0xBBFFD768);
-                c.drawRoundRect(new RectF(x + cw * .03f, ry - rowH * .70f, x + cw * .97f, ry + rowH * .26f), 10f, 10f, stroke);
+                c.drawRoundRect(new RectF(x + cw * .03f, boxTop, x + cw * .97f, boxBottom), 10f, 10f, stroke);
             }
 
-            ts(ch1 * .068f);
+            ts(Math.min(rowH * 0.54f, ch1 * .066f));
+            Paint.FontMetrics rowFm = p.getFontMetrics();
+            float ry = boxCy - (rowFm.ascent + rowFm.descent) * 0.5f;
             String icon = (i < PRAYER_ICONS.length) ? PRAYER_ICONS[i] : "•";
             p.setColor(i == next ? goldColor() : prayerPrimaryColor());
             p.setFakeBoldText(i == next);
@@ -3165,7 +3340,7 @@ public class QiblaView extends View {
                 stroke.setStyle(Paint.Style.STROKE);
                 stroke.setStrokeWidth(1.0f);
                 stroke.setColor(0x18FFFFFF);
-                float lineY = ry + rowH * 0.26f;
+                float lineY = slotTop + rowH;
                 c.drawLine(x + padX * 0.8f, lineY, x + cw - padX * 0.8f, lineY, stroke);
             }
         }
@@ -3227,6 +3402,7 @@ public class QiblaView extends View {
         float startX = w * 0.345f;
         float endX = w * 0.655f;
         RectF barRect = new RectF(startX, barY, endX, barY + barH);
+        athkarBarRect.set(barRect);
 
         roundCard(c, barRect, 14f, 1.2f);
 
@@ -3250,6 +3426,7 @@ public class QiblaView extends View {
     private void drawPortraitBottomAthkar(Canvas c, float w, float h, float barY, float barH) {
         float pad = dp(12);
         RectF barRect = new RectF(pad, barY, w - pad, barY + barH);
+        athkarBarRect.set(barRect);
         roundCard(c, barRect, 14f, 1.2f);
 
         p.setTextAlign(Paint.Align.CENTER);
@@ -3359,7 +3536,16 @@ public class QiblaView extends View {
                 return true;
             }
 
-            // 3. Tapping bottom Athkar bar stops audio if playing
+            // 3. Tapping bottom Athkar bar stops audio if playing or cycles to next contextual Thikr
+            if (athkarBarRect.contains(x, y)) {
+                if (SoundManager.isPlaying()) {
+                    SoundManager.stop();
+                } else {
+                    athkarTapOffset++;
+                }
+                invalidate();
+                return true;
+            }
             float aspect = getWidth() / (float) h;
             boolean wide = aspect >= 1.35f;
             boolean split = !wide && aspect >= 0.85f;
@@ -3368,9 +3554,11 @@ public class QiblaView extends View {
             if (y >= athkarMinY && y <= athkarMaxY) {
                 if (SoundManager.isPlaying()) {
                     SoundManager.stop();
-                    invalidate();
-                    return true;
+                } else {
+                    athkarTapOffset++;
                 }
+                invalidate();
+                return true;
             }
 
             // 4. Touching inside the Compass / Dial area begins horizontal swipe tracking

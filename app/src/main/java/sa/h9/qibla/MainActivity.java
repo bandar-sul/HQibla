@@ -63,6 +63,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static final String TAG = "H9MainActivity";
     private static final int REQ_LOCATION = 1001;
     public static final int REQ_PICK_CUSTOM_ADHAN = 1044;
+    public static final int REQ_ROLE_HOME = 1045;
+    private volatile boolean awaitingHomeRoleSelection = false;
+    private long homeRoleRequestedAt = 0L;
     private static final float GPS_HEADING_MIN_SPEED_MPS = 0.8f;
     private static final float COURSE_MIN_DISTANCE_M = 2.0f;
     private static final long HEADING_STALE_MS = 7000L;
@@ -93,6 +96,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     public static final String KEY_AUTO_LAUNCH_APP_ON_BOOT = "auto_launch_app_on_boot";
     public static final String KEY_PRIMARY_LAUNCHER_MODE = "primary_launcher_mode";
     public static final String KEY_DYNAMIC_ISLAND_ENABLED = "dynamic_island_enabled";
+    public static final String KEY_AUTO_NIGHT_OLED = "auto_night_oled";
+    public static final String KEY_SPEED_LIMIT_KMH = "speed_limit_kmh";
     public static final String EXTRA_OPEN_SETTINGS = "open_settings";
     public static final String EXTRA_OPEN_WEATHER = "open_weather";
 
@@ -423,18 +428,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         lastPrayerCalcAt = 0L;
         lastPrayerDay = -1;
         Location loc = lastLocation;
-        int cityIdx = CityManager.getSelectedCityIndex(this);
-        if (cityIdx > 0) {
-            Location manualLoc = CityManager.getManualLocation(this);
-            if (manualLoc != null) loc = manualLoc;
-        }
         if (loc == null) {
-            loc = CityManager.getManualLocation(this);
-            if (loc == null) {
-                loc = new Location("default_saudi");
-                loc.setLatitude(24.7136);
-                loc.setLongitude(46.6753);
-            }
+            loc = new Location("default_saudi");
+            loc.setLatitude(24.7136);
+            loc.setLongitude(46.6753);
         }
         maybeRefreshPrayerTimes(loc, true);
     }
@@ -446,48 +443,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             getSharedPreferences("h9_prayer_cache_v100", MODE_PRIVATE).edit().clear().apply();
         } catch (Throwable ignored) { }
         Location loc = lastLocation;
-        int cityIdx = CityManager.getSelectedCityIndex(this);
-        if (cityIdx > 0) {
-            Location manualLoc = CityManager.getManualLocation(this);
-            if (manualLoc != null) loc = manualLoc;
-        }
         if (loc == null) {
-            loc = CityManager.getManualLocation(this);
-            if (loc == null) {
-                loc = new Location("default_saudi");
-                loc.setLatitude(24.7136);
-                loc.setLongitude(46.6753);
-            }
+            loc = new Location("default_saudi");
+            loc.setLatitude(24.7136);
+            loc.setLongitude(46.6753);
         }
         maybeRefreshPrayerTimes(loc, true);
-    }
-
-    public void onCitySelectionChanged() {
-        int idx = CityManager.getSelectedCityIndex(this);
-        if (idx > 0) {
-            Location loc = CityManager.getManualLocation(this);
-            if (loc != null) {
-                lastLocation = loc;
-                saveLocation(loc);
-                qiblaView.setLocation(loc);
-                qiblaView.setLocationName(CityManager.getManualCityName(this, isEn()));
-                if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(loc);
-                invalidatePrayerTimes();
-                WeatherManager.fetchWeather(this, loc.getLatitude(), loc.getLongitude(), info -> {
-                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
-                });
-            }
-        } else {
-            restoreLastLocation();
-            if (lastLocation != null) {
-                qiblaView.setLocation(lastLocation);
-                maybeResolveLocationName(lastLocation);
-                invalidatePrayerTimes();
-                WeatherManager.fetchWeather(this, lastLocation.getLatitude(), lastLocation.getLongitude(), info -> {
-                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
-                });
-            }
-        }
     }
 
     void applyLanguageMode(boolean english) {
@@ -497,11 +458,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ENGLISH_MODE, english).apply();
         if (mainSettingsButton != null) {
             mainSettingsButton.setText(english ? "⚙ Settings" : "⚙ الإعدادات");
+            mainSettingsButton.setTypeface(FontHelper.getSelectedTypeface(this), Typeface.BOLD);
         }
         if (lastLocation != null) {
             lastPlaceResolveAt = 0L;
             maybeResolveLocationName(lastLocation);
         }
+    }
+
+    public void refreshAppFont() {
+        if (mainSettingsButton != null) {
+            mainSettingsButton.setTypeface(FontHelper.getSelectedTypeface(this), Typeface.BOLD);
+        }
+        FloatingSpeedBubbleService.reloadPreferences(this);
     }
 
     @Override
@@ -519,6 +488,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
 
         SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        if (uiPrefs.contains(CityManager.KEY_SELECTED_CITY_INDEX)) {
+            uiPrefs.edit().remove(CityManager.KEY_SELECTED_CITY_INDEX).apply();
+        }
+        verifyHomeLauncherHealth(this);
         boolean defaultEnglish = Locale.getDefault().getLanguage().toLowerCase(Locale.US).startsWith("en");
         boolean englishMode = uiPrefs.getBoolean(KEY_ENGLISH_MODE, defaultEnglish);
 
@@ -526,8 +499,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         FrameLayout root = rootContainer;
         qiblaView = new QiblaView(this);
         qiblaView.setThemeMode(uiPrefs.getInt(KEY_THEME_MODE, QiblaView.THEME_AUTO));
+        qiblaView.setAutoNightOled(uiPrefs.getBoolean(KEY_AUTO_NIGHT_OLED, true));
         qiblaView.setFontScale(uiPrefs.getFloat(KEY_FONT_SCALE, 0.90f));
         qiblaView.setFontIndex(uiPrefs.getInt(KEY_FONT_INDEX, QiblaView.FONT_DEFAULT));
+        qiblaView.setSpeedLimitKmh(uiPrefs.getInt(KEY_SPEED_LIMIT_KMH, 120));
+        qiblaView.setSpeedMph(uiPrefs.getBoolean("speed_mph", false));
         qiblaView.setPanelSwapped(uiPrefs.getBoolean(KEY_PANEL_SWAPPED, false));
         qiblaView.setEnglishMode(englishMode);
         qiblaView.setWeatherEffectsEnabled(uiPrefs.getBoolean("weather_effects_enabled", true));
@@ -560,7 +536,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         mainSettingsButton.setTextSize(16.5f);
         mainSettingsButton.setTextColor(0xFFFFFFFF);
         mainSettingsButton.setAllCaps(false);
-        mainSettingsButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mainSettingsButton.setTypeface(FontHelper.getSelectedTypeface(this), Typeface.BOLD);
         GradientDrawable aboutBg = new GradientDrawable();
         aboutBg.setColor(0xDD0B1B24);
         aboutBg.setCornerRadius(dp(22));
@@ -829,6 +805,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putBoolean("hud_mirror_mode", false).apply();
             return;
         }
+        Intent launchIntent = getIntent();
+        boolean launchedAsHome = launchIntent != null && launchIntent.hasCategory(Intent.CATEGORY_HOME);
+        if (launchedAsHome || isDefaultHomeLauncher(this)) {
+            return;
+        }
         super.onBackPressed();
     }
 
@@ -840,6 +821,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (!awaitingHomeRoleSelection && verifyHomeLauncherHealth(this)) {
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🛡️ Car system restricts 3rd-party Home Launcher — stopped repeating popup"
+                    : "🛡️ نظام السيارة يمنع اللانشر الخارجي — تم إيقاف رسالة اختيار الصفحة الرئيسية المتكررة");
+        }
         handleIntentExtras(intent);
     }
 
@@ -920,7 +906,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         langBtn.setTextSize(15f);
         langBtn.setTextColor(0xFFFFC857);
         langBtn.setAllCaps(false);
-        langBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        langBtn.setTypeface(FontHelper.getSelectedTypeface(this), Typeface.BOLD);
         GradientDrawable langBtnBg = new GradientDrawable();
         langBtnBg.setColor(0xFF22323A);
         langBtnBg.setCornerRadius(dp(16));
@@ -994,6 +980,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             int next = (qiblaView.getFontIndex() + 1) % 6;
             qiblaView.setFontIndex(next);
             getSharedPreferences(UI_PREFS, MODE_PRIVATE).edit().putInt(KEY_FONT_INDEX, next).apply();
+            refreshAppFont();
             fontBtn.setText((isEn() ? "Font: " : "الخط: ") + QiblaView.getFontName(next, isEn()));
         });
         LinearLayout.LayoutParams fontBtnLp = new LinearLayout.LayoutParams(dp(230), dp(40));
@@ -1331,7 +1318,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         inner.setGravity(isEn() ? Gravity.LEFT : Gravity.RIGHT);
 
         String changelogText = isEn()
-                ? "◈ Version 10.0.0 — Official Automotive Release (Build 117):\n" +
+                ? "◈ Version 10.1.2 — Unified Smart Driving, Radar, Fonts & Tank 500 Update (Build 120):\n" +
+                  "• Tank 500 Home Launcher Loop Fixed: Adopted official Android RoleManager (ROLE_HOME), added singleTask/stateNotNeeded Home attributes, and built an automatic safety guard that immediately resolves repeating 'Select a Home App' popups on locked GWM Tank 500 systems while keeping Auto-Open on car startup active.\n" +
+                  "• Prayer Times Layout & Standard GPS/Internet Sync: Lowered the 6 prayer rows beneath a clean divider under the header so the next-prayer highlight never touches the title, and removed manual city coordinate locking so prayer times always update naturally via live GPS & Internet.\n" +
+                  "• Car System Default Font + Working Arabic Fonts: Restored the vehicle's native system font as default, while integrating genuine Arabic+Latin fonts (Cairo, Tajawal, Almarai, Readex Pro, Amiri) applied live across Qibla, Settings, Weather, and Floating Ball for anyone who wishes to switch.\n" +
+                  "• Windy Radar Fixed + Live GPS Rain Fallback: Fixed WebView cookie and script handling for Windy on car screens with automatic 10-second fallback to a fast interactive RainViewer rain radar centered on your exact GPS location.\n" +
+                  "• Smart Driving Pack: Auto-OLED Night switches Automatic Theme to glare-free Pure Black OLED after Maghrib; customizable GPS Speed Limit Alert (Off / 80–160 km/h) highlights speed readouts & Floating Ball in red; reorderable Pinned Quick Apps (▲/▼) with the top 3 synced straight into the Floating Ball Dock.\n" +
+                  "• Context-Aware Smart Athkar: Morning Athkar (Fajr→Dhuhr), Evening Athkar (Asr→Midnight), and Friday Reminders (Al-Kahf, Salawat ﷺ, Acceptance Hour) automatically adjust by time + tap the Athkar bar to cycle anytime.\n\n" +
+                  "◈ Version 10.0.0 — Official Automotive Release (Build 117):\n" +
                   "• Online-Only In-App Update (No External Apps/Browsers): Downloads and verifies SHA-256 directly inside Qibla with a live progress bar, and installs directly without opening any browser or third-party app.\n" +
                   "• Quick Apps Button Added: Dedicated enlarged Quick Apps launcher button below Weather & inside the Floating Ball dock for instant access while driving.\n" +
                   "• Direct Car Auto-Launch: Option to auto-open Qibla automatically on vehicle ignition or set it as your Primary Car Home Launcher + True Edge-to-Edge Fullscreen.\n" +
@@ -1346,7 +1340,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                   "• Full BYD DiLink 5.1 & Leopard 5 car system support: rotating screen, 3-screen multi-display, and 320 DPI density.\n" +
                   "• Universal Android Support: lowered minSdk to 24 (supports Android 7.0 to 15).\n" +
                   "• Native Split-Screen compatibility: full support for GCCSplit mode without app restart or layout distortion.\n\n"
-                : "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 117):\n" +
+                : "◈ الإصدار 10.1.2 — التحديث الشامل للقيادة الذكية، الرادار، الخطوط وتانك 500 (Build 120):\n" +
+                  "• حل مشكلة رسالة «تحديد تطبيق صفحة رئيسية» على سيارة تانك 500: اعتماد واجهة RoleManager الرسمية وتهيئة singleTask مع حماية ذكية تلقائية تكتشف قفل نظام السيارة (GwmLauncher) للانشر وتلغي التعارض والرسالة المتكررة فوراً، مع إبقاء ميزة الفتح التلقائي عند تشغيل السيارة كبديل آمن ومستقر.\n" +
+                  "• إصلاح تناسق بطاقة مواقيت الصلاة وتحديث GPS القياسي: إنزال صفوف الصلوات الست أسفل العنوان مع خط فاصل أنيق لمنع ملامسة إطار الصلاة القادمة للعنوان، وإزالة ربط المواقيت بإحداثيات المدن اليدوية ليبقى التحديث تلقائياً بالطريقة المعتادة عبر GPS والإنترنت.\n" +
+                  "• خط السيارة هو الافتراضي + إصلاح شامل للخطوط العربية: اعتماد خط نظام السيارة كخيار افتراضي أساسي، مع دمج خطوط عربية حقيقية (Cairo، Tajawal، Almarai، Readex Pro، Amiri) لمن يرغب بالتبديل وتطبيقها فوراً على الشاشة الرئيسية، الإعدادات، الطقس، والكرة العائمة.\n" +
+                  "• إصلاح رادار ويندي (Windy) + بديل أمطار مباشر: معالجة تحميل خرائط ويندي وملفات الارتباط في شاشات السيارات، مع التحويل التلقائي خلال 10 ثوانٍ إلى رادار أمطار مباشر وسريع (RainViewer) حول موقع GPS عند تعذر ويندي.\n" +
+                  "• حزمة القيادة الذكية: تحوّل تلقائي لثيم أسود OLED المريح للعينين ليلاً بعد المغرب في الوضع التلقائي، وتنبيه تجاوز حد السرعة GPS (إيقاف / 80 إلى 160 كم/س) باللون الأحمر في عدادات السرعة والكرة العائمة، وترتيب التطبيقات المثبتة (▲/▼) مع مزامنة أول 3 تطبيقات مباشرة داخل شريط الكرة العائمة.\n" +
+                  "• الأذكار التفاعلية الذكية: أذكار الصباح (الفجر→الظهر)، المساء (العصر→منتصف الليل)، وتذكيرات يوم الجمعة (سورة الكهف، الصلاة على النبي ﷺ، وساعة الاستجابة) تتبدل تلقائياً حسب الوقت مع إمكانية لمس شريط الذكر للتنقل.\n\n" +
+                  "◈ الإصدار 10.0.0 — الإصدار الرسمي الكامل للسيارات (Build 117):\n" +
                   "• إصلاح التحديث ليكون من داخل التطبيق أونلاين فقط (دون فتح أي برامج أخرى): تنزيل الحزمة والتحقق من بصمة SHA-256 وتثبيتها مباشرة من داخل التطبيق دون فتح متصفح السيارة أو أي برنامج خارجي.\n" +
                   "• تم إضافة زر للتطبيقات السريعة: زر مخصص أسفل الطقس وفي الكرة العائمة مع نافذة مكبرة وواضحة للوصول للتطبيقات أثناء القيادة.\n" +
                   "• إمكانية تشغيل البرنامج تلقائياً: خيار الفتح التلقائي فور تشغيل السيارة أو التعيين كشاشة رئيسية أساسية + وضع فل سكرين لكامل الشاشة.\n" +
@@ -1474,6 +1475,140 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             if (state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) return false;
         } catch (Throwable ignored) { }
         return ctx.getSharedPreferences(UI_PREFS, MODE_PRIVATE).getBoolean(KEY_PRIMARY_LAUNCHER_MODE, false);
+    }
+
+    /**
+     * Checks whether Qibla is genuinely persisted as the system's default Home launcher
+     * (either via Android 10+ RoleManager ROLE_HOME or PackageManager preferred Home activity).
+     */
+    public static boolean isDefaultHomeLauncher(Context ctx) {
+        if (ctx == null) return false;
+        String myPkg = ctx.getPackageName();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                android.app.role.RoleManager rm = (android.app.role.RoleManager) ctx.getSystemService(Context.ROLE_SERVICE);
+                if (rm != null && rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
+                    return true;
+                }
+            } catch (Throwable ignored) { }
+        }
+        try {
+            Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+            homeIntent.addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = ctx.getPackageManager().resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null && myPkg.equals(ri.activityInfo.packageName)) {
+                return true;
+            }
+        } catch (Throwable ignored) { }
+        return false;
+    }
+
+    /**
+     * Safety guard for GWM Tank 500 and locked automotive ROMs:
+     * If HomeLauncherAlias is enabled but the system failed/refused to persist Qibla as the
+     * default Home app (leaving Android stuck in the repeating "Select a Home app" ResolverActivity),
+     * automatically disable HomeLauncherAlias so GwmLauncher resumes cleanly without a popup loop.
+     *
+     * @return true if an unsafe/unpersisted launcher state was detected and automatically disabled.
+     */
+    public static boolean verifyHomeLauncherHealth(Context ctx) {
+        if (ctx == null) return false;
+        if (!isHomeLauncherEnabled(ctx)) return false;
+        if (isDefaultHomeLauncher(ctx)) return false;
+        Log.w(TAG, "HomeLauncherAlias was enabled without persistent ROLE_HOME (e.g. Tank 500 GwmLauncher lock) — auto-disabling to prevent repeating Home chooser popup");
+        setHomeLauncherEnabled(ctx, false);
+        return true;
+    }
+
+    /**
+     * Safely requests Primary Car Home Launcher mode using Android 10+ RoleManager first,
+     * falling back to ACTION_HOME_SETTINGS only if supported, and automatically rolling back
+     * on locked head units (such as Tank 500) that reject 3rd-party Home launchers.
+     */
+    public void requestPrimaryHomeLauncher() {
+        SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        uiPrefs.edit().putBoolean(KEY_AUTO_LAUNCH_APP_ON_BOOT, true).apply();
+
+        if (isDefaultHomeLauncher(this)) {
+            setHomeLauncherEnabled(this, true);
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🏠 Qibla is already set as your Primary Home Launcher"
+                    : "🏠 تطبيق قبلة معيّن بالفعل كواجهة رئيسية أساسية");
+            return;
+        }
+
+        awaitingHomeRoleSelection = true;
+        homeRoleRequestedAt = System.currentTimeMillis();
+        setHomeLauncherEnabled(this, true);
+
+        boolean launchedPicker = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                android.app.role.RoleManager rm = (android.app.role.RoleManager) getSystemService(Context.ROLE_SERVICE);
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)) {
+                    Intent roleIntent = rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME);
+                    if (roleIntent != null && roleIntent.resolveActivity(getPackageManager()) != null) {
+                        startActivityForResult(roleIntent, REQ_ROLE_HOME);
+                        launchedPicker = true;
+                    }
+                }
+            } catch (Throwable ignored) { }
+        }
+
+        if (!launchedPicker) {
+            try {
+                Intent homeSettings = new Intent(android.provider.Settings.ACTION_HOME_SETTINGS);
+                if (homeSettings.resolveActivity(getPackageManager()) != null) {
+                    startActivityForResult(homeSettings, REQ_ROLE_HOME);
+                    launchedPicker = true;
+                }
+            } catch (Throwable ignored) { }
+        }
+
+        // Only use raw CATEGORY_HOME on legacy pre-Android 10 head units that still offer an "Always" button.
+        // On Android 10+ (e.g. Tank 500), firing raw CATEGORY_HOME opens a one-shot ResolverActivity loop.
+        if (!launchedPicker && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            try {
+                Intent homeChooser = new Intent(Intent.ACTION_MAIN);
+                homeChooser.addCategory(Intent.CATEGORY_HOME);
+                startActivityForResult(homeChooser, REQ_ROLE_HOME);
+                launchedPicker = true;
+            } catch (Throwable ignored) { }
+        }
+
+        if (!launchedPicker) {
+            awaitingHomeRoleSelection = false;
+            setHomeLauncherEnabled(this, false);
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🛡️ Car system locks the factory Home Launcher — kept Auto-Open on Car Startup active instead"
+                    : "🛡️ نظام هذه السيارة يقفل الواجهة الأصلية — تم تفعيل «الفتح المباشر عند تشغيل السيارة» كبديل آمن بدون تعارض");
+            if (FullScreenSettingsDialog.isOpen(this)) {
+                handler.post(() -> FullScreenSettingsDialog.show(this));
+            }
+        }
+    }
+
+    private final Runnable homeRoleVerifyRunnable = () -> {
+        awaitingHomeRoleSelection = false;
+        if (isFinishing()) return;
+        if (isDefaultHomeLauncher(this)) {
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🏠 Qibla is now active as your Primary Car Home Launcher"
+                    : "🏠 تم تثبيت قبلة بنجاح كواجهة رئيسية أساسية للسيارة");
+        } else {
+            setHomeLauncherEnabled(this, false);
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🛡️ Car system did not allow changing Home Launcher — reverted to prevent repeating popup (Auto-Open on Startup remains active)"
+                    : "🛡️ نظام السيارة لم يسمح بتثبيت لانشر خارجي — تم الإلغاء تلقائياً لمنع تكرار رسالة «تحديد تطبيق صفحة رئيسية» مع إبقاء الفتح التلقائي");
+        }
+        if (FullScreenSettingsDialog.isOpen(this)) {
+            FullScreenSettingsDialog.show(this);
+        }
+    };
+
+    private void finishHomeRoleSelectionCheck() {
+        handler.removeCallbacks(homeRoleVerifyRunnable);
+        handler.postDelayed(homeRoleVerifyRunnable, 450L);
     }
 
     void showUserGuideDialog() {
@@ -1924,14 +2059,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private void triggerAutoNetworkSync() {
         Location loc = lastLocation;
-        int cityIdx = CityManager.getSelectedCityIndex(this);
-        if (cityIdx > 0) {
-            Location manualLoc = CityManager.getManualLocation(this);
-            if (manualLoc != null) loc = manualLoc;
-        }
-        if (loc == null) {
-            loc = CityManager.getManualLocation(this);
-        }
         if (loc == null) {
             loc = new Location("default_saudi");
             loc.setLatitude(24.7136);
@@ -1974,6 +2101,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     @Override
     protected void onResume() {
         super.onResume();
+        if (awaitingHomeRoleSelection) {
+            if (System.currentTimeMillis() - homeRoleRequestedAt > 900L) {
+                finishHomeRoleSelectionCheck();
+            }
+        } else if (verifyHomeLauncherHealth(this)) {
+            FullScreenSettingsDialog.showCompactToast(this, isEn()
+                    ? "🛡️ Reverted unpersisted Home Launcher to stop repeating Home popup"
+                    : "🛡️ تم إلغاء وضع اللانشر غير المثبت تلقائياً لمنع تكرار رسالة «تحديد تطبيق صفحة رئيسية»");
+            if (FullScreenSettingsDialog.isOpen(this)) {
+                handler.post(() -> FullScreenSettingsDialog.show(this));
+            }
+        }
         applyImmersiveMode();
         updateNetworkStatus();
         handler.removeCallbacks(uiTick);
@@ -2082,6 +2221,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_ROLE_HOME) {
+            finishHomeRoleSelectionCheck();
+            return;
+        }
         if (requestCode == REQ_PICK_CUSTOM_ADHAN && resultCode == RESULT_OK && data != null && data.getData() != null) {
             final Uri audioUri = data.getData();
             FullScreenSettingsDialog.showCompactToast(this,
@@ -2112,36 +2255,17 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private void updateLocation(Location location) {
         if (location == null) return;
-        int cityIdx = CityManager.getSelectedCityIndex(this);
         String provider = location.getProvider() == null ? "unknown" : location.getProvider();
         boolean isFused = "fused".equals(provider);
 
-        // Always update vehicle speed and live heading while driving, regardless of city selection!
+        // Always update vehicle speed and live heading while driving
         if (isFused) {
             updateFusedCourse(location);
         } else {
             updateLiveCourse(location);
         }
 
-        if (cityIdx > 0 && !"manual_city".equals(provider)) {
-            // Manual City Mode: city coordinates govern prayer times, but live GPS governs speed, accuracy & motion
-            if (location.hasSpeed()) {
-                lastSpeedMps = location.getSpeed();
-                qiblaView.setSpeed(location.getSpeed() * 3.6f);
-            }
-            if (location.hasAccuracy()) {
-                qiblaView.setGpsAccuracy(location.getAccuracy());
-            }
-            Location manualLoc = CityManager.getManualLocation(this);
-            if (manualLoc != null) {
-                WeatherManager.fetchWeather(this, manualLoc.getLatitude(), manualLoc.getLongitude(), info -> {
-                    if (qiblaView != null) qiblaView.setWeatherInfo(info);
-                });
-            }
-            return;
-        }
-
-        // Auto GPS Mode
+        // Standard Live GPS Mode
         if (!isFused && !isBetterLocation(location, lastLocation) && lastLocation != null &&
                 !LocationManager.GPS_PROVIDER.equals(provider)) return;
 
@@ -2277,22 +2401,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     private void restoreLastLocation() {
         try {
-            int cityIdx = CityManager.getSelectedCityIndex(this);
-            if (cityIdx > 0) {
-                Location manualLoc = CityManager.getManualLocation(this);
-                if (manualLoc != null) {
-                    lastLocation = manualLoc;
-                    qiblaView.setLocation(manualLoc);
-                    qiblaView.setLocationName(CityManager.getManualCityName(this, isEn()));
-                    if (qiblaSensorHelper != null) qiblaSensorHelper.setLocation(manualLoc);
-                    maybeRefreshPrayerTimes(manualLoc);
-                    WeatherManager.fetchWeather(this, manualLoc.getLatitude(), manualLoc.getLongitude(), info -> {
-                        if (qiblaView != null) qiblaView.setWeatherInfo(info);
-                    });
-                    return;
-                }
-            }
-
             SharedPreferences p = getSharedPreferences(LOCATION_PREFS, MODE_PRIVATE);
             Location loc = new Location("saved_gps");
             if (p.contains(KEY_SAVED_LAT)) {
@@ -5004,7 +5112,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         lastPrayerLocation = new Location(location);
         lastPrayerWasLiveGps = isLiveLocationProvider(location);
 
-        SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
+        final SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, MODE_PRIVATE);
         final int offset = 0;
         final int fajrOffset = uiPrefs.getInt("prayer_offset_fajr", 0);
         final int sunriseOffset = uiPrefs.getInt("prayer_offset_sunrise", 0);
@@ -5065,6 +5173,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             String hEn = cachePrefs.getString(dayKey + "_hijriEn", "");
             String hDisp = en ? hEn : hAr;
             qiblaView.setPrayerTimes(names, cachedTimes, hDisp, hEn);
+            saveSunriseMaghribMinutes(uiPrefs, cachedTimes);
             FloatingSpeedBubbleService.updateLivePrayers(names, cachedTimes, en);
             AdhanScheduler.saveAndSchedule(this, cachedTimes, names, qiblaView.getLocationName());
             qiblaView.setPrayerStatus(en ? (sourceLabelEn + " • 🛰️ GPS + 🌐 Online") : (sourceLabelAr + " • 🛰️ GPS + 🌐 إنترنت"));
@@ -5080,6 +5189,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 location.getLatitude(), location.getLongitude(), calendar, offset, individualOffsets, prayerMethod, en);
         if (!hasValidOnlineCache || forceOnline) {
             qiblaView.setPrayerTimes(names, localResult.times24, localResult.hijriDate, localResult.hijriDateEn);
+            saveSunriseMaghribMinutes(uiPrefs, localResult.times24);
             FloatingSpeedBubbleService.updateLivePrayers(names, localResult.times24, en);
             AdhanScheduler.saveAndSchedule(this, localResult.times24, names, qiblaView.getLocationName());
             qiblaView.setPrayerStatus(en ? (sourceLabelEn + " • 🛰️ GPS") : (sourceLabelAr + " • 🛰️ GPS فلكي"));
@@ -5106,6 +5216,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                                 }
 
                                 qiblaView.setPrayerTimes(names, onlineResult.times24, onlineResult.hijriDate, onlineResult.hijriDateEn);
+                                saveSunriseMaghribMinutes(uiPrefs, onlineResult.times24);
                                 FloatingSpeedBubbleService.updateLivePrayers(names, onlineResult.times24, en);
                                 AdhanScheduler.saveAndSchedule(MainActivity.this, onlineResult.times24, names, qiblaView.getLocationName());
                                 qiblaView.setPrayerStatus(en
@@ -5167,6 +5278,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 });
     }
 
+    private static void saveSunriseMaghribMinutes(SharedPreferences uiPrefs, String[] times) {
+        if (uiPrefs == null || times == null || times.length < 5) return;
+        int sunrise = parseMinutes(times[1]);
+        int maghrib = parseMinutes(times[4]);
+        SharedPreferences.Editor ed = uiPrefs.edit();
+        if (sunrise >= 0) ed.putInt("auto_sunrise_min", sunrise);
+        if (maghrib >= 0) ed.putInt("auto_maghrib_min", maghrib);
+        ed.apply();
+    }
+
     private void maybeResolveLocationName(Location location) {
         final double lat = location.getLatitude();
         final double lon = location.getLongitude();
@@ -5184,19 +5305,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void resolveLocationName(double lat, double lon) {
-        int cityIdx = CityManager.getSelectedCityIndex(this);
-        if (cityIdx > 0) {
-            final String manualName = CityManager.getManualCityName(this, isEn());
-            runOnUiThread(() -> {
-                qiblaView.setLocationName(manualName);
-                qiblaView.setRegionName("");
-                if (qiblaView.hasPrayerTimes()) {
-                    AdhanScheduler.saveAndSchedule(MainActivity.this, qiblaView.getPrayerTimes(), qiblaView.getPrayerNames(), manualName);
-                }
-            });
-            return;
-        }
-
         String city = CityManager.resolveCityNameFromCoords(lat, lon, isEn());
         String region = regionFromSaudiCoordinates(lat, lon);
         if (city == null && region != null) city = region;

@@ -5,69 +5,61 @@ import android.graphics.Typeface;
 import androidx.core.content.res.ResourcesCompat;
 
 /**
- * Centralized Font Helper for Automotive & Android Displays:
- * Solves the critical issue on Chinese automotive head units (e.g. Haval H9, Tank 300/500/700)
- * where the system font (Typeface.DEFAULT) lacks Arabic glyphs, causing all Arabic text in
- * Dialogs, TextViews, and Spinners to render as invisible, empty boxes or zero-width characters.
- *
- * Guarantees that bundled high-quality Arabic fonts (Cairo, Tajawal, etc.) are always loaded
- * and applied to all UI elements.
+ * Centralized Font Helper for Automotive & Android Displays.
+ * Uses the vehicle's native system font (Typeface.DEFAULT) by default,
+ * while allowing users to switch to any bundled Arabic typeface from Settings.
  */
 public final class FontHelper {
     private static Typeface cachedCairo;
     private static Typeface cachedTajawal;
+    private static Typeface cachedAlmarai;
+    private static Typeface cachedReadexPro;
+    private static Typeface cachedAmiri;
 
     private FontHelper() { }
 
     /**
-     * Returns the primary bold Arabic typeface (Cairo) for headers, labels, and buttons.
+     * Returns the user's selected typeface, or the vehicle's native system font by default.
      */
     public static Typeface getArabicTypeface(Context ctx) {
-        if (cachedCairo != null) return cachedCairo;
-        if (ctx == null) return Typeface.DEFAULT;
-        try {
-            cachedCairo = ResourcesCompat.getFont(ctx.getApplicationContext(), R.font.cairo);
-            if (cachedCairo != null) return cachedCairo;
-        } catch (Throwable ignored) { }
-        try {
-            cachedTajawal = ResourcesCompat.getFont(ctx.getApplicationContext(), R.font.tajawal);
-            if (cachedTajawal != null) return cachedTajawal;
-        } catch (Throwable ignored) { }
-        return Typeface.SANS_SERIF;
+        return getSelectedTypeface(ctx);
     }
 
     /**
-     * Returns the user's currently selected Arabic font, falling back to Cairo.
+     * Returns the user's selected font (0 = car system default, 1..5 = bundled Arabic fonts).
      */
     public static Typeface getSelectedTypeface(Context ctx) {
-        if (ctx == null) return getArabicTypeface(ctx);
+        if (ctx == null) return Typeface.DEFAULT;
+        Context appCtx = ctx.getApplicationContext() != null ? ctx.getApplicationContext() : ctx;
         try {
-            int fontIdx = ctx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
-                    .getInt(MainActivity.KEY_FONT_INDEX, 1);
+            int fontIdx = appCtx.getSharedPreferences(MainActivity.UI_PREFS, Context.MODE_PRIVATE)
+                    .getInt(MainActivity.KEY_FONT_INDEX, QiblaView.FONT_DEFAULT);
             switch (fontIdx) {
-                case 2:
-                    Typeface t2 = ResourcesCompat.getFont(ctx, R.font.tajawal);
-                    if (t2 != null) return t2;
+                case QiblaView.FONT_CAIRO:
+                    if (cachedCairo == null) cachedCairo = ResourcesCompat.getFont(appCtx, R.font.cairo);
+                    if (cachedCairo != null) return cachedCairo;
                     break;
-                case 3:
-                    Typeface t3 = ResourcesCompat.getFont(ctx, R.font.almarai);
-                    if (t3 != null) return t3;
+                case QiblaView.FONT_TAJAWAL:
+                    if (cachedTajawal == null) cachedTajawal = ResourcesCompat.getFont(appCtx, R.font.tajawal);
+                    if (cachedTajawal != null) return cachedTajawal;
                     break;
-                case 4:
-                    Typeface t4 = ResourcesCompat.getFont(ctx, R.font.readex_pro);
-                    if (t4 != null) return t4;
+                case QiblaView.FONT_ALMARAI:
+                    if (cachedAlmarai == null) cachedAlmarai = ResourcesCompat.getFont(appCtx, R.font.almarai);
+                    if (cachedAlmarai != null) return cachedAlmarai;
                     break;
-                case 5:
-                    Typeface t5 = ResourcesCompat.getFont(ctx, R.font.amiri);
-                    if (t5 != null) return t5;
+                case QiblaView.FONT_READEX:
+                    if (cachedReadexPro == null) cachedReadexPro = ResourcesCompat.getFont(appCtx, R.font.readex_pro);
+                    if (cachedReadexPro != null) return cachedReadexPro;
                     break;
-                case 1:
+                case QiblaView.FONT_AMIRI:
+                    if (cachedAmiri == null) cachedAmiri = ResourcesCompat.getFont(appCtx, R.font.amiri);
+                    if (cachedAmiri != null) return cachedAmiri;
+                    break;
+                case QiblaView.FONT_DEFAULT:
                 default:
-                    Typeface t1 = ResourcesCompat.getFont(ctx, R.font.cairo);
-                    if (t1 != null) return t1;
-                    break;
+                    return Typeface.DEFAULT;
             }
         } catch (Throwable ignored) { }
-        return getArabicTypeface(ctx);
+        return Typeface.DEFAULT;
     }
 }
